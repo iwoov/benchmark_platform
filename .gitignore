@@ -1,0 +1,9 @@
+.next
+.pnpm-store
+node_modules
+.env
+.env.local
+pnpm-lock.yaml
+prisma/dev.db
+prisma/dev.db-journal
+docs/

@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PlatformRole {
+  PLATFORM_ADMIN
+  USER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProjectMemberRole {
+  PROJECT_MANAGER
+  AUTHOR
+  REVIEWER
+}
+
+enum DataSourceType {
+  DINGTALK_BITABLE
+}
+
+enum DataSourceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ReviewDecision {
+  PASS
+  REJECT
+  NEEDS_REVISION
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum SyncDirection {
+  PULL
+  PUSH
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id               String          @id @default(cuid())
+  username         String?         @unique
+  email            String?         @unique
+  name             String
+  passwordHash     String
+  avatar           String?
+  mobile           String?
+  dingtalkUserId   String?         @unique
+  status           UserStatus      @default(ACTIVE)
+  platformRole     PlatformRole    @default(USER)
+  createdProjects  Project[]       @relation("ProjectCreator")
+  memberships      ProjectMember[]
+  reviews          Review[]
+  aiReviewRuns     AiReviewRun[]   @relation("AiReviewRunTrigger")
+  dingtalkAccounts DingtalkAccount[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  name        String
+  code        String          @unique
+  description String?
+  status      ProjectStatus   @default(ACTIVE)
+  createdById String
+  createdBy   User            @relation("ProjectCreator", fields: [createdById], references: [id])
+  members     ProjectMember[]
+  datasources ProjectDataSource[]
+  reviews     Review[]
+  aiReviewRuns AiReviewRun[]
+  syncLogs    SyncLog[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model ProjectMember {
+  id        String            @id @default(cuid())
+  projectId String
+  userId    String
+  role      ProjectMemberRole
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime          @default(now())
+
+  @@unique([projectId, userId])
+}
+
+model ProjectDataSource {
+  id              String           @id @default(cuid())
+  projectId       String
+  name            String
+  type            DataSourceType   @default(DINGTALK_BITABLE)
+  externalAppId   String?
+  externalTableId String
+  externalViewId  String?
+  fieldMapping    Json?
+  syncConfig      Json?
+  status          DataSourceStatus @default(ACTIVE)
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviews         Review[]
+  aiReviewRuns    AiReviewRun[]
+  syncLogs        SyncLog[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model Review {
+  id               String         @id @default(cuid())
+  projectId        String
+  datasourceId     String
+  externalRecordId String
+  reviewerId       String
+  decision         ReviewDecision
+  comment          String
+  suggestions      Json?
+  project          Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  reviewer         User           @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([projectId, datasourceId, externalRecordId])
+}
+
+model AiReviewRun {
+  id               String           @id @default(cuid())
+  projectId        String
+  datasourceId     String
+  externalRecordId String
+  triggeredById    String
+  modelProvider    String
+  modelName        String
+  promptVersion    String
+  requestPayload   Json
+  responsePayload  Json?
+  parsedResult     Json?
+  status           RunStatus        @default(PENDING)
+  errorMessage     String?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  triggeredBy      User             @relation("AiReviewRunTrigger", fields: [triggeredById], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([projectId, datasourceId, externalRecordId])
+}
+
+model SyncLog {
+  id               String        @id @default(cuid())
+  projectId        String
+  datasourceId     String
+  externalRecordId String?
+  direction        SyncDirection
+  action           String
+  requestPayload   Json?
+  responsePayload  Json?
+  status           SyncStatus
+  errorMessage     String?
+  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+
+  @@index([projectId, datasourceId, externalRecordId])
+}
+
+model DingtalkAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  unionId        String?  @unique
+  dingtalkUserId String?  @unique
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiredAt DateTime?
+  scope          String?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
