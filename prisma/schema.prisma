@@ -54,6 +54,11 @@ enum ReviewDecision {
   NEEDS_REVISION
 }
 
+enum AiProtocol {
+  OPENAI_COMPATIBLE
+  GEMINI_COMPATIBLE
+}
+
 enum RunStatus {
   PENDING
   RUNNING
@@ -207,6 +212,54 @@ model AiReviewRun {
   updatedAt        DateTime         @updatedAt
 
   @@index([projectId, datasourceId, externalRecordId])
+}
+
+model AiProvider {
+  id        String               @id @default(cuid())
+  code      String               @unique
+  name      String
+  apiKey    String?
+  note      String?
+  endpoints AiProviderEndpoint[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model AiProviderEndpoint {
+  id        String                  @id @default(cuid())
+  providerId String
+  code      String                  @unique
+  label     String
+  protocol  AiProtocol
+  baseUrl   String
+  sortOrder Int                     @default(0)
+  provider  AiProvider              @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  models    AiProviderEndpointModel[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@unique([providerId, protocol])
+  @@index([providerId, sortOrder])
+}
+
+model AiModel {
+  id          String                  @id @default(cuid())
+  code        String                  @unique
+  label       String?
+  note        String?
+  endpoints   AiProviderEndpointModel[]
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+}
+
+model AiProviderEndpointModel {
+  endpointId String
+  modelId    String
+  endpoint   AiProviderEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  model      AiModel            @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@id([endpointId, modelId])
+  @@index([modelId])
 }
 
 model SyncLog {

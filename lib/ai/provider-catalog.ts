@@ -1,58 +1,41 @@
 export type AiProtocol = "OPENAI_COMPATIBLE" | "GEMINI_COMPATIBLE";
 
-export type AiProviderEndpoint = {
+export type DefaultAiProviderEndpoint = {
   id: string;
   label: string;
   protocol: AiProtocol;
   baseUrl: string;
-  models: string[];
+  sortOrder: number;
 };
 
-export type AiProviderCatalogItem = {
+export type DefaultAiProvider = {
   id: string;
   name: string;
   vendorType: string;
   note: string;
-  endpoints: AiProviderEndpoint[];
+  endpoints: DefaultAiProviderEndpoint[];
 };
 
-function uniqueModels(models: string[]) {
-  return [...new Set(models)];
-}
-
-const openAiModels = uniqueModels([
-  "gpt-5.0-pro",
-  "gpt-5.2-codex",
-  "gpt-5.3",
-  "gpt-5.3",
-]);
-
-const geminiModels = uniqueModels([
-  "gemini-3.0-pro-preview",
-  "gemini-3.1-pro-preview",
-  "gemini-3.1-flash-lite-preview",
-]);
-
-export const aiProviderCatalog: AiProviderCatalogItem[] = [
+export const defaultAiProviders: DefaultAiProvider[] = [
   {
     id: "idealab",
     name: "idealab",
     vendorType: "IDEALAB",
-    note: "当前已接入 OpenAI 与 Gemini 两类接口。",
+    note: "默认提供 OpenAI 与 Gemini 两类接口。",
     endpoints: [
       {
         id: "idealab-openai",
         label: "OpenAI 接口",
         protocol: "OPENAI_COMPATIBLE",
         baseUrl: "https://idealab.alibaba-inc.com/api/openai/v1",
-        models: openAiModels,
+        sortOrder: 0,
       },
       {
         id: "idealab-gemini",
         label: "Gemini 接口",
         protocol: "GEMINI_COMPATIBLE",
         baseUrl: "https://idealab.alibaba-inc.com/api/vertex/v1beta",
-        models: geminiModels,
+        sortOrder: 1,
       },
     ],
   },
@@ -67,14 +50,14 @@ export const aiProviderCatalog: AiProviderCatalogItem[] = [
         label: "OpenAI 接口",
         protocol: "OPENAI_COMPATIBLE",
         baseUrl: "https://routify.alibaba-inc.com/protocol/openai/v1",
-        models: openAiModels,
+        sortOrder: 0,
       },
       {
         id: "modelrouter-gemini",
         label: "Gemini 接口",
         protocol: "GEMINI_COMPATIBLE",
         baseUrl: "https://routify.alibaba-inc.com/protocol/vertex/v1",
-        models: geminiModels,
+        sortOrder: 1,
       },
     ],
   },

@@ -48,18 +48,59 @@ function createPrismaClient() {
   });
 }
 
-const signature =
-  process.env.NODE_ENV === "production" ? "production" : getSchemaSignature();
-const cachedState = globalThis.prismaState;
-
-export const prisma =
-  cachedState?.signature === signature
-    ? cachedState.client
-    : createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalThis.prismaState = {
-    client: prisma,
-    signature,
-  };
+function getSignature() {
+  return process.env.NODE_ENV === "production"
+    ? "production"
+    : getSchemaSignature();
 }
+
+function getPrismaClient() {
+  const signature = getSignature();
+  const cachedState = globalThis.prismaState;
+
+  if (cachedState?.signature === signature) {
+    return cachedState.client;
+  }
+
+  const client = createPrismaClient();
+
+  if (process.env.NODE_ENV !== "production") {
+    const previousClient = cachedState?.client;
+
+    globalThis.prismaState = {
+      client,
+      signature,
+    };
+
+    if (previousClient && previousClient !== client) {
+      void previousClient.$disconnect().catch(() => undefined);
+    }
+  }
+
+  return client;
+}
+
+export const prisma = new Proxy({} as PrismaClientType, {
+  get(_target, property) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client as object, property, client);
+
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+  set(_target, property, value) {
+    const client = getPrismaClient();
+    return Reflect.set(client as object, property, value, client);
+  },
+  has(_target, property) {
+    return Reflect.has(getPrismaClient() as object, property);
+  },
+  ownKeys() {
+    return Reflect.ownKeys(getPrismaClient() as object);
+  },
+  getOwnPropertyDescriptor(_target, property) {
+    return Reflect.getOwnPropertyDescriptor(
+      getPrismaClient() as object,
+      property,
+    );
+  },
+});

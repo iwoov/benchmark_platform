@@ -1,0 +1,351 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/db/prisma";
+
+export type AiSettingsActionState = {
+  error?: string;
+  success?: string;
+};
+
+const providerEndpointSchema = z.object({
+  id: z.string().min(1, "缺少接口 ID"),
+  baseUrl: z.string().trim().url("接口地址格式不正确，请输入完整 URL"),
+});
+
+const updateAiProviderSchema = z.object({
+  providerId: z.string().min(1, "缺少提供商 ID"),
+  name: z
+    .string()
+    .trim()
+    .min(1, "提供商名称不能为空")
+    .max(50, "名称不能超过 50 个字符"),
+  note: z
+    .string()
+    .trim()
+    .max(200, "备注不能超过 200 个字符")
+    .optional()
+    .transform((value) => value || undefined),
+  apiKey: z
+    .string()
+    .trim()
+    .max(500, "API Key 不能超过 500 个字符")
+    .optional()
+    .transform((value) => value || undefined),
+  endpoints: z.array(providerEndpointSchema).min(1, "至少保留一个接口"),
+});
+
+const saveAiModelSchema = z.object({
+  modelId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+  code: z
+    .string()
+    .trim()
+    .min(2, "模型名至少 2 个字符")
+    .max(100, "模型名不能超过 100 个字符")
+    .regex(
+      /^[a-zA-Z0-9._:-]+$/,
+      "模型名仅支持字母、数字、点、下划线、冒号和短横线",
+    ),
+  label: z
+    .string()
+    .trim()
+    .max(100, "显示名称不能超过 100 个字符")
+    .optional()
+    .transform((value) => value || undefined),
+  note: z
+    .string()
+    .trim()
+    .max(300, "备注不能超过 300 个字符")
+    .optional()
+    .transform((value) => value || undefined),
+  endpointIds: z.array(z.string().min(1)).min(1, "请至少选择一个可用接口"),
+});
+
+const deleteAiModelSchema = z.object({
+  modelId: z.string().min(1, "缺少模型 ID"),
+});
+
+async function requireAdminAccess() {
+  const session = await auth();
+
+  if (session?.user.platformRole !== "PLATFORM_ADMIN") {
+    return {
+      error: "只有平台管理员可以维护 AI 配置。",
+    } satisfies AiSettingsActionState;
+  }
+
+  if (!process.env.DATABASE_URL) {
+    return {
+      error: "当前未配置 DATABASE_URL，无法保存 AI 配置。",
+    } satisfies AiSettingsActionState;
+  }
+
+  return null;
+}
+
+function revalidateAiPages() {
+  revalidatePath("/admin/ai");
+  revalidatePath("/dashboard/ai");
+}
+
+export async function updateAiProviderConfigAction(
+  input: z.input<typeof updateAiProviderSchema>,
+): Promise<AiSettingsActionState> {
+  const accessError = await requireAdminAccess();
+
+  if (accessError) {
+    return accessError;
+  }
+
+  const parsed = updateAiProviderSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "提供商配置校验失败。",
+    };
+  }
+
+  const provider = await prisma.aiProvider.findUnique({
+    where: { id: parsed.data.providerId },
+    include: {
+      endpoints: {
+        select: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  if (!provider) {
+    return {
+      error: "提供商不存在。",
+    };
+  }
+
+  const endpointIds = new Set(
+    provider.endpoints.map((endpoint) => endpoint.id),
+  );
+
+  for (const endpoint of parsed.data.endpoints) {
+    if (!endpointIds.has(endpoint.id)) {
+      return {
+        error: "提交的接口配置不属于当前提供商。",
+      };
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.aiProvider.update({
+      where: {
+        id: provider.id,
+      },
+      data: {
+        name: parsed.data.name,
+        note: parsed.data.note,
+        ...(parsed.data.apiKey ? { apiKey: parsed.data.apiKey } : {}),
+      },
+    });
+
+    for (const endpoint of parsed.data.endpoints) {
+      await tx.aiProviderEndpoint.update({
+        where: {
+          id: endpoint.id,
+        },
+        data: {
+          baseUrl: endpoint.baseUrl,
+        },
+      });
+    }
+  });
+
+  revalidateAiPages();
+
+  return {
+    success: `${parsed.data.name} 配置已保存。`,
+  };
+}
+
+export async function saveAiModelAction(
+  input: z.input<typeof saveAiModelSchema>,
+): Promise<AiSettingsActionState> {
+  const accessError = await requireAdminAccess();
+
+  if (accessError) {
+    return accessError;
+  }
+
+  const parsed = saveAiModelSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "模型配置校验失败。",
+    };
+  }
+
+  const endpointIds = [...new Set(parsed.data.endpointIds)];
+  const endpoints = await prisma.aiProviderEndpoint.findMany({
+    where: {
+      id: {
+        in: endpointIds,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (endpoints.length !== endpointIds.length) {
+    return {
+      error: "部分接口不存在，请刷新页面后重试。",
+    };
+  }
+
+  const existingByCode = await prisma.aiModel.findFirst({
+    where: parsed.data.modelId
+      ? {
+          code: parsed.data.code,
+          NOT: {
+            id: parsed.data.modelId,
+          },
+        }
+      : {
+          code: parsed.data.code,
+        },
+    select: {
+      id: true,
+    },
+  });
+
+  if (existingByCode) {
+    return {
+      error: "该模型名已存在，请更换后再保存。",
+    };
+  }
+
+  if (parsed.data.modelId) {
+    const model = await prisma.aiModel.findUnique({
+      where: {
+        id: parsed.data.modelId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!model) {
+      return {
+        error: "模型不存在。",
+      };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.aiModel.update({
+        where: {
+          id: model.id,
+        },
+        data: {
+          code: parsed.data.code,
+          label: parsed.data.label,
+          note: parsed.data.note,
+        },
+      });
+
+      await tx.aiProviderEndpointModel.deleteMany({
+        where: {
+          modelId: model.id,
+        },
+      });
+
+      await tx.aiProviderEndpointModel.createMany({
+        data: endpointIds.map((endpointId) => ({
+          endpointId,
+          modelId: model.id,
+        })),
+      });
+    });
+
+    revalidateAiPages();
+
+    return {
+      success: `模型 ${parsed.data.code} 已更新。`,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const model = await tx.aiModel.create({
+      data: {
+        code: parsed.data.code,
+        label: parsed.data.label,
+        note: parsed.data.note,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await tx.aiProviderEndpointModel.createMany({
+      data: endpointIds.map((endpointId) => ({
+        endpointId,
+        modelId: model.id,
+      })),
+    });
+  });
+
+  revalidateAiPages();
+
+  return {
+    success: `模型 ${parsed.data.code} 已添加。`,
+  };
+}
+
+export async function deleteAiModelAction(
+  input: z.input<typeof deleteAiModelSchema>,
+): Promise<AiSettingsActionState> {
+  const accessError = await requireAdminAccess();
+
+  if (accessError) {
+    return accessError;
+  }
+
+  const parsed = deleteAiModelSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "删除模型失败。",
+    };
+  }
+
+  const model = await prisma.aiModel.findUnique({
+    where: {
+      id: parsed.data.modelId,
+    },
+    select: {
+      id: true,
+      code: true,
+    },
+  });
+
+  if (!model) {
+    return {
+      error: "模型不存在或已被删除。",
+    };
+  }
+
+  await prisma.aiModel.delete({
+    where: {
+      id: model.id,
+    },
+  });
+
+  revalidateAiPages();
+
+  return {
+    success: `模型 ${model.code} 已删除。`,
+  };
+}
