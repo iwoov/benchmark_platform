@@ -2,12 +2,13 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Empty, Input, Space, Tag } from "antd";
+import { Button, Empty, Input, Space, Tag } from "antd";
 import { FileUp, Table2 } from "lucide-react";
 import {
   importProjectDataAction,
   type ImportProjectDataFormState,
 } from "@/app/actions/datasources";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
   getDataSourceStatusColor,
   getDataSourceStatusLabel,
@@ -58,6 +59,11 @@ export function ProjectDatasourceConsole({
   );
   const formRef = useRef<HTMLFormElement>(null);
 
+  useActionNotification(state, {
+    successTitle: "导入成功",
+    errorTitle: "导入失败",
+  });
+
   useEffect(() => {
     if (state.success) {
       formRef.current?.reset();
@@ -79,16 +85,6 @@ export function ProjectDatasourceConsole({
           <Tag color="green">Excel</Tag>
         </Space>
       </div>
-
-      {state.error ? <Alert type="error" message={state.error} showIcon /> : null}
-      {state.success ? (
-        <Alert
-          type="success"
-          message={state.success}
-          showIcon
-          style={{ marginTop: state.error ? 12 : 0 }}
-        />
-      ) : null}
 
       <form ref={formRef} action={formAction} style={{ marginTop: 16 }}>
         <div className="import-form-grid">
@@ -157,7 +153,8 @@ export function ProjectDatasourceConsole({
       <div className="workspace-tip" style={{ marginTop: 16 }}>
         <Tag color="blue">说明</Tag>
         <span>
-          支持对象数组 JSON 和首个工作表为题目数据的 Excel。系统会自动识别常见列名，如标题、内容、答案、解析、题型和难度。
+          支持对象数组 JSON 和首个工作表为题目数据的
+          Excel。系统会自动识别常见列名，如标题、内容、答案、解析、题型和难度。
         </span>
       </div>
 
@@ -214,9 +211,7 @@ export function ProjectDatasourceConsole({
                 </div>
 
                 <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
-                  <div className="muted">
-                    创建时间：{datasource.createdAt}
-                  </div>
+                  <div className="muted">创建时间：{datasource.createdAt}</div>
                   {datasource.originalFileName ? (
                     <div className="muted">
                       原始文件：{datasource.originalFileName}

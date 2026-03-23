@@ -1,13 +1,14 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { Alert, Button, Modal, Space, Tag } from "antd";
+import { Button, Modal, Space, Tag } from "antd";
 import { Settings2, UserPlus, X } from "lucide-react";
 import {
   assignProjectMemberAction,
   removeProjectMemberAction,
   type ProjectMemberFormState,
 } from "@/app/actions/project-members";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
   getProjectRoleColor,
   getProjectRoleLabel,
@@ -63,6 +64,15 @@ export function ProjectMembersManager({
     removeProjectMemberAction,
     initialState,
   );
+
+  useActionNotification(assignState, {
+    successTitle: "成员已更新",
+    errorTitle: "成员更新失败",
+  });
+  useActionNotification(removeState, {
+    successTitle: "成员已移除",
+    errorTitle: "成员移除失败",
+  });
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -145,19 +155,6 @@ export function ProjectMembersManager({
       >
         {activeProject ? (
           <div style={{ display: "grid", gap: 20, marginTop: 8 }}>
-            {assignState.error ? (
-              <Alert type="error" message={assignState.error} showIcon />
-            ) : null}
-            {assignState.success ? (
-              <Alert type="success" message={assignState.success} showIcon />
-            ) : null}
-            {removeState.error ? (
-              <Alert type="error" message={removeState.error} showIcon />
-            ) : null}
-            {removeState.success ? (
-              <Alert type="success" message={removeState.success} showIcon />
-            ) : null}
-
             <form action={assignAction}>
               <input type="hidden" name="projectId" value={activeProject.id} />
               <div className="member-form-grid">

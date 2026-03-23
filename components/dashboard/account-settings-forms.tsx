@@ -2,13 +2,14 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Input, Space, Tag } from "antd";
+import { Button, Input, Space, Tag } from "antd";
 import { KeyRound, Mail, UserRound } from "lucide-react";
 import {
   type AccountFormState,
   updateOwnPasswordAction,
   updateOwnProfileAction,
 } from "@/app/actions/account-settings";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
   getPlatformRoleColor,
   getPlatformRoleLabel,
@@ -41,6 +42,15 @@ export function AccountSettingsForms({
     updateOwnPasswordAction,
     initialState,
   );
+
+  useActionNotification(profileState, {
+    successTitle: "资料已保存",
+    errorTitle: "资料保存失败",
+  });
+  useActionNotification(passwordState, {
+    successTitle: "密码已更新",
+    errorTitle: "密码更新失败",
+  });
 
   useEffect(() => {
     if (profileState.success) {
@@ -85,18 +95,6 @@ export function AccountSettingsForms({
             )}
           </Space>
         </div>
-
-        {profileState.error ? (
-          <Alert type="error" message={profileState.error} showIcon />
-        ) : null}
-        {profileState.success ? (
-          <Alert
-            type="success"
-            message={profileState.success}
-            showIcon
-            style={{ marginTop: 12 }}
-          />
-        ) : null}
 
         <form action={profileAction} style={{ marginTop: 16 }}>
           <div className="settings-form-grid">
@@ -165,23 +163,6 @@ export function AccountSettingsForms({
             输入当前密码后，可以设置新的登录密码。
           </p>
         </div>
-
-        {passwordState.error ? (
-          <Alert
-            type="error"
-            message={passwordState.error}
-            showIcon
-            style={{ marginTop: 16 }}
-          />
-        ) : null}
-        {passwordState.success ? (
-          <Alert
-            type="success"
-            message={passwordState.success}
-            showIcon
-            style={{ marginTop: 16 }}
-          />
-        ) : null}
 
         <form
           ref={passwordFormRef}

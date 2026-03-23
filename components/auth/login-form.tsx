@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert, Button, Card, Input, Space } from "antd";
+import { Button, Card, Input, Space } from "antd";
 import { LockKeyhole, UserRound } from "lucide-react";
 import { loginAction, type LoginFormState } from "@/app/actions/auth";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 
 const initialState: LoginFormState = {};
 
@@ -12,6 +13,10 @@ export function LoginForm() {
     loginAction,
     initialState,
   );
+
+  useActionNotification(state, {
+    errorTitle: "登录失败",
+  });
 
   return (
     <Card
@@ -37,10 +42,6 @@ export function LoginForm() {
             一期先使用平台内账号密码登录，钉钉 OAuth 后续接入。
           </p>
         </Space>
-
-        {state.error ? (
-          <Alert type="error" message={state.error} showIcon />
-        ) : null}
 
         <form action={formAction}>
           <Space direction="vertical" size={18} style={{ width: "100%" }}>

@@ -2,12 +2,13 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Input, Modal, Space, Tag } from "antd";
+import { Button, Input, Modal, Space, Tag } from "antd";
 import { PencilLine } from "lucide-react";
 import {
   type CreateUserFormState,
   updateUserAction,
 } from "@/app/actions/users";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
   getPlatformRoleColor,
   getPlatformRoleLabel,
@@ -38,6 +39,11 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
   );
   const formRef = useRef<HTMLFormElement>(null);
   const [dialogKey, setDialogKey] = useState(0);
+
+  useActionNotification(state, {
+    successTitle: "用户更新成功",
+    errorTitle: "用户更新失败",
+  });
 
   const activeUser = useMemo(
     () => users.find((user) => user.id === activeUserId) ?? null,
@@ -161,13 +167,6 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
             size={16}
             style={{ width: "100%", marginTop: 8 }}
           >
-            {state.error ? (
-              <Alert type="error" message={state.error} showIcon />
-            ) : null}
-            {state.success ? (
-              <Alert type="success" message={state.success} showIcon />
-            ) : null}
-
             <form ref={formRef} action={formAction}>
               <input type="hidden" name="userId" value={activeUser.id} />
 

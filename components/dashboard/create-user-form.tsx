@@ -2,12 +2,13 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Input, Modal, Space } from "antd";
+import { Button, Input, Modal, Space } from "antd";
 import { KeyRound, Mail, Plus, UserRound } from "lucide-react";
 import {
   createUserAction,
   type CreateUserFormState,
 } from "@/app/actions/users";
+import { useActionNotification } from "@/components/feedback/use-action-notification";
 
 const initialState: CreateUserFormState = {};
 
@@ -20,6 +21,11 @@ export function CreateUserForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const [open, setOpen] = useState(false);
   const [dialogKey, setDialogKey] = useState(0);
+
+  useActionNotification(state, {
+    successTitle: "用户创建成功",
+    errorTitle: "用户创建失败",
+  });
 
   useEffect(() => {
     if (state.success) {
@@ -69,13 +75,6 @@ export function CreateUserForm() {
           size={16}
           style={{ width: "100%", marginTop: 8 }}
         >
-          {state.error ? (
-            <Alert type="error" message={state.error} showIcon />
-          ) : null}
-          {state.success ? (
-            <Alert type="success" message={state.success} showIcon />
-          ) : null}
-
           <form ref={formRef} action={formAction}>
             <Space direction="vertical" size={16} style={{ width: "100%" }}>
               <div>
