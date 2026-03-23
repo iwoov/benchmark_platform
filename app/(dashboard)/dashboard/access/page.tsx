@@ -50,7 +50,7 @@ const accessItems = [
 
 export default function AccessPage() {
   return (
-    <Card className="panel" style={{ borderRadius: 24 }}>
+    <Card className="panel">
       <h2 style={{ marginTop: 0, fontSize: 28, lineHeight: 1.1 }}>权限控制</h2>
       <p className="muted" style={{ lineHeight: 1.7 }}>
         当前模型采用平台级角色 + 项目级角色的双层设计。
@@ -58,8 +58,8 @@ export default function AccessPage() {
 
       <div
         style={{
-          border: "1px solid rgba(217, 224, 234, 0.9)",
-          borderRadius: 18,
+          border: "1px solid var(--line)",
+          borderRadius: 8,
           overflow: "hidden",
         }}
       >
@@ -71,8 +71,7 @@ export default function AccessPage() {
               gridTemplateColumns: "180px 1fr",
               gap: 16,
               padding: "16px 18px",
-              borderTop:
-                index === 0 ? "none" : "1px solid rgba(217, 224, 234, 0.9)",
+              borderTop: index === 0 ? "none" : "1px solid var(--line)",
             }}
           >
             <div style={{ fontWeight: 700 }}>{item.label}</div>

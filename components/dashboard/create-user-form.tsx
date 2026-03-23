@@ -166,14 +166,7 @@ export function CreateUserForm() {
                     id="platformRole"
                     name="platformRole"
                     defaultValue="USER"
-                    style={{
-                      width: "100%",
-                      height: 44,
-                      borderRadius: 14,
-                      border: "1px solid rgba(217, 224, 234, 0.95)",
-                      padding: "0 12px",
-                      background: "#ffffff",
-                    }}
+                    className="field-select"
                   >
                     <option value="USER">普通用户</option>
                     <option value="PLATFORM_ADMIN">平台管理员</option>
@@ -195,14 +188,7 @@ export function CreateUserForm() {
                     id="status"
                     name="status"
                     defaultValue="ACTIVE"
-                    style={{
-                      width: "100%",
-                      height: 44,
-                      borderRadius: 14,
-                      border: "1px solid rgba(217, 224, 234, 0.95)",
-                      padding: "0 12px",
-                      background: "#ffffff",
-                    }}
+                    className="field-select"
                   >
                     <option value="ACTIVE">启用</option>
                     <option value="INACTIVE">停用</option>

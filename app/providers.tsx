@@ -12,27 +12,36 @@ export function Providers({ children }: PropsWithChildren) {
         theme={{
           algorithm: theme.defaultAlgorithm,
           token: {
-            colorPrimary: "#1456d9",
-            borderRadius: 14,
-            colorBgBase: "#f3f5f8",
-            colorTextBase: "#172033",
+            colorPrimary: "#409eff",
+            borderRadius: 6,
+            colorBgBase: "#f5f7fa",
+            colorBgContainer: "#ffffff",
+            colorBorder: "#dcdfe6",
+            colorTextBase: "#303133",
+            boxShadow: "0 1px 2px rgba(16, 24, 40, 0.05)",
+            boxShadowSecondary: "0 10px 30px rgba(16, 24, 40, 0.06)",
             fontFamily:
-              '"IBM Plex Sans", "PingFang SC", "Helvetica Neue", sans-serif',
+              '"PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif',
           },
           components: {
             Layout: {
-              bodyBg: "#f3f5f8",
-              siderBg: "rgba(255, 255, 255, 0.88)",
-              headerBg: "rgba(255, 255, 255, 0.88)",
+              bodyBg: "#f5f7fa",
+              siderBg: "#ffffff",
+              headerBg: "#ffffff",
             },
             Card: {
-              borderRadiusLG: 24,
+              borderRadiusLG: 10,
             },
             Button: {
-              controlHeight: 42,
+              controlHeight: 40,
+              defaultShadow: "none",
+              primaryShadow: "none",
             },
             Input: {
-              controlHeight: 44,
+              controlHeight: 40,
+            },
+            Select: {
+              controlHeight: 40,
             },
           },
         }}

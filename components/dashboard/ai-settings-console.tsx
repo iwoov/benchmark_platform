@@ -188,10 +188,7 @@ const projectGrants: ProjectGrant[] = [
     defaultModel: "gemini-3.1-flash-lite-preview",
     preferredProtocol: "GEMINI_COMPATIBLE",
     routeStrategy: "轻量模型优先，强调吞吐而非最高质量",
-    enabledModels: [
-      "gemini-3.1-flash-lite-preview",
-      "gemini-3.1-pro-preview",
-    ],
+    enabledModels: ["gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"],
     note: "适合批量初筛和快速检查。",
     updatedAt: "2026-03-18 10:15",
   },
@@ -212,14 +209,14 @@ export function AiSettingsConsole() {
     aiProviderCatalog[0].id,
   );
   const [selectedModelId, setSelectedModelId] = useState(modelCatalog[0].id);
-  const [projectFilter, setProjectFilter] =
-    useState<ProjectFilter>("全部项目");
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>("全部项目");
 
   const selectedProvider =
     aiProviderCatalog.find((provider) => provider.id === selectedProviderId) ??
     aiProviderCatalog[0];
   const selectedModel =
-    modelCatalog.find((model) => model.id === selectedModelId) ?? modelCatalog[0];
+    modelCatalog.find((model) => model.id === selectedModelId) ??
+    modelCatalog[0];
   const selectedRouteGroup =
     routeGroups.find((group) => group.modelId === selectedModel.id) ??
     routeGroups[0];
@@ -295,7 +292,9 @@ export function AiSettingsConsole() {
             </div>
             <div className="ai-stat-value">{endpointCount}</div>
             <div className="ai-stat-label">接口入口</div>
-            <div className="muted ai-stat-hint">OpenAI 与 Gemini 共 4 个 URL</div>
+            <div className="muted ai-stat-hint">
+              OpenAI 与 Gemini 共 4 个 URL
+            </div>
           </div>
 
           <div className="ai-stat-card">
@@ -326,7 +325,9 @@ export function AiSettingsConsole() {
                 <div className="ai-panel-title">当前目录来源</div>
                 <div className="muted ai-panel-copy">
                   页面中的 URL 和可用模型不再散落在组件内，而是统一从
-                  <code style={{ marginLeft: 6 }}>lib/ai/provider-catalog.ts</code>
+                  <code style={{ marginLeft: 6 }}>
+                    lib/ai/provider-catalog.ts
+                  </code>
                   读取。
                 </div>
               </div>
@@ -357,7 +358,7 @@ export function AiSettingsConsole() {
                   当前为管理员侧静态展示骨架，后续可直接替换为数据库返回数据。
                 </div>
               </div>
-              <FolderKanban size={18} color="#1456d9" />
+              <FolderKanban size={18} color="#409eff" />
             </div>
 
             <div className="ai-chip-row">
@@ -427,7 +428,9 @@ export function AiSettingsConsole() {
                           {provider.vendorType}
                         </div>
                       </div>
-                      <Tag color="processing">{provider.endpoints.length} 个接口</Tag>
+                      <Tag color="processing">
+                        {provider.endpoints.length} 个接口
+                      </Tag>
                     </div>
 
                     <div className="ai-chip-row">
@@ -468,8 +471,14 @@ export function AiSettingsConsole() {
 
               <div className="ai-detail-grid">
                 <MetaField label="提供商 ID" value={selectedProvider.id} />
-                <MetaField label="接口数量" value={selectedProvider.endpoints.length} />
-                <MetaField label="唯一模型数" value={selectedProviderModelCount} />
+                <MetaField
+                  label="接口数量"
+                  value={selectedProvider.endpoints.length}
+                />
+                <MetaField
+                  label="唯一模型数"
+                  value={selectedProviderModelCount}
+                />
                 <MetaField
                   label="协议范围"
                   value={selectedProvider.endpoints
@@ -553,7 +562,8 @@ export function AiSettingsConsole() {
                 <div>
                   <div className="ai-panel-title">{selectedModel.code}</div>
                   <div className="muted ai-panel-copy">
-                    当前在 {selectedModel.endpoints.length} 个上游入口可用，支持按同协议做主备切换。
+                    当前在 {selectedModel.endpoints.length}{" "}
+                    个上游入口可用，支持按同协议做主备切换。
                   </div>
                 </div>
                 <Tag color={protocolMeta(selectedModel.protocol).color}>
@@ -574,7 +584,10 @@ export function AiSettingsConsole() {
                 <MetaField
                   label="可用入口"
                   value={selectedModel.endpoints
-                    .map((endpoint) => `${endpoint.providerName} · ${endpoint.endpointLabel}`)
+                    .map(
+                      (endpoint) =>
+                        `${endpoint.providerName} · ${endpoint.endpointLabel}`,
+                    )
                     .join(" / ")}
                 />
               </div>
@@ -583,7 +596,9 @@ export function AiSettingsConsole() {
                 {selectedModel.endpoints.map((endpoint) => (
                   <div key={endpoint.endpointId} className="ai-field-card">
                     <div className="ai-card-topline">
-                      <div className="ai-select-title">{endpoint.providerName}</div>
+                      <div className="ai-select-title">
+                        {endpoint.providerName}
+                      </div>
                       <Tag color={protocolMeta(selectedModel.protocol).color}>
                         {endpoint.endpointLabel}
                       </Tag>
@@ -626,7 +641,9 @@ export function AiSettingsConsole() {
             <div className="ai-route-board">
               <div className="ai-detail-header">
                 <div>
-                  <div className="ai-panel-title">{selectedRouteGroup.title}</div>
+                  <div className="ai-panel-title">
+                    {selectedRouteGroup.title}
+                  </div>
                   <div className="muted ai-panel-copy">
                     {selectedRouteGroup.summary}
                   </div>
@@ -731,7 +748,9 @@ export function AiSettingsConsole() {
                     </div>
                     <div className="ai-chip-row">
                       {project.enabledModels.map((modelCode) => (
-                        <Tag key={`${project.id}-${modelCode}`}>{modelCode}</Tag>
+                        <Tag key={`${project.id}-${modelCode}`}>
+                          {modelCode}
+                        </Tag>
                       ))}
                     </div>
                   </div>
@@ -768,7 +787,8 @@ export function AiSettingsConsole() {
             <div>
               <div className="ai-select-title">配置文件</div>
               <div className="muted ai-panel-copy">
-                <code>lib/ai/provider-catalog.ts</code> 统一存放 URL 和可用模型。
+                <code>lib/ai/provider-catalog.ts</code> 统一存放 URL
+                和可用模型。
               </div>
             </div>
           </div>
@@ -792,7 +812,8 @@ export function AiSettingsConsole() {
             <div>
               <div className="ai-select-title">路由示例</div>
               <div className="muted ai-panel-copy">
-                当前前端按 idealab 主、ModelRouter 备的顺序展示，可继续做成管理员可编辑。
+                当前前端按 idealab 主、ModelRouter
+                备的顺序展示，可继续做成管理员可编辑。
               </div>
             </div>
           </div>
@@ -804,7 +825,8 @@ export function AiSettingsConsole() {
             <div>
               <div className="ai-select-title">配套文档</div>
               <div className="muted ai-panel-copy">
-                当前提供商清单已单独写入 <code>docs/ai_provider_inventory.md</code>。
+                当前提供商清单已单独写入{" "}
+                <code>docs/ai_provider_inventory.md</code>。
               </div>
             </div>
           </div>

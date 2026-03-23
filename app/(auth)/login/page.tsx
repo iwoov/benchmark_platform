@@ -14,8 +14,7 @@ export default function LoginPage() {
         <section
           className="panel"
           style={{
-            borderRadius: 36,
-            padding: 40,
+            padding: 36,
             minHeight: 520,
             display: "flex",
             flexDirection: "column",
@@ -23,7 +22,13 @@ export default function LoginPage() {
           }}
         >
           <div>
-            <p style={{ color: "#1456d9", fontWeight: 700, marginBottom: 16 }}>
+            <p
+              style={{
+                color: "var(--brand)",
+                fontWeight: 700,
+                marginBottom: 16,
+              }}
+            >
               一期初始化骨架
             </p>
             <h1
@@ -42,7 +47,7 @@ export default function LoginPage() {
               style={{
                 marginTop: 24,
                 maxWidth: 460,
-                color: "#4b5563",
+                color: "var(--muted)",
                 fontSize: 16,
                 lineHeight: 1.7,
               }}
@@ -67,16 +72,16 @@ export default function LoginPage() {
               <div
                 key={item.label}
                 style={{
-                  border: "1px solid #d9e0ea",
-                  borderRadius: 20,
+                  border: "1px solid var(--line)",
+                  borderRadius: 8,
                   padding: 20,
-                  background: "rgba(248, 250, 252, 0.88)",
+                  background: "var(--panel-soft)",
                 }}
               >
                 <div style={{ fontSize: 24, fontWeight: 700 }}>
                   {item.value}
                 </div>
-                <div style={{ marginTop: 8, color: "#6b7280" }}>
+                <div style={{ marginTop: 8, color: "var(--muted)" }}>
                   {item.label}
                 </div>
               </div>

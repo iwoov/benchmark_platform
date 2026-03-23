@@ -24,17 +24,16 @@ export function LoginForm() {
       style={{
         width: "100%",
         maxWidth: 460,
-        borderRadius: 28,
       }}
       styles={{
         body: {
-          padding: 32,
+          padding: 28,
         },
       }}
     >
       <Space direction="vertical" size={24} style={{ width: "100%" }}>
         <Space direction="vertical" size={8}>
-          <div style={{ color: "#1456d9", fontWeight: 700 }}>
+          <div style={{ color: "var(--brand)", fontWeight: 700 }}>
             Benchmark Platform
           </div>
           <h2 style={{ margin: 0, fontSize: 32, lineHeight: 1.1 }}>登录后台</h2>
@@ -92,12 +91,18 @@ export function LoginForm() {
 
         <Card
           style={{
-            background: "#f8fafc",
-            borderColor: "#d9e0ea",
+            background: "var(--panel-soft)",
+            borderColor: "var(--line)",
           }}
         >
           <div style={{ fontWeight: 700 }}>管理员账号</div>
-          <p style={{ margin: "8px 0 0", color: "#4b5563", lineHeight: 1.7 }}>
+          <p
+            style={{
+              margin: "8px 0 0",
+              color: "var(--muted)",
+              lineHeight: 1.7,
+            }}
+          >
             账号由 `.env` 中的 `ADMIN_USERNAME`、`ADMIN_EMAIL` 和
             `ADMIN_PASSWORD` 控制。
           </p>

@@ -7,7 +7,7 @@ const stats = [
     value: "3",
     hint: "当前已建项目",
     icon: FolderOpenDot,
-    color: "#1456d9",
+    color: "#409eff",
   },
   {
     label: "平台用户",
@@ -28,7 +28,7 @@ const stats = [
     value: "AI",
     hint: "审核能力待实现",
     icon: Activity,
-    color: "#7c3aed",
+    color: "#909399",
   },
 ];
 
@@ -42,7 +42,7 @@ const nextItems = [
 export default function DashboardPage() {
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Card className="panel" style={{ borderRadius: 28 }}>
+      <Card className="panel">
         <h2 style={{ margin: "0 0 16px", fontSize: 30, lineHeight: 1.1 }}>
           一期基础框架已就位
         </h2>
@@ -62,13 +62,13 @@ export default function DashboardPage() {
 
           return (
             <Col xs={24} md={12} xl={6} key={item.label}>
-              <Card className="panel" style={{ borderRadius: 24 }}>
+              <Card className="panel">
                 <Space direction="vertical" size={16} style={{ width: "100%" }}>
                   <div
                     style={{
                       width: 48,
                       height: 48,
-                      borderRadius: 16,
+                      borderRadius: 8,
                       display: "grid",
                       placeItems: "center",
                       background: `${item.color}18`,
@@ -91,11 +91,7 @@ export default function DashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
-          <Card
-            className="panel"
-            title="一期实施进度"
-            style={{ borderRadius: 24 }}
-          >
+          <Card className="panel" title="一期实施进度">
             <Space direction="vertical" size={18} style={{ width: "100%" }}>
               <div>
                 <Space
@@ -107,7 +103,7 @@ export default function DashboardPage() {
                 <Progress
                   percent={100}
                   showInfo={false}
-                  strokeColor="#1456d9"
+                  strokeColor="#409eff"
                 />
               </div>
               <div>
@@ -133,11 +129,7 @@ export default function DashboardPage() {
         </Col>
 
         <Col xs={24} xl={10}>
-          <Card
-            className="panel"
-            title="后续优先事项"
-            style={{ borderRadius: 24 }}
-          >
+          <Card className="panel" title="后续优先事项">
             <div style={{ display: "grid", gap: 12 }}>
               {nextItems.map((item) => (
                 <div
@@ -147,7 +139,7 @@ export default function DashboardPage() {
                     alignItems: "center",
                     gap: 12,
                     padding: "12px 0",
-                    borderBottom: "1px solid rgba(217, 224, 234, 0.8)",
+                    borderBottom: "1px solid var(--line)",
                   }}
                 >
                   <Tag color="blue">Next</Tag>
