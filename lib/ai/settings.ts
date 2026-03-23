@@ -77,6 +77,7 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
       orderBy: [{ createdAt: "desc" }, { code: "asc" }],
       include: {
         endpoints: {
+          orderBy: [{ priority: "asc" }, { endpointId: "asc" }],
           include: {
             endpoint: {
               include: {
@@ -128,23 +129,22 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
   const mappedModels = models.map<AiSettingsModel>((model) => ({
     id: model.id,
     code: model.code,
+    protocol: model.protocol,
     label: model.label,
     note: model.note,
-    endpointIds: model.endpoints.map((item) => item.endpointId),
-    endpoints: model.endpoints
-      .map((item) => ({
-        id: item.endpoint.id,
-        code: item.endpoint.code,
-        label: item.endpoint.label,
-        protocol: item.endpoint.protocol,
-        baseUrl: item.endpoint.baseUrl,
-        providerId: item.endpoint.provider.id,
-        providerCode: item.endpoint.provider.code,
-        providerName: item.endpoint.provider.name,
-      }))
-      .sort((left, right) =>
-        left.providerName.localeCompare(right.providerName),
-      ),
+    routes: model.endpoints.map((item) => ({
+      id: item.endpoint.id,
+      code: item.endpoint.code,
+      label: item.endpoint.label,
+      protocol: item.endpoint.protocol,
+      baseUrl: item.endpoint.baseUrl,
+      providerId: item.endpoint.provider.id,
+      providerCode: item.endpoint.provider.code,
+      providerName: item.endpoint.provider.name,
+      priority: item.priority,
+      enabled: item.enabled,
+      timeoutMs: item.timeoutMs,
+    })),
   }));
 
   return {

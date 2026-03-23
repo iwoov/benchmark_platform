@@ -790,6 +790,22 @@ select {
     gap: 8px;
 }
 
+.ai-model-route-summary {
+    display: grid;
+    gap: 8px;
+}
+
+.ai-model-route-chip {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--panel-soft);
+}
+
+.ai-model-route-chip.disabled {
+    opacity: 0.72;
+}
+
 .ai-model-form {
     display: grid;
     gap: 20px;
@@ -806,44 +822,78 @@ select {
     gap: 14px;
 }
 
-.ai-endpoint-group {
+.ai-route-builder {
+    display: grid;
+    gap: 16px;
+}
+
+.ai-route-builder-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.ai-route-stack {
     display: grid;
     gap: 12px;
+}
+
+.ai-route-card {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 14px;
     padding: 16px;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
     background: var(--panel-soft);
 }
 
-.ai-endpoint-option-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+.ai-route-card-main {
+    display: flex;
+    gap: 14px;
+    min-width: 0;
+    flex: 1;
 }
 
-.ai-endpoint-option {
+.ai-route-card-index {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.ai-route-card-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.ai-route-card-top {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    background: #ffffff;
-    cursor: pointer;
-    transition:
-        border-color 160ms ease,
-        background 160ms ease,
-        box-shadow 160ms ease;
+    justify-content: space-between;
+    gap: 16px;
 }
 
-.ai-endpoint-option:hover {
-    border-color: rgba(64, 158, 255, 0.35);
+.ai-route-card-controls {
+    margin-top: 14px;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
-.ai-endpoint-option.active {
-    border-color: rgba(64, 158, 255, 0.4);
-    background: var(--brand-soft);
-    box-shadow: inset 2px 0 0 var(--brand);
+.ai-route-card-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 @media (max-width: 960px) {
@@ -905,8 +955,7 @@ select {
     }
 
     .ai-provider-form-grid,
-    .ai-model-form-grid,
-    .ai-endpoint-option-grid {
+    .ai-model-form-grid {
         grid-template-columns: 1fr;
     }
 
@@ -914,8 +963,12 @@ select {
     .ai-provider-endpoint-head,
     .ai-provider-actions,
     .ai-model-row-actions,
+    .ai-route-builder-head,
+    .ai-route-card,
+    .ai-route-card-top,
+    .ai-route-card-controls,
     .datasource-card-top,
-    .ai-endpoint-group-head {
+    .ai-route-card-actions {
         flex-direction: column;
         align-items: flex-start;
     }

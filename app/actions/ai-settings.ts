@@ -52,6 +52,7 @@ const saveAiModelSchema = z.object({
       /^[a-zA-Z0-9._:-]+$/,
       "模型名仅支持字母、数字、点、下划线、冒号和短横线",
     ),
+  protocol: z.enum(["OPENAI_COMPATIBLE", "GEMINI_COMPATIBLE"]),
   label: z
     .string()
     .trim()
@@ -64,7 +65,19 @@ const saveAiModelSchema = z.object({
     .max(300, "备注不能超过 300 个字符")
     .optional()
     .transform((value) => value || undefined),
-  endpointIds: z.array(z.string().min(1)).min(1, "请至少选择一个可用接口"),
+  routes: z
+    .array(
+      z.object({
+        endpointId: z.string().min(1, "缺少接口 ID"),
+        enabled: z.boolean(),
+        timeoutMs: z
+          .number()
+          .int("超时必须是整数")
+          .min(1000, "超时至少 1000ms")
+          .max(120000, "超时不能超过 120000ms"),
+      }),
+    )
+    .min(1, "请至少配置一条路由"),
 });
 
 const deleteAiModelSchema = z.object({
@@ -188,7 +201,15 @@ export async function saveAiModelAction(
     };
   }
 
-  const endpointIds = [...new Set(parsed.data.endpointIds)];
+  const routeEndpointIds = parsed.data.routes.map((route) => route.endpointId);
+  const endpointIds = [...new Set(routeEndpointIds)];
+
+  if (endpointIds.length !== routeEndpointIds.length) {
+    return {
+      error: "同一个接口不能重复加入同一模型的路由链。",
+    };
+  }
+
   const endpoints = await prisma.aiProviderEndpoint.findMany({
     where: {
       id: {
@@ -197,12 +218,21 @@ export async function saveAiModelAction(
     },
     select: {
       id: true,
+      protocol: true,
     },
   });
 
   if (endpoints.length !== endpointIds.length) {
     return {
       error: "部分接口不存在，请刷新页面后重试。",
+    };
+  }
+
+  if (
+    endpoints.some((endpoint) => endpoint.protocol !== parsed.data.protocol)
+  ) {
+    return {
+      error: "同一个模型的路由链只能绑定同一协议的接口。",
     };
   }
 
@@ -251,6 +281,7 @@ export async function saveAiModelAction(
         },
         data: {
           code: parsed.data.code,
+          protocol: parsed.data.protocol,
           label: parsed.data.label,
           note: parsed.data.note,
         },
@@ -263,9 +294,12 @@ export async function saveAiModelAction(
       });
 
       await tx.aiProviderEndpointModel.createMany({
-        data: endpointIds.map((endpointId) => ({
-          endpointId,
+        data: parsed.data.routes.map((route, index) => ({
+          endpointId: route.endpointId,
           modelId: model.id,
+          priority: index + 1,
+          enabled: route.enabled,
+          timeoutMs: route.timeoutMs,
         })),
       });
     });
@@ -281,6 +315,7 @@ export async function saveAiModelAction(
     const model = await tx.aiModel.create({
       data: {
         code: parsed.data.code,
+        protocol: parsed.data.protocol,
         label: parsed.data.label,
         note: parsed.data.note,
       },
@@ -290,9 +325,12 @@ export async function saveAiModelAction(
     });
 
     await tx.aiProviderEndpointModel.createMany({
-      data: endpointIds.map((endpointId) => ({
-        endpointId,
+      data: parsed.data.routes.map((route, index) => ({
+        endpointId: route.endpointId,
         modelId: model.id,
+        priority: index + 1,
+        enabled: route.enabled,
+        timeoutMs: route.timeoutMs,
       })),
     });
   });

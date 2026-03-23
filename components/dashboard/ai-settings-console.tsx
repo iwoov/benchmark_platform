@@ -5,47 +5,75 @@ import { useRouter } from "next/navigation";
 import {
   App,
   Button,
-  Checkbox,
   Empty,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
+  Switch,
   Tag,
 } from "antd";
-import { KeyRound, PencilLine, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  KeyRound,
+  PencilLine,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   deleteAiModelAction,
   saveAiModelAction,
   updateAiProviderConfigAction,
 } from "@/app/actions/ai-settings";
-import { aiProtocolLabels } from "@/lib/ai/provider-catalog";
+import { aiProtocolLabels, type AiProtocol } from "@/lib/ai/provider-catalog";
 import type {
   AiSettingsEndpointOption,
   AiSettingsModel,
   AiSettingsProvider,
 } from "@/lib/ai/types";
 
+type ModelRouteFormState = {
+  endpointId: string;
+  enabled: boolean;
+  timeoutMs: number;
+};
+
 type ModelFormState = {
   modelId?: string;
   code: string;
+  protocol: AiProtocol;
   label: string;
   note: string;
-  endpointIds: string[];
+  routes: ModelRouteFormState[];
 };
 
 function createModelFormState(model?: AiSettingsModel): ModelFormState {
   return {
     modelId: model?.id,
     code: model?.code ?? "",
+    protocol: model?.protocol ?? "OPENAI_COMPATIBLE",
     label: model?.label ?? "",
     note: model?.note ?? "",
-    endpointIds: model?.endpointIds ?? [],
+    routes:
+      model?.routes.map((route) => ({
+        endpointId: route.id,
+        enabled: route.enabled,
+        timeoutMs: route.timeoutMs,
+      })) ?? [],
   };
 }
 
 function endpointLabel(providerName: string, label: string) {
   return `${providerName} / ${label}`;
+}
+
+function routeStatusLabel(index: number) {
+  return index === 0 ? "主路由" : `备用 ${index}`;
 }
 
 export function AiSettingsConsole({
@@ -74,15 +102,29 @@ export function AiSettingsConsole({
   const [isSavingModel, startSavingModel] = useTransition();
   const [isDeletingModel, startDeletingModel] = useTransition();
 
-  const endpointGroups = useMemo(
+  const endpointMap = useMemo(
     () =>
-      providers.map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        code: provider.code,
-        endpoints: provider.endpoints,
-      })),
-    [providers],
+      Object.fromEntries(
+        endpointOptions.map((endpoint) => [endpoint.id, endpoint]),
+      ) as Record<string, AiSettingsEndpointOption>,
+    [endpointOptions],
+  );
+
+  const protocolEndpointOptions = useMemo(
+    () =>
+      endpointOptions.filter(
+        (endpoint) => endpoint.protocol === modelForm.protocol,
+      ),
+    [endpointOptions, modelForm.protocol],
+  );
+
+  const availableRouteOptions = useMemo(
+    () =>
+      protocolEndpointOptions.filter(
+        (endpoint) =>
+          !modelForm.routes.some((route) => route.endpointId === endpoint.id),
+      ),
+    [modelForm.routes, protocolEndpointOptions],
   );
 
   function notifyResult(result: { error?: string; success?: string }) {
@@ -117,12 +159,57 @@ export function AiSettingsConsole({
     setModelModalOpen(true);
   }
 
-  function toggleEndpoint(endpointId: string, checked: boolean) {
+  function closeModelModal() {
+    setModelModalOpen(false);
+    setModelForm(createModelFormState());
+  }
+
+  function addRoute(endpointId: string) {
     setModelForm((current) => ({
       ...current,
-      endpointIds: checked
-        ? [...new Set([...current.endpointIds, endpointId])]
-        : current.endpointIds.filter((item) => item !== endpointId),
+      routes: [
+        ...current.routes,
+        {
+          endpointId,
+          enabled: true,
+          timeoutMs: 15000,
+        },
+      ],
+    }));
+  }
+
+  function moveRoute(index: number, direction: -1 | 1) {
+    setModelForm((current) => {
+      const nextIndex = index + direction;
+
+      if (nextIndex < 0 || nextIndex >= current.routes.length) {
+        return current;
+      }
+
+      const routes = [...current.routes];
+      const [item] = routes.splice(index, 1);
+      routes.splice(nextIndex, 0, item);
+
+      return {
+        ...current,
+        routes,
+      };
+    });
+  }
+
+  function removeRoute(index: number) {
+    setModelForm((current) => ({
+      ...current,
+      routes: current.routes.filter((_, routeIndex) => routeIndex !== index),
+    }));
+  }
+
+  function updateRoute(index: number, patch: Partial<ModelRouteFormState>) {
+    setModelForm((current) => ({
+      ...current,
+      routes: current.routes.map((route, routeIndex) =>
+        routeIndex === index ? { ...route, ...patch } : route,
+      ),
     }));
   }
 
@@ -160,16 +247,16 @@ export function AiSettingsConsole({
       const result = await saveAiModelAction({
         modelId: modelForm.modelId,
         code: modelForm.code,
+        protocol: modelForm.protocol,
         label: modelForm.label,
         note: modelForm.note,
-        endpointIds: modelForm.endpointIds,
+        routes: modelForm.routes,
       });
 
       const success = notifyResult(result);
 
       if (success) {
-        setModelModalOpen(false);
-        setModelForm(createModelFormState());
+        closeModelModal();
       }
 
       setSavingModelId(null);
@@ -200,7 +287,7 @@ export function AiSettingsConsole({
               className="muted"
               style={{ margin: "10px 0 0", lineHeight: 1.7 }}
             >
-              维护提供商 API Key、接口地址，以及系统可调用的模型清单。
+              维护提供商 API Key、接口地址，以及模型调用时的主备路由链。
             </p>
           </div>
         </div>
@@ -311,13 +398,13 @@ export function AiSettingsConsole({
         <div className="section-head ai-settings-section-head">
           <div>
             <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
-              可用模型
+              模型路由
             </h2>
             <p
               className="muted"
               style={{ margin: "10px 0 0", lineHeight: 1.7 }}
             >
-              模型从后台维护，不再写死在代码里。新增模型时可以指定支持哪些接口。
+              每个模型配置一条有顺序的路由链。系统调用时会先走主路由，不可用时按顺序切备用。
             </p>
           </div>
           <Button
@@ -331,31 +418,56 @@ export function AiSettingsConsole({
         </div>
 
         {!databaseEnabled ? (
-          <Empty description="当前未配置数据库，无法维护模型清单。" />
+          <Empty description="当前未配置数据库，无法维护模型路由。" />
         ) : !models.length ? (
-          <Empty description="当前还没有可用模型，点击右上角开始添加。" />
+          <Empty description="当前还没有模型，点击右上角开始添加。" />
         ) : (
           <div className="table-surface ai-model-table">
             <div className="ai-model-table-head">
               <div>模型名</div>
-              <div>显示名称</div>
-              <div>支持接口</div>
+              <div>协议</div>
+              <div>路由链</div>
               <div>备注</div>
               <div>操作</div>
             </div>
 
             {models.map((model) => (
               <div key={model.id} className="ai-model-table-row">
-                <div style={{ fontWeight: 700 }}>{model.code}</div>
-                <div>{model.label || "-"}</div>
-                <div className="ai-model-endpoints">
-                  {model.endpoints.map((endpoint) => (
-                    <Tag key={`${model.id}-${endpoint.id}`}>
-                      {endpointLabel(endpoint.providerName, endpoint.label)}
-                    </Tag>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{model.code}</div>
+                  {model.label ? (
+                    <div className="muted" style={{ marginTop: 4 }}>
+                      {model.label}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div>
+                  <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
+                </div>
+
+                <div className="ai-model-route-summary">
+                  {model.routes.map((route, index) => (
+                    <div
+                      key={`${model.id}-${route.id}`}
+                      className={`ai-model-route-chip ${
+                        route.enabled ? "" : "disabled"
+                      }`}
+                    >
+                      <div style={{ fontWeight: 600 }}>
+                        {index + 1}.{" "}
+                        {endpointLabel(route.providerName, route.label)}
+                      </div>
+                      <div className="muted">
+                        {routeStatusLabel(index)} · {route.timeoutMs}ms
+                        {route.enabled ? "" : " · 已停用"}
+                      </div>
+                    </div>
                   ))}
                 </div>
+
                 <div className="muted">{model.note || "-"}</div>
+
                 <div className="ai-model-row-actions">
                   <Button
                     icon={<PencilLine size={16} />}
@@ -387,14 +499,11 @@ export function AiSettingsConsole({
 
       <Modal
         open={modelModalOpen}
-        onCancel={() => {
-          setModelModalOpen(false);
-          setModelForm(createModelFormState());
-        }}
+        onCancel={closeModelModal}
         footer={null}
         destroyOnHidden
-        title={modelForm.modelId ? "编辑模型" : "添加模型"}
-        width={760}
+        title={modelForm.modelId ? "编辑模型路由" : "添加模型路由"}
+        width={860}
       >
         <form className="ai-model-form" onSubmit={handleModelSubmit}>
           <div className="ai-model-form-grid">
@@ -412,7 +521,35 @@ export function AiSettingsConsole({
                     code: event.target.value,
                   }))
                 }
-                placeholder="例如 gpt-5.3 或 gemini-3.1-pro-preview"
+                placeholder="例如 gpt-5.3"
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-protocol">
+                协议
+              </label>
+              <Select
+                id="ai-model-protocol"
+                size="large"
+                value={modelForm.protocol}
+                options={[
+                  {
+                    value: "OPENAI_COMPATIBLE",
+                    label: aiProtocolLabels.OPENAI_COMPATIBLE,
+                  },
+                  {
+                    value: "GEMINI_COMPATIBLE",
+                    label: aiProtocolLabels.GEMINI_COMPATIBLE,
+                  },
+                ]}
+                onChange={(value) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    protocol: value as AiProtocol,
+                    routes: [],
+                  }))
+                }
               />
             </div>
 
@@ -447,80 +584,142 @@ export function AiSettingsConsole({
                     note: event.target.value,
                   }))
                 }
-                placeholder="可选，例如用途、限制或默认路由说明"
+                placeholder="可选，例如调用策略说明"
                 autoSize={{ minRows: 3, maxRows: 5 }}
               />
             </div>
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            <div className="field-label" style={{ marginBottom: 12 }}>
-              支持接口
+          <div className="ai-route-builder">
+            <div className="ai-route-builder-head">
+              <div>
+                <div style={{ fontWeight: 700 }}>路由链</div>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  从上到下依次尝试。第 1 条为主路由，其余为备用。
+                </div>
+              </div>
+
+              <Select<string>
+                size="large"
+                value={undefined}
+                placeholder="添加路由接口"
+                style={{ minWidth: 280 }}
+                options={availableRouteOptions.map((endpoint) => ({
+                  value: endpoint.id,
+                  label: endpointLabel(endpoint.providerName, endpoint.label),
+                }))}
+                onChange={(value) => {
+                  if (value) {
+                    addRoute(value);
+                  }
+                }}
+                disabled={!availableRouteOptions.length}
+              />
             </div>
 
-            {!endpointOptions.length ? (
-              <Empty description="当前没有可选接口，请先配置提供商。" />
+            {!modelForm.routes.length ? (
+              <div className="workspace-tip">
+                <Tag color="blue">提示</Tag>
+                <span>当前还没有配置路由，请先添加至少一个接口。</span>
+              </div>
             ) : (
-              <div className="ai-endpoint-group-stack">
-                {endpointGroups.map((provider) => (
-                  <div key={provider.id} className="ai-endpoint-group">
-                    <div className="ai-endpoint-group-head">
-                      <div style={{ fontWeight: 700 }}>{provider.name}</div>
-                      <Tag>{provider.code}</Tag>
-                    </div>
+              <div className="ai-route-stack">
+                {modelForm.routes.map((route, index) => {
+                  const endpoint = endpointMap[route.endpointId];
 
-                    <div className="ai-endpoint-option-grid">
-                      {provider.endpoints.map((endpoint) => {
-                        const checked = modelForm.endpointIds.includes(
-                          endpoint.id,
-                        );
+                  if (!endpoint) {
+                    return null;
+                  }
 
-                        return (
-                          <label
-                            key={endpoint.id}
-                            className={`ai-endpoint-option ${
-                              checked ? "active" : ""
-                            }`}
-                          >
-                            <Checkbox
-                              checked={checked}
-                              onChange={(event) =>
-                                toggleEndpoint(
-                                  endpoint.id,
-                                  event.target.checked,
-                                )
-                              }
-                            />
+                  return (
+                    <div
+                      key={`${route.endpointId}-${index}`}
+                      className="ai-route-card"
+                    >
+                      <div className="ai-route-card-main">
+                        <div className="ai-route-card-index">{index + 1}</div>
+                        <div className="ai-route-card-content">
+                          <div className="ai-route-card-top">
                             <div>
-                              <div style={{ fontWeight: 600 }}>
-                                {endpoint.label}
+                              <div style={{ fontWeight: 700 }}>
+                                {endpointLabel(
+                                  endpoint.providerName,
+                                  endpoint.label,
+                                )}
                               </div>
                               <div className="muted" style={{ marginTop: 4 }}>
-                                {aiProtocolLabels[endpoint.protocol]}
-                              </div>
-                              <div className="muted" style={{ marginTop: 6 }}>
-                                {endpoint.baseUrl}
+                                {routeStatusLabel(index)}
                               </div>
                             </div>
-                          </label>
-                        );
-                      })}
+                            <Space size={8}>
+                              <Tag color="blue">
+                                {aiProtocolLabels[endpoint.protocol]}
+                              </Tag>
+                              <Tag>{endpoint.providerCode}</Tag>
+                            </Space>
+                          </div>
+
+                          <div className="muted" style={{ marginTop: 8 }}>
+                            {endpoint.baseUrl}
+                          </div>
+
+                          <div className="ai-route-card-controls">
+                            <div>
+                              <div className="review-toolbar-label">超时</div>
+                              <InputNumber
+                                min={1000}
+                                max={120000}
+                                step={1000}
+                                value={route.timeoutMs}
+                                addonAfter="ms"
+                                onChange={(value) =>
+                                  updateRoute(index, {
+                                    timeoutMs:
+                                      typeof value === "number" ? value : 15000,
+                                  })
+                                }
+                              />
+                            </div>
+
+                            <div>
+                              <div className="review-toolbar-label">启用</div>
+                              <Switch
+                                checked={route.enabled}
+                                onChange={(checked) =>
+                                  updateRoute(index, { enabled: checked })
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="ai-route-card-actions">
+                        <Button
+                          icon={<ArrowUp size={16} />}
+                          onClick={() => moveRoute(index, -1)}
+                          disabled={index === 0}
+                        />
+                        <Button
+                          icon={<ArrowDown size={16} />}
+                          onClick={() => moveRoute(index, 1)}
+                          disabled={index === modelForm.routes.length - 1}
+                        />
+                        <Button
+                          danger
+                          icon={<X size={16} />}
+                          onClick={() => removeRoute(index)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
           <div className="ai-model-form-actions">
-            <Button
-              onClick={() => {
-                setModelModalOpen(false);
-                setModelForm(createModelFormState());
-              }}
-            >
-              取消
-            </Button>
+            <Button onClick={closeModelModal}>取消</Button>
             <Button
               type="primary"
               htmlType="submit"
@@ -528,7 +727,7 @@ export function AiSettingsConsole({
                 isSavingModel && savingModelId === (modelForm.modelId ?? "new")
               }
             >
-              {modelForm.modelId ? "保存模型" : "创建模型"}
+              {modelForm.modelId ? "保存模型路由" : "创建模型"}
             </Button>
           </div>
         </form>

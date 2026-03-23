@@ -27,10 +27,16 @@ export type AiSettingsProvider = {
 export type AiSettingsModel = {
   id: string;
   code: string;
+  protocol: AiProtocol;
   label: string | null;
   note: string | null;
-  endpointIds: string[];
-  endpoints: AiSettingsEndpointOption[];
+  routes: Array<
+    AiSettingsEndpointOption & {
+      priority: number;
+      enabled: boolean;
+      timeoutMs: number;
+    }
+  >;
 };
 
 export type AiSettingsData = {

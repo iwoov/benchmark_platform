@@ -245,6 +245,7 @@ model AiProviderEndpoint {
 model AiModel {
   id          String                  @id @default(cuid())
   code        String                  @unique
+  protocol    AiProtocol
   label       String?
   note        String?
   endpoints   AiProviderEndpointModel[]
@@ -255,11 +256,16 @@ model AiModel {
 model AiProviderEndpointModel {
   endpointId String
   modelId    String
+  priority   Int                @default(1)
+  enabled    Boolean            @default(true)
+  timeoutMs  Int                @default(15000)
   endpoint   AiProviderEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
   model      AiModel            @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
   @@id([endpointId, modelId])
+  @@unique([modelId, priority])
   @@index([modelId])
+  @@index([modelId, enabled, priority])
 }
 
 model SyncLog {
