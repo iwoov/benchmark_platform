@@ -9,16 +9,16 @@ import {
   updateOwnPasswordAction,
   updateOwnProfileAction,
 } from "@/app/actions/account-settings";
+import {
+  getPlatformRoleColor,
+  getPlatformRoleLabel,
+  getProjectRoleColor,
+  getProjectRoleLabel,
+} from "@/lib/auth/role-display";
 
 type ProjectRole = "AUTHOR" | "REVIEWER" | "PROJECT_MANAGER";
 
 const initialState: AccountFormState = {};
-
-function roleColor(role: ProjectRole) {
-  if (role === "AUTHOR") return "blue";
-  if (role === "REVIEWER") return "gold";
-  return "geekblue";
-}
 
 export function AccountSettingsForms({
   user,
@@ -60,17 +60,24 @@ export function AccountSettingsForms({
       <section className="content-surface">
         <div className="section-head">
           <div>
-            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>账户资料</h2>
-            <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
+            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+              账户资料
+            </h2>
+            <p
+              className="muted"
+              style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+            >
               修改你自己的用户名、姓名和邮箱信息。
             </p>
           </div>
           <Space size={8}>
-            <Tag color="blue">{user.platformRole}</Tag>
+            <Tag color={getPlatformRoleColor(user.platformRole)}>
+              {getPlatformRoleLabel(user.platformRole)}
+            </Tag>
             {user.projectRoles.length ? (
               user.projectRoles.map((role) => (
-                <Tag key={role} color={roleColor(role)}>
-                  {role}
+                <Tag key={role} color={getProjectRoleColor(role)}>
+                  {getProjectRoleLabel(role)}
                 </Tag>
               ))
             ) : (
@@ -79,9 +86,16 @@ export function AccountSettingsForms({
           </Space>
         </div>
 
-        {profileState.error ? <Alert type="error" message={profileState.error} showIcon /> : null}
+        {profileState.error ? (
+          <Alert type="error" message={profileState.error} showIcon />
+        ) : null}
         {profileState.success ? (
-          <Alert type="success" message={profileState.success} showIcon style={{ marginTop: 12 }} />
+          <Alert
+            type="success"
+            message={profileState.success}
+            showIcon
+            style={{ marginTop: 12 }}
+          />
         ) : null}
 
         <form action={profileAction} style={{ marginTop: 16 }}>
@@ -125,8 +139,19 @@ export function AccountSettingsForms({
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
-            <Button type="primary" htmlType="submit" size="large" loading={profilePending}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 18,
+            }}
+          >
+            <Button
+              type="primary"
+              htmlType="submit"
+              size="large"
+              loading={profilePending}
+            >
               保存资料
             </Button>
           </div>
@@ -142,13 +167,27 @@ export function AccountSettingsForms({
         </div>
 
         {passwordState.error ? (
-          <Alert type="error" message={passwordState.error} showIcon style={{ marginTop: 16 }} />
+          <Alert
+            type="error"
+            message={passwordState.error}
+            showIcon
+            style={{ marginTop: 16 }}
+          />
         ) : null}
         {passwordState.success ? (
-          <Alert type="success" message={passwordState.success} showIcon style={{ marginTop: 16 }} />
+          <Alert
+            type="success"
+            message={passwordState.success}
+            showIcon
+            style={{ marginTop: 16 }}
+          />
         ) : null}
 
-        <form ref={passwordFormRef} action={passwordAction} style={{ marginTop: 16 }}>
+        <form
+          ref={passwordFormRef}
+          action={passwordAction}
+          style={{ marginTop: 16 }}
+        >
           <div className="settings-form-grid">
             <div className="settings-form-full">
               <label className="field-label" htmlFor="currentPassword">
@@ -190,8 +229,19 @@ export function AccountSettingsForms({
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
-            <Button type="primary" htmlType="submit" size="large" loading={passwordPending}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: 18,
+            }}
+          >
+            <Button
+              type="primary"
+              htmlType="submit"
+              size="large"
+              loading={passwordPending}
+            >
               更新密码
             </Button>
           </div>

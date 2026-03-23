@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { getProjectMemberManagerScope } from "@/lib/auth/project-permissions";
 
 const assignProjectMemberSchema = z.object({
   projectId: z.string().min(1, "缺少项目 ID"),
@@ -20,28 +20,10 @@ export type ProjectMemberFormState = {
   success?: string;
 };
 
-async function requireAdmin() {
-  const session = await auth();
-
-  if (session?.user.platformRole !== "PLATFORM_ADMIN") {
-    throw new Error("只有平台管理员可以管理项目成员。");
-  }
-
-  return session;
-}
-
 export async function assignProjectMemberAction(
   _prevState: ProjectMemberFormState,
   formData: FormData,
 ): Promise<ProjectMemberFormState> {
-  try {
-    await requireAdmin();
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "无权限执行该操作。",
-    };
-  }
-
   const parsed = assignProjectMemberSchema.safeParse({
     projectId: formData.get("projectId"),
     userId: formData.get("userId"),
@@ -51,6 +33,30 @@ export async function assignProjectMemberAction(
   if (!parsed.success) {
     return {
       error: parsed.error.issues[0]?.message ?? "表单校验失败。",
+    };
+  }
+
+  let managerScope: Awaited<ReturnType<typeof getProjectMemberManagerScope>>;
+
+  try {
+    managerScope = await getProjectMemberManagerScope(parsed.data.projectId);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "无权限执行该操作。",
+    };
+  }
+
+  const project = await prisma.project.findUnique({
+    where: { id: parsed.data.projectId },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  if (!project) {
+    return {
+      error: "项目不存在。",
     };
   }
 
@@ -68,6 +74,29 @@ export async function assignProjectMemberAction(
   if (!user || user.status !== "ACTIVE") {
     return {
       error: "用户不存在或已停用。",
+    };
+  }
+
+  const existingMembership = await prisma.projectMember.findUnique({
+    where: {
+      projectId_userId: {
+        projectId: parsed.data.projectId,
+        userId: parsed.data.userId,
+      },
+    },
+    select: {
+      role: true,
+    },
+  });
+
+  if (
+    managerScope === "PROJECT_MANAGER" &&
+    (parsed.data.role === "PROJECT_MANAGER" ||
+      existingMembership?.role === "PROJECT_MANAGER")
+  ) {
+    return {
+      error:
+        "项目负责人只能维护出题用户和审核用户，项目负责人角色仍由平台管理员分配。",
     };
   }
 
@@ -91,11 +120,12 @@ export async function assignProjectMemberAction(
   revalidatePath("/admin/projects");
   revalidatePath("/workspace");
   revalidatePath("/workspace/projects");
+  revalidatePath("/workspace/manage");
   revalidatePath("/workspace/submissions");
   revalidatePath("/workspace/reviews");
 
   return {
-    success: `已将 ${user.name} 设为 ${parsed.data.role}。`,
+    success: `已在项目 ${project.name} 中更新 ${user.name} 的成员角色。`,
   };
 }
 
@@ -103,14 +133,6 @@ export async function removeProjectMemberAction(
   _prevState: ProjectMemberFormState,
   formData: FormData,
 ): Promise<ProjectMemberFormState> {
-  try {
-    await requireAdmin();
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "无权限执行该操作。",
-    };
-  }
-
   const parsed = removeProjectMemberSchema.safeParse({
     membershipId: formData.get("membershipId"),
   });
@@ -138,6 +160,25 @@ export async function removeProjectMemberAction(
     };
   }
 
+  let managerScope: Awaited<ReturnType<typeof getProjectMemberManagerScope>>;
+
+  try {
+    managerScope = await getProjectMemberManagerScope(membership.projectId);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "无权限执行该操作。",
+    };
+  }
+
+  if (
+    managerScope === "PROJECT_MANAGER" &&
+    membership.role === "PROJECT_MANAGER"
+  ) {
+    return {
+      error: "项目负责人不能移除项目负责人角色，请由平台管理员处理。",
+    };
+  }
+
   await prisma.projectMember.delete({
     where: {
       id: parsed.data.membershipId,
@@ -147,6 +188,7 @@ export async function removeProjectMemberAction(
   revalidatePath("/admin/projects");
   revalidatePath("/workspace");
   revalidatePath("/workspace/projects");
+  revalidatePath("/workspace/manage");
   revalidatePath("/workspace/submissions");
   revalidatePath("/workspace/reviews");
 

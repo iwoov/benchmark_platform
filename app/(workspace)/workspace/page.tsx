@@ -15,6 +15,11 @@ export default async function WorkspaceHomePage() {
       note: "基于项目成员关系展示",
     },
     {
+      label: "负责项目",
+      value: String(workspaceContext?.managerProjectCount ?? 0),
+      note: "拥有 PROJECT_MANAGER 角色的项目",
+    },
+    {
       label: "可出题项目",
       value: String(workspaceContext?.authorProjectCount ?? 0),
       note: "拥有 AUTHOR 角色的项目",
@@ -37,13 +42,13 @@ export default async function WorkspaceHomePage() {
           className="muted"
           style={{ margin: "12px 0 0", lineHeight: 1.7, maxWidth: 720 }}
         >
-          普通用户统一从这里处理项目协作任务。平台会根据你在不同项目中的角色，动态决定左侧菜单和可访问的功能入口。
+          非平台管理员统一从这里处理项目协作任务。平台会根据你在不同项目中的角色，动态决定左侧菜单和可访问的功能入口。
         </p>
       </section>
 
       <Row gutter={[16, 16]}>
         {quickStats.map((item) => (
-          <Col xs={24} md={8} key={item.label}>
+          <Col xs={24} md={12} xl={6} key={item.label}>
             <div className="content-surface" style={{ height: "100%" }}>
               <div className="stat-value">{item.value}</div>
               <div style={{ marginTop: 8, fontWeight: 700 }}>{item.label}</div>
@@ -65,13 +70,22 @@ export default async function WorkspaceHomePage() {
               className="muted"
               style={{ margin: "10px 0 0", lineHeight: 1.7 }}
             >
-              平台级是普通用户，项目级再区分出题专家和审核专家。
+              平台级区分平台管理员和平台用户，项目级再拆分项目负责人、出题用户和审核用户。
             </p>
           </div>
         </div>
 
         {workspaceContext?.projectCount ? (
           <div style={{ display: "grid", gap: 12 }}>
+            {workspaceContext.canManageProjects ? (
+              <div className="workspace-tip">
+                <Tag color="geekblue">PROJECT_MANAGER</Tag>
+                <span>
+                  可管理自己负责项目的成员分配，并可在项目管理页中导入 JSON /
+                  Excel 数据源。
+                </span>
+              </div>
+            ) : null}
             {workspaceContext.canAuthor ? (
               <div className="workspace-tip">
                 <Tag color="blue">AUTHOR</Tag>

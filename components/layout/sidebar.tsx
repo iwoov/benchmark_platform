@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Avatar, Space, Tag } from "antd";
 import {
+  Bot,
   FolderKanban,
   LayoutDashboard,
   PlugZap,
@@ -10,6 +12,14 @@ import {
   SlidersHorizontal,
   UsersRound,
 } from "lucide-react";
+import { LogoutButton } from "@/components/layout/logout-button";
+import {
+  getPlatformRoleColor,
+  getPlatformRoleLabel,
+  getProjectRoleColor,
+  getProjectRoleLabel,
+  type ProjectRoleValue,
+} from "@/lib/auth/role-display";
 import { cn } from "@/lib/utils/cn";
 
 const adminSections = [
@@ -33,7 +43,10 @@ const adminSections = [
   },
   {
     title: "审核工作台",
-    items: [{ href: "/admin/reviews", label: "审核记录", icon: ScrollText }],
+    items: [
+      { href: "/admin/ai", label: "AI 设置", icon: Bot },
+      { href: "/admin/reviews", label: "审核记录", icon: ScrollText },
+    ],
   },
   {
     title: "个人",
@@ -51,6 +64,7 @@ const workspaceSections = [
   {
     title: "项目协作",
     items: [
+      { href: "/workspace/manage", label: "项目管理", icon: UsersRound },
       { href: "/workspace/projects", label: "我的项目", icon: FolderKanban },
       { href: "/workspace/submissions", label: "出题任务", icon: PlugZap },
       { href: "/workspace/reviews", label: "审核任务", icon: ScrollText },
@@ -71,11 +85,20 @@ const workspaceSections = [
 export function Sidebar({
   pathname,
   variant,
+  currentUser,
   workspaceCapabilities,
 }: {
   pathname: string;
   variant: "admin" | "workspace";
+  currentUser?: {
+    username: string;
+    name: string;
+    email: string | null;
+    platformRole: "PLATFORM_ADMIN" | "USER";
+    projectRoles?: ProjectRoleValue[];
+  };
   workspaceCapabilities?: {
+    canManageProjects: boolean;
     canAuthor: boolean;
     canReview: boolean;
   };
@@ -86,6 +109,10 @@ export function Sidebar({
       : workspaceSections.map((section) => ({
           ...section,
           items: section.items.filter((item) => {
+            if (item.href === "/workspace/manage") {
+              return workspaceCapabilities?.canManageProjects;
+            }
+
             if (item.href === "/workspace/submissions") {
               return workspaceCapabilities?.canAuthor;
             }
@@ -102,44 +129,91 @@ export function Sidebar({
   const copy =
     variant === "admin"
       ? "平台级配置、组织与数据源管理"
-      : "出题、审核与项目协作工作台";
+      : "项目管理、出题、审核协作工作台";
+  const showSidebarHeader = variant !== "admin";
 
   return (
     <aside className="dashboard-sidebar">
       <div className="sidebar-shell">
-        <div className="sidebar-header">
-          <div className="sidebar-eyebrow">Benchmark Platform</div>
-          <div className="sidebar-title">{title}</div>
-          <div className="muted sidebar-copy">{copy}</div>
+        <div>
+          {showSidebarHeader ? (
+            <div className="sidebar-header">
+              <div className="sidebar-eyebrow">Benchmark Platform</div>
+              <div className="sidebar-title">{title}</div>
+              <div className="muted sidebar-copy">{copy}</div>
+            </div>
+          ) : null}
+
+          <nav className="sidebar-nav-groups">
+            {visibleSections.map((section) => (
+              <div key={section.title}>
+                <div className="sidebar-group-title">{section.title}</div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== rootPath &&
+                        pathname.startsWith(item.href));
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn("sidebar-link", isActive && "active")}
+                      >
+                        <Icon size={17} />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
         </div>
 
-        <nav className="sidebar-nav-groups">
-          {visibleSections.map((section) => (
-            <div key={section.title}>
-              <div className="sidebar-group-title">{section.title}</div>
+        <div className="sidebar-footer">
+          {variant === "workspace" && currentUser ? (
+            <div className="sidebar-user-card">
+              <div className="sidebar-user-topline">
+                <Avatar className="sidebar-user-avatar">
+                  {currentUser.name?.slice(0, 1).toUpperCase()}
+                </Avatar>
+                <div className="sidebar-user-main">
+                  <div className="sidebar-user-name">{currentUser.name}</div>
+                  <div className="sidebar-user-id">@{currentUser.username}</div>
+                </div>
+              </div>
 
-              <div style={{ display: "grid", gap: 6 }}>
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive =
-                    pathname === item.href ||
-                    (item.href !== rootPath && pathname.startsWith(item.href));
+              {currentUser.email ? (
+                <div className="sidebar-user-email">{currentUser.email}</div>
+              ) : null}
 
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn("sidebar-link", isActive && "active")}
-                    >
-                      <Icon size={17} />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
+              <Space size={[8, 8]} wrap>
+                <Tag color={getPlatformRoleColor(currentUser.platformRole)}>
+                  {getPlatformRoleLabel(currentUser.platformRole)}
+                </Tag>
+                {currentUser.projectRoles?.map((role) => (
+                  <Tag key={role} color={getProjectRoleColor(role)}>
+                    {getProjectRoleLabel(role)}
+                  </Tag>
+                ))}
+              </Space>
+
+              <div className="sidebar-logout">
+                <LogoutButton />
               </div>
             </div>
-          ))}
-        </nav>
+          ) : (
+            <div className="sidebar-admin-actions">
+              <div className="sidebar-logout">
+                <LogoutButton />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );

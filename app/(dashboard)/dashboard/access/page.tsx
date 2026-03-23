@@ -1,12 +1,22 @@
 import { Card, Space, Tag } from "antd";
+import {
+  getPlatformRoleColor,
+  getPlatformRoleLabel,
+  getProjectRoleColor,
+  getProjectRoleLabel,
+} from "@/lib/auth/role-display";
 
 const accessItems = [
   {
     label: "平台级角色",
     content: (
       <Space wrap>
-        <Tag color="blue">PLATFORM_ADMIN</Tag>
-        <Tag>USER</Tag>
+        <Tag color={getPlatformRoleColor("PLATFORM_ADMIN")}>
+          {getPlatformRoleLabel("PLATFORM_ADMIN")}
+        </Tag>
+        <Tag color={getPlatformRoleColor("USER")}>
+          {getPlatformRoleLabel("USER")}
+        </Tag>
       </Space>
     ),
   },
@@ -14,15 +24,27 @@ const accessItems = [
     label: "项目级角色",
     content: (
       <Space wrap>
-        <Tag color="geekblue">PROJECT_MANAGER</Tag>
-        <Tag color="green">AUTHOR</Tag>
-        <Tag color="gold">REVIEWER</Tag>
+        <Tag color={getProjectRoleColor("PROJECT_MANAGER")}>
+          {getProjectRoleLabel("PROJECT_MANAGER")}
+        </Tag>
+        <Tag color={getProjectRoleColor("AUTHOR")}>
+          {getProjectRoleLabel("AUTHOR")}
+        </Tag>
+        <Tag color={getProjectRoleColor("REVIEWER")}>
+          {getProjectRoleLabel("REVIEWER")}
+        </Tag>
       </Space>
     ),
   },
   {
+    label: "职责边界",
+    content:
+      "平台管理员负责平台账号、全部项目和项目负责人角色；项目负责人负责自己项目中的出题/审核成员；出题用户和审核用户只处理项目协作任务。",
+  },
+  {
     label: "当前状态",
-    content: "已完成登录态识别，后续补充基于项目成员关系的细粒度鉴权。",
+    content:
+      "已完成平台管理员、项目负责人和普通项目成员的页面分流，并在项目成员变更上补充了服务端权限校验。",
   },
 ];
 
@@ -49,7 +71,8 @@ export default function AccessPage() {
               gridTemplateColumns: "180px 1fr",
               gap: 16,
               padding: "16px 18px",
-              borderTop: index === 0 ? "none" : "1px solid rgba(217, 224, 234, 0.9)",
+              borderTop:
+                index === 0 ? "none" : "1px solid rgba(217, 224, 234, 0.9)",
             }}
           >
             <div style={{ fontWeight: 700 }}>{item.label}</div>

@@ -33,10 +33,16 @@ export default async function WorkspaceLayout({
               name: currentUser.name,
               email: currentUser.email,
               platformRole: currentUser.platformRole,
+              projectRoles: [
+                ...new Set(
+                  currentUser.memberships.map((membership) => membership.role),
+                ),
+              ],
             }
           : undefined
       }
       workspaceCapabilities={{
+        canManageProjects: workspaceContext.canManageProjects,
         canAuthor: workspaceContext.canAuthor,
         canReview: workspaceContext.canReview,
       }}

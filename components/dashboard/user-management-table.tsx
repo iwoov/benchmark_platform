@@ -8,6 +8,12 @@ import {
   type CreateUserFormState,
   updateUserAction,
 } from "@/app/actions/users";
+import {
+  getPlatformRoleColor,
+  getPlatformRoleLabel,
+  getProjectRoleColor,
+  getProjectRoleLabel,
+} from "@/lib/auth/role-display";
 
 type UserItem = {
   id: string;
@@ -22,12 +28,6 @@ type UserItem = {
 };
 
 const initialState: CreateUserFormState = {};
-
-function roleColor(role: UserItem["projectRoleSummary"][number]) {
-  if (role === "AUTHOR") return "blue";
-  if (role === "REVIEWER") return "gold";
-  return "geekblue";
-}
 
 export function UserManagementTable({ users }: { users: UserItem[] }) {
   const router = useRouter();
@@ -89,7 +89,8 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
               key={user.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 0.95fr 1.15fr 0.9fr 1.15fr 0.7fr 0.9fr",
+                gridTemplateColumns:
+                  "1fr 0.95fr 1.15fr 0.9fr 1.15fr 0.7fr 0.9fr",
                 gap: 16,
                 padding: "16px",
                 borderTop: "1px solid rgba(217, 224, 234, 0.85)",
@@ -100,15 +101,15 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
               <div>{user.name}</div>
               <div className="muted">{user.email ?? "-"}</div>
               <div>
-                <Tag color={user.platformRole === "PLATFORM_ADMIN" ? "blue" : "default"}>
-                  {user.platformRole}
+                <Tag color={getPlatformRoleColor(user.platformRole)}>
+                  {getPlatformRoleLabel(user.platformRole)}
                 </Tag>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {user.projectRoleSummary.length ? (
                   user.projectRoleSummary.map((role) => (
-                    <Tag key={role} color={roleColor(role)}>
-                      {role}
+                    <Tag key={role} color={getProjectRoleColor(role)}>
+                      {getProjectRoleLabel(role)}
                     </Tag>
                   ))
                 ) : (
@@ -160,8 +161,12 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
             size={16}
             style={{ width: "100%", marginTop: 8 }}
           >
-            {state.error ? <Alert type="error" message={state.error} showIcon /> : null}
-            {state.success ? <Alert type="success" message={state.success} showIcon /> : null}
+            {state.error ? (
+              <Alert type="error" message={state.error} showIcon />
+            ) : null}
+            {state.success ? (
+              <Alert type="success" message={state.success} showIcon />
+            ) : null}
 
             <form ref={formRef} action={formAction}>
               <input type="hidden" name="userId" value={activeUser.id} />
@@ -248,7 +253,11 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
                   </div>
 
                   <div className="member-form-submit">
-                    <Button type="primary" htmlType="submit" loading={isPending}>
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={isPending}
+                    >
                       保存修改
                     </Button>
                   </div>
@@ -257,7 +266,8 @@ export function UserManagementTable({ users }: { users: UserItem[] }) {
                 <div className="workspace-tip">
                   <Tag color="blue">说明</Tag>
                   <span>
-                    当前用户参与项目数：{activeUser.projectCount}。功能角色不在这里设置，请到项目管理页中的“成员管理”进行分配。
+                    当前用户参与项目数：{activeUser.projectCount}
+                    。功能角色不在这里设置，请到项目管理页中的“成员管理”进行分配。
                   </span>
                 </div>
               </Space>

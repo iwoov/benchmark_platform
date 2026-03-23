@@ -31,6 +31,11 @@ export default async function AdminLayout({
               name: currentUser.name,
               email: currentUser.email,
               platformRole: currentUser.platformRole,
+              projectRoles: [
+                ...new Set(
+                  currentUser.memberships.map((membership) => membership.role),
+                ),
+              ],
             }
           : undefined
       }

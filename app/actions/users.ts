@@ -135,6 +135,7 @@ export async function createUserAction(
   });
 
   revalidatePath("/admin/users");
+  revalidatePath("/workspace/manage");
 
   return {
     success: `用户 ${username} 已创建。`,
@@ -241,6 +242,7 @@ export async function updateUserAction(
   revalidatePath("/admin/projects");
   revalidatePath("/workspace");
   revalidatePath("/workspace/projects");
+  revalidatePath("/workspace/manage");
   revalidatePath("/workspace/submissions");
   revalidatePath("/workspace/reviews");
 

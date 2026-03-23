@@ -32,7 +32,10 @@ const profileSchema = z.object({
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, "请输入当前密码"),
-    newPassword: z.string().min(8, "新密码至少 8 位").max(64, "新密码不能超过 64 位"),
+    newPassword: z
+      .string()
+      .min(8, "新密码至少 8 位")
+      .max(64, "新密码不能超过 64 位"),
     confirmPassword: z.string().min(8, "请再次输入新密码"),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -57,6 +60,7 @@ function revalidateAccountPaths(platformRole: "PLATFORM_ADMIN" | "USER") {
   revalidatePath("/workspace");
   revalidatePath("/workspace/settings");
   revalidatePath("/workspace/projects");
+  revalidatePath("/workspace/manage");
   revalidatePath("/workspace/submissions");
   revalidatePath("/workspace/reviews");
 }
@@ -177,7 +181,10 @@ export async function updateOwnPasswordAction(
     };
   }
 
-  const isValid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
+  const isValid = await bcrypt.compare(
+    parsed.data.currentPassword,
+    user.passwordHash,
+  );
 
   if (!isValid) {
     return {

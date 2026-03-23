@@ -8,6 +8,10 @@ import {
   removeProjectMemberAction,
   type ProjectMemberFormState,
 } from "@/app/actions/project-members";
+import {
+  getProjectRoleColor,
+  getProjectRoleLabel,
+} from "@/lib/auth/role-display";
 
 type UserOption = {
   id: string;
@@ -41,18 +45,14 @@ type ProjectOption = {
 
 const initialState: ProjectMemberFormState = {};
 
-function roleColor(role: ProjectMemberItem["role"]) {
-  if (role === "AUTHOR") return "blue";
-  if (role === "REVIEWER") return "gold";
-  return "geekblue";
-}
-
 export function ProjectMembersManager({
   projects,
   users,
+  canManageProjectManagerRole = true,
 }: {
   projects: ProjectOption[];
   users: UserOption[];
+  canManageProjectManagerRole?: boolean;
 }) {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [assignState, assignAction, assignPending] = useActionState(
@@ -132,10 +132,12 @@ export function ProjectMembersManager({
           activeProject ? (
             <div>
               <div style={{ fontSize: 20, fontWeight: 700 }}>
-                {activeProject.name} · 成员管理
+                {activeProject.name} · 成员权限
               </div>
               <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>
-                为当前项目分配出题专家、审核专家或项目管理员。
+                {canManageProjectManagerRole
+                  ? "为当前项目分配项目负责人、出题用户或审核用户。"
+                  : "为当前项目分配出题用户或审核用户。项目负责人角色仍由平台管理员维护。"}
               </div>
             </div>
           ) : null
@@ -143,11 +145,15 @@ export function ProjectMembersManager({
       >
         {activeProject ? (
           <div style={{ display: "grid", gap: 20, marginTop: 8 }}>
-            {assignState.error ? <Alert type="error" message={assignState.error} showIcon /> : null}
+            {assignState.error ? (
+              <Alert type="error" message={assignState.error} showIcon />
+            ) : null}
             {assignState.success ? (
               <Alert type="success" message={assignState.success} showIcon />
             ) : null}
-            {removeState.error ? <Alert type="error" message={removeState.error} showIcon /> : null}
+            {removeState.error ? (
+              <Alert type="error" message={removeState.error} showIcon />
+            ) : null}
             {removeState.success ? (
               <Alert type="success" message={removeState.success} showIcon />
             ) : null}
@@ -186,9 +192,11 @@ export function ProjectMembersManager({
                     defaultValue="AUTHOR"
                     className="field-select"
                   >
-                    <option value="AUTHOR">AUTHOR</option>
-                    <option value="REVIEWER">REVIEWER</option>
-                    <option value="PROJECT_MANAGER">PROJECT_MANAGER</option>
+                    <option value="AUTHOR">出题用户</option>
+                    <option value="REVIEWER">审核用户</option>
+                    {canManageProjectManagerRole ? (
+                      <option value="PROJECT_MANAGER">项目负责人</option>
+                    ) : null}
                   </select>
                 </div>
 
@@ -210,33 +218,67 @@ export function ProjectMembersManager({
                 当前成员
               </div>
 
+              {!canManageProjectManagerRole ? (
+                <div className="workspace-tip" style={{ marginBottom: 12 }}>
+                  <Tag color="blue">说明</Tag>
+                  <span>
+                    项目负责人可以维护自己项目中的出题用户和审核用户，项目负责人角色的新增与调整仍由平台管理员处理。
+                  </span>
+                </div>
+              ) : null}
+
               {activeProject.members.length ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   {activeProject.members.map((member) => (
-                    <div key={member.id} className="workspace-tip" style={{ justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <Tag color={roleColor(member.role)}>{member.role}</Tag>
+                    <div
+                      key={member.id}
+                      className="workspace-tip"
+                      style={{ justifyContent: "space-between" }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                        }}
+                      >
+                        <Tag color={getProjectRoleColor(member.role)}>
+                          {getProjectRoleLabel(member.role)}
+                        </Tag>
                         <div>
-                          <div style={{ fontWeight: 700 }}>{member.user.name}</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {member.user.name}
+                          </div>
                           <div className="muted">
-                            {member.user.username ?? member.user.email ?? member.user.id}
+                            {member.user.username ??
+                              member.user.email ??
+                              member.user.id}
                           </div>
                         </div>
                       </div>
 
                       <Space size={12}>
                         <span className="muted">{member.joinedAt}</span>
-                        <form action={removeAction}>
-                          <input type="hidden" name="membershipId" value={member.id} />
-                          <Button
-                            danger
-                            htmlType="submit"
-                            icon={<X size={14} />}
-                            loading={removePending}
-                          >
-                            移除
-                          </Button>
-                        </form>
+                        {canManageProjectManagerRole ||
+                        member.role !== "PROJECT_MANAGER" ? (
+                          <form action={removeAction}>
+                            <input
+                              type="hidden"
+                              name="membershipId"
+                              value={member.id}
+                            />
+                            <Button
+                              danger
+                              htmlType="submit"
+                              icon={<X size={14} />}
+                              loading={removePending}
+                            >
+                              移除
+                            </Button>
+                          </form>
+                        ) : (
+                          <Tag>平台管理员维护</Tag>
+                        )}
                       </Space>
                     </div>
                   ))}

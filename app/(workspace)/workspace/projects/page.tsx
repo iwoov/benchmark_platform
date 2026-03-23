@@ -1,5 +1,9 @@
 import { Empty, Tag } from "antd";
 import { auth } from "@/auth";
+import {
+  getProjectRoleColor,
+  getProjectRoleLabel,
+} from "@/lib/auth/role-display";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 
 export default async function WorkspaceProjectsPage() {
@@ -53,16 +57,8 @@ export default async function WorkspaceProjectsPage() {
               </div>
               <div>{membership.project.code}</div>
               <div>
-                <Tag
-                  color={
-                    membership.role === "AUTHOR"
-                      ? "blue"
-                      : membership.role === "REVIEWER"
-                        ? "gold"
-                        : "default"
-                  }
-                >
-                  {membership.role}
+                <Tag color={getProjectRoleColor(membership.role)}>
+                  {getProjectRoleLabel(membership.role)}
                 </Tag>
               </div>
               <div className="muted">

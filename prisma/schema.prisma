@@ -31,11 +31,21 @@ enum ProjectMemberRole {
 
 enum DataSourceType {
   DINGTALK_BITABLE
+  JSON_UPLOAD
+  EXCEL_UPLOAD
 }
 
 enum DataSourceStatus {
   ACTIVE
   INACTIVE
+}
+
+enum QuestionStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
 }
 
 enum ReviewDecision {
@@ -82,20 +92,21 @@ model User {
 }
 
 model Project {
-  id          String          @id @default(cuid())
-  name        String
-  code        String          @unique
-  description String?
-  status      ProjectStatus   @default(ACTIVE)
-  createdById String
-  createdBy   User            @relation("ProjectCreator", fields: [createdById], references: [id])
-  members     ProjectMember[]
-  datasources ProjectDataSource[]
-  reviews     Review[]
+  id           String            @id @default(cuid())
+  name         String
+  code         String            @unique
+  description  String?
+  status       ProjectStatus     @default(ACTIVE)
+  createdById  String
+  createdBy    User              @relation("ProjectCreator", fields: [createdById], references: [id])
+  members      ProjectMember[]
+  datasources  ProjectDataSource[]
+  questions    Question[]
+  reviews      Review[]
   aiReviewRuns AiReviewRun[]
-  syncLogs    SyncLog[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  syncLogs     SyncLog[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 }
 
 model ProjectMember {
@@ -116,17 +127,43 @@ model ProjectDataSource {
   name            String
   type            DataSourceType   @default(DINGTALK_BITABLE)
   externalAppId   String?
-  externalTableId String
+  externalTableId String?
   externalViewId  String?
   fieldMapping    Json?
   syncConfig      Json?
   status          DataSourceStatus @default(ACTIVE)
   project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questions       Question[]
   reviews         Review[]
   aiReviewRuns    AiReviewRun[]
   syncLogs        SyncLog[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+}
+
+model Question {
+  id               String         @id @default(cuid())
+  projectId        String
+  datasourceId     String
+  externalRecordId String
+  title            String
+  content          String
+  answer           String?
+  analysis         String?
+  questionType     String?
+  difficulty       String?
+  status           QuestionStatus @default(DRAFT)
+  metadata         Json?
+  sourceUpdatedAt  DateTime?
+  lastSyncedAt     DateTime?
+  project          Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([datasourceId, externalRecordId])
+  @@index([projectId, status])
+  @@index([projectId, datasourceId])
 }
 
 model Review {

@@ -80,7 +80,7 @@ export default async function ProjectsPage() {
         <div>
           <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>项目管理</h2>
           <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
-            当前页面已支持项目成员管理。管理员可以在项目中分配出题专家、审核专家和项目管理员，普通用户工作台会立即按这些角色生效。
+            平台管理员可以查看全部项目并维护项目负责人、出题用户和审核用户。项目负责人则会在自己的工作台中管理所属项目的普通成员。
           </p>
         </div>
         <Button type="primary" disabled>

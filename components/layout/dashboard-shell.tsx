@@ -2,9 +2,8 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { Avatar, Space, Tag } from "antd";
 import { Sidebar } from "@/components/layout/sidebar";
-import { LogoutButton } from "@/components/layout/logout-button";
+import type { ProjectRoleValue } from "@/lib/auth/role-display";
 import type { Session } from "next-auth";
 
 export function DashboardShell({
@@ -22,8 +21,10 @@ export function DashboardShell({
     name: string;
     email: string | null;
     platformRole: "PLATFORM_ADMIN" | "USER";
+    projectRoles?: ProjectRoleValue[];
   };
   workspaceCapabilities?: {
+    canManageProjects: boolean;
     canAuthor: boolean;
     canReview: boolean;
   };
@@ -31,6 +32,7 @@ export function DashboardShell({
   const pathname = usePathname();
   const title = variant === "admin" ? "管理员后台" : "专家工作台";
   const kicker = variant === "admin" ? "Admin Surface" : "Expert Workspace";
+  const showTopbar = variant !== "admin";
   const displayUser = currentUser ?? {
     username: session.user.username,
     name: session.user.name ?? "",
@@ -43,41 +45,20 @@ export function DashboardShell({
       <Sidebar
         pathname={pathname}
         variant={variant}
+        currentUser={displayUser}
         workspaceCapabilities={workspaceCapabilities}
       />
       <div className="dashboard-main">
-        <header className="dashboard-topbar">
-          <div className="dashboard-title-block">
-            <div className="dashboard-kicker">{kicker}</div>
-            <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.04 }}>
-              {title}
-            </h1>
-          </div>
-
-          <Space size={16} className="dashboard-userbar">
-            <Space size={12} className="dashboard-user-meta">
-              <Avatar
-                style={{
-                  background: "#1456d9",
-                  border: "1px solid rgba(20, 86, 217, 0.18)",
-                }}
-              >
-                {displayUser.name?.slice(0, 1).toUpperCase()}
-              </Avatar>
-              <div>
-                <div style={{ fontWeight: 700 }}>{displayUser.name}</div>
-                <Space size={8}>
-                  <Tag>{displayUser.username}</Tag>
-                  {displayUser.email ? (
-                    <span className="muted">{displayUser.email}</span>
-                  ) : null}
-                  <Tag color="blue">{displayUser.platformRole}</Tag>
-                </Space>
-              </div>
-            </Space>
-            <LogoutButton />
-          </Space>
-        </header>
+        {showTopbar ? (
+          <header className="dashboard-topbar">
+            <div className="dashboard-title-block">
+              <div className="dashboard-kicker">{kicker}</div>
+              <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.04 }}>
+                {title}
+              </h1>
+            </div>
+          </header>
+        ) : null}
 
         <main className="dashboard-content">{children}</main>
       </div>

@@ -1,40 +1,76 @@
-import { Card, Space, Tag } from "antd";
+import { prisma } from "@/lib/db/prisma";
+import { ProjectDatasourceConsole } from "@/components/dashboard/project-datasource-console";
+import { readOriginalFileName } from "@/lib/datasources/sync-config";
 
-const datasourcePlans = [
-  "绑定钉钉表格 appId / tableId / viewId",
-  "配置字段映射 JSON",
-  "展示最近同步状态与错误信息",
-];
+export const dynamic = "force-dynamic";
 
-export default function DataSourcesPage() {
+export default async function DataSourcesPage() {
+  const projects = process.env.DATABASE_URL
+    ? await prisma.project.findMany({
+        where: {
+          status: "ACTIVE",
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      })
+    : [];
+
+  const datasources = process.env.DATABASE_URL
+    ? await prisma.projectDataSource.findMany({
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          _count: {
+            select: {
+              questions: true,
+            },
+          },
+          syncLogs: {
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 1,
+            select: {
+              createdAt: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      })
+    : [];
+
   return (
-    <Card className="panel" style={{ borderRadius: 24 }}>
-      <Space direction="vertical" size={16} style={{ width: "100%" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 28, lineHeight: 1.1 }}>数据源</h2>
-          <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
-            后续在这里管理项目与钉钉表格的绑定关系、字段映射和同步配置。
-          </p>
-        </div>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {datasourcePlans.map((item) => (
-            <div
-              key={item}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 0",
-                borderBottom: "1px solid rgba(217, 224, 234, 0.8)",
-              }}
-            >
-              <Tag color="processing">Plan</Tag>
-              <span>{item}</span>
-            </div>
-          ))}
-        </div>
-      </Space>
-    </Card>
+    <ProjectDatasourceConsole
+      title="数据源"
+      description="平台管理员可以将 JSON 和 Excel 文件导入到指定项目中，形成项目内可追踪的数据源与题目记录。钉钉表格绑定仍可在后续继续扩展。"
+      projects={projects}
+      datasources={datasources.map((datasource) => ({
+        id: datasource.id,
+        name: datasource.name,
+        type: datasource.type,
+        status: datasource.status,
+        createdAt: datasource.createdAt.toLocaleString("zh-CN"),
+        questionCount: datasource._count.questions,
+        project: datasource.project,
+        originalFileName: readOriginalFileName(datasource.syncConfig),
+        lastSyncAt:
+          datasource.syncLogs[0]?.createdAt.toLocaleString("zh-CN") ?? null,
+        lastSyncStatus: datasource.syncLogs[0]?.status ?? null,
+      }))}
+    />
   );
 }

@@ -27,6 +27,9 @@ export async function getWorkspaceContext(userId: string) {
       })
     : [];
 
+  const managerProjects = memberships.filter(
+    (membership) => membership.role === ProjectMemberRole.PROJECT_MANAGER,
+  );
   const authorProjects = memberships.filter(
     (membership) => membership.role === ProjectMemberRole.AUTHOR,
   );
@@ -37,10 +40,13 @@ export async function getWorkspaceContext(userId: string) {
   return {
     memberships,
     projectCount: memberships.length,
+    managerProjects,
     authorProjects,
     reviewerProjects,
+    managerProjectCount: managerProjects.length,
     authorProjectCount: authorProjects.length,
     reviewerProjectCount: reviewerProjects.length,
+    canManageProjects: managerProjects.length > 0,
     canAuthor: authorProjects.length > 0,
     canReview: reviewerProjects.length > 0,
   };
