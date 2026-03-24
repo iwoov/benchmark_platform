@@ -42,6 +42,11 @@ const adminSections = [
         title: "审核工作台",
         items: [
             { href: "/admin/ai", label: "AI 设置", icon: Bot },
+            {
+                href: "/admin/review-tasks",
+                label: "审核任务",
+                icon: ScrollText,
+            },
             { href: "/admin/reviews", label: "审核记录", icon: ScrollText },
         ],
     },
