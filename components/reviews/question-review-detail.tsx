@@ -1,0 +1,269 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { App, Button, Input, Select, Space, Tag } from "antd";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { submitReviewAction } from "@/app/actions/reviews";
+import type {
+    ReviewQuestionDetail,
+    ReviewQuestionNavigation,
+} from "@/lib/reviews/question-list-data";
+
+const questionStatusMeta = {
+    DRAFT: { label: "草稿", color: "default" },
+    SUBMITTED: { label: "待审核", color: "processing" },
+    UNDER_REVIEW: { label: "审核中", color: "gold" },
+    APPROVED: { label: "已通过", color: "success" },
+    REJECTED: { label: "已驳回", color: "error" },
+} as const;
+
+export function QuestionReviewDetail({
+    question,
+    canReview,
+    listPath,
+    navigation,
+}: {
+    question: ReviewQuestionDetail;
+    canReview: boolean;
+    listPath: string;
+    navigation: ReviewQuestionNavigation;
+}) {
+    const router = useRouter();
+    const { notification } = App.useApp();
+    const [decision, setDecision] = useState<
+        "PASS" | "REJECT" | "NEEDS_REVISION"
+    >("PASS");
+    const [comment, setComment] = useState("");
+    const [isSubmitting, startSubmitting] = useTransition();
+
+    const orderedRawEntries = (
+        question.rawFieldOrder.length
+            ? question.rawFieldOrder
+            : Object.keys(question.rawRecord)
+    ).map((key) => [key, question.rawRecord[key] ?? "—"] as const);
+
+    function submitReview() {
+        startSubmitting(async () => {
+            const result = await submitReviewAction({
+                questionId: question.id,
+                decision,
+                comment,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "审核提交失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "审核已提交",
+                description: result.success,
+                placement: "topRight",
+            });
+            router.refresh();
+        });
+    }
+
+    function goToQuestion(questionId: string | null) {
+        if (!questionId) {
+            return;
+        }
+
+        router.push(`${listPath}/${questionId}`);
+    }
+
+    return (
+        <div style={{ display: "grid", gap: 16 }}>
+            <section className="content-surface">
+                <div className="section-head">
+                    <div>
+                        <Space size={8} style={{ marginBottom: 14 }} wrap>
+                            <Button
+                                icon={<ArrowLeft size={16} />}
+                                onClick={() => router.push(listPath)}
+                            >
+                                返回列表
+                            </Button>
+                            <Button
+                                icon={<ChevronLeft size={16} />}
+                                onClick={() =>
+                                    goToQuestion(navigation.previousQuestionId)
+                                }
+                                disabled={!navigation.previousQuestionId}
+                            />
+                            <Button
+                                icon={<ChevronRight size={16} />}
+                                onClick={() =>
+                                    goToQuestion(navigation.nextQuestionId)
+                                }
+                                disabled={!navigation.nextQuestionId}
+                            />
+                        </Space>
+                        <h2
+                            style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                        >
+                            {question.title}
+                        </h2>
+                    </div>
+                    <Space size={8} wrap>
+                        <Tag color={questionStatusMeta[question.status].color}>
+                            {questionStatusMeta[question.status].label}
+                        </Tag>
+                        <Tag>{question.project.code}</Tag>
+                        <Tag>{question.datasource.name}</Tag>
+                    </Space>
+                </div>
+
+                <div className="detail-meta-grid">
+                    <div className="detail-meta-card">
+                        <div className="detail-meta-label">外部记录 ID</div>
+                        <div className="detail-meta-value">
+                            {question.externalRecordId}
+                        </div>
+                    </div>
+                    <div className="detail-meta-card">
+                        <div className="detail-meta-label">项目</div>
+                        <div className="detail-meta-value">
+                            {question.project.name} ({question.project.code})
+                        </div>
+                    </div>
+                    <div className="detail-meta-card">
+                        <div className="detail-meta-label">数据源</div>
+                        <div className="detail-meta-value">
+                            {question.datasource.name}
+                        </div>
+                    </div>
+                    <div className="detail-meta-card">
+                        <div className="detail-meta-label">更新时间</div>
+                        <div className="detail-meta-value">
+                            {new Date(question.updatedAt).toLocaleString(
+                                "zh-CN",
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className="content-surface">
+                <div className="section-head" style={{ marginBottom: 16 }}>
+                    <div>
+                        <h3
+                            style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}
+                        >
+                            原始字段
+                        </h3>
+                        <p
+                            className="muted"
+                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+                        >
+                            按导入时的字段顺序竖向展示，便于和原始 JSON / Excel
+                            对照。
+                        </p>
+                    </div>
+                </div>
+
+                {orderedRawEntries.length ? (
+                    <div className="detail-card-grid">
+                        {orderedRawEntries.map(([key, value]) => (
+                            <div key={key} className="detail-field-card">
+                                <div className="detail-field-label">{key}</div>
+                                <div className="detail-field-content">
+                                    {value || "—"}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="muted">当前题目没有原始字段可展示。</div>
+                )}
+            </section>
+
+            {canReview ? (
+                <section className="content-surface">
+                    <div className="section-head" style={{ marginBottom: 16 }}>
+                        <div>
+                            <h3
+                                style={{
+                                    margin: 0,
+                                    fontSize: 20,
+                                    lineHeight: 1.1,
+                                }}
+                            >
+                                提交审核
+                            </h3>
+                            <p
+                                className="muted"
+                                style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+                            >
+                                在详情页直接填写审核意见并提交结论。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 16 }}>
+                        <div>
+                            <label
+                                className="field-label"
+                                htmlFor="review-decision"
+                            >
+                                审核结论
+                            </label>
+                            <Select
+                                id="review-decision"
+                                value={decision}
+                                onChange={(value) => setDecision(value)}
+                                options={[
+                                    { value: "PASS", label: "通过" },
+                                    {
+                                        value: "NEEDS_REVISION",
+                                        label: "退回修改",
+                                    },
+                                    { value: "REJECT", label: "驳回" },
+                                ]}
+                                size="large"
+                            />
+                        </div>
+
+                        <div>
+                            <label
+                                className="field-label"
+                                htmlFor="review-comment"
+                            >
+                                审核意见
+                            </label>
+                            <Input.TextArea
+                                id="review-comment"
+                                value={comment}
+                                onChange={(event) =>
+                                    setComment(event.target.value)
+                                }
+                                rows={6}
+                                placeholder="请输入审核意见、修改建议或驳回原因"
+                            />
+                        </div>
+
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "flex-end",
+                            }}
+                        >
+                            <Button
+                                type="primary"
+                                onClick={submitReview}
+                                loading={isSubmitting}
+                            >
+                                提交审核
+                            </Button>
+                        </div>
+                    </div>
+                </section>
+            ) : null}
+        </div>
+    );
+}

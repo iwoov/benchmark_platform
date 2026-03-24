@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
-import { isAdminRole } from "@/lib/auth/roles";
+import { canUserReviewProject } from "@/lib/reviews/permissions";
 
 const submitReviewSchema = z.object({
     questionId: z.string().min(1, "缺少题目 ID"),
@@ -59,23 +59,11 @@ export async function submitReviewAction(
         };
     }
 
-    const canReview = isAdminRole(session.user.platformRole)
-        ? true
-        : Boolean(
-              await prisma.projectMember
-                  .findUnique({
-                      where: {
-                          projectId_userId: {
-                              projectId: question.projectId,
-                              userId: session.user.id,
-                          },
-                      },
-                      select: {
-                          role: true,
-                      },
-                  })
-                  .then((membership) => membership?.role === "REVIEWER"),
-          );
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        question.projectId,
+    );
 
     if (!canReview) {
         return {
@@ -110,7 +98,9 @@ export async function submitReviewAction(
 
     revalidatePath("/admin/reviews");
     revalidatePath("/admin/review-tasks");
+    revalidatePath(`/admin/review-tasks/${question.id}`);
     revalidatePath("/workspace/reviews");
+    revalidatePath(`/workspace/reviews/${question.id}`);
 
     return {
         success: `题目 ${question.title} 已提交审核结论。`,

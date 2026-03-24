@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
-import { Plus, SlidersHorizontal, X } from "lucide-react";
-import { submitReviewAction } from "@/app/actions/reviews";
+import { Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
+import { SlidersHorizontal, X } from "lucide-react";
 
 type QuestionStatus =
     | "DRAFT"
@@ -27,7 +26,6 @@ type ReviewQuestionItem = {
     datasourceId: string;
     datasourceName: string;
     externalRecordId: string;
-    title: string;
     status: QuestionStatus;
     updatedAt: string;
     sourceRowNumber: number | null;
@@ -238,7 +236,6 @@ export function ReviewQuestionList({
     questions: ReviewQuestionItem[];
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
     const [selectedProjectId, setSelectedProjectId] = useState(
         projects[0]?.id ?? "",
     );
@@ -247,15 +244,6 @@ export function ReviewQuestionList({
     const [draftConditions, setDraftConditions] = useState<FilterCondition[]>(
         [],
     );
-    const [reviewModalOpen, setReviewModalOpen] = useState(false);
-    const [reviewDecision, setReviewDecision] = useState<
-        "PASS" | "REJECT" | "NEEDS_REVISION"
-    >("PASS");
-    const [reviewComment, setReviewComment] = useState("");
-    const [activeQuestionId, setActiveQuestionId] = useState<string | null>(
-        null,
-    );
-    const [isSubmittingReview, startSubmittingReview] = useTransition();
 
     const projectQuestions = useMemo(
         () =>
@@ -343,55 +331,18 @@ export function ReviewQuestionList({
     const selectedProject = projects.find(
         (project) => project.id === selectedProjectId,
     );
-    const activeQuestion =
-        visibleQuestions.find((question) => question.id === activeQuestionId) ??
-        null;
     const gridTemplateColumns = [
         "160px",
-        "180px",
         "120px",
         "180px",
-        "140px",
         ...rawColumns.map(() => "220px"),
     ].join(" ");
-    const tableWidth = 160 + 180 + 120 + 180 + 140 + rawColumns.length * 220;
+    const tableWidth = 160 + 120 + 180 + rawColumns.length * 220;
 
-    function openReviewModal(questionId: string) {
-        setActiveQuestionId(questionId);
-        setReviewDecision("PASS");
-        setReviewComment("");
-        setReviewModalOpen(true);
-    }
-
-    function submitReview() {
-        if (!activeQuestion) {
-            return;
-        }
-
-        startSubmittingReview(async () => {
-            const result = await submitReviewAction({
-                questionId: activeQuestion.id,
-                decision: reviewDecision,
-                comment: reviewComment,
-            });
-
-            if (result.error) {
-                notification.error({
-                    message: "审核提交失败",
-                    description: result.error,
-                    placement: "topRight",
-                });
-                return;
-            }
-
-            notification.success({
-                message: "审核已提交",
-                description: result.success,
-                placement: "topRight",
-            });
-            setReviewModalOpen(false);
-            router.refresh();
-        });
+    function buildQuestionDetailPath(questionId: string) {
+        return scopeLabel === "全部项目"
+            ? `/admin/review-tasks/${questionId}`
+            : `/workspace/reviews/${questionId}`;
     }
 
     return (
@@ -412,7 +363,7 @@ export function ReviewQuestionList({
                         style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                     >
                         {scopeLabel ?? "当前项目"}内展示原始 JSON / Excel
-                        导入字段。先选择项目，再按条件叠加筛选记录，并可直接提交审核结论。
+                        导入字段。先选择项目，再按条件叠加筛选记录，点击列表行可进入题目详情页。
                     </p>
                 </div>
                 <Tag color="blue">
@@ -549,10 +500,8 @@ export function ReviewQuestionList({
                                     }}
                                 >
                                     <div style={cellStyle}>外部记录 ID</div>
-                                    <div style={cellStyle}>题目</div>
                                     <div style={cellStyle}>状态</div>
                                     <div style={cellStyle}>更新时间</div>
-                                    <div style={cellStyle}>操作</div>
                                     {rawColumns.map((column) => (
                                         <div
                                             key={column.key}
@@ -567,6 +516,8 @@ export function ReviewQuestionList({
                                 {visibleQuestions.map((question) => (
                                     <div
                                         key={question.id}
+                                        role="button"
+                                        tabIndex={0}
                                         style={{
                                             display: "grid",
                                             gridTemplateColumns:
@@ -578,6 +529,27 @@ export function ReviewQuestionList({
                                             alignItems: "center",
                                             background:
                                                 "rgba(255, 255, 255, 0.82)",
+                                            cursor: "pointer",
+                                        }}
+                                        onClick={() =>
+                                            router.push(
+                                                buildQuestionDetailPath(
+                                                    question.id,
+                                                ),
+                                            )
+                                        }
+                                        onKeyDown={(event) => {
+                                            if (
+                                                event.key === "Enter" ||
+                                                event.key === " "
+                                            ) {
+                                                event.preventDefault();
+                                                router.push(
+                                                    buildQuestionDetailPath(
+                                                        question.id,
+                                                    ),
+                                                );
+                                            }
                                         }}
                                     >
                                         <div
@@ -586,14 +558,6 @@ export function ReviewQuestionList({
                                             title={question.externalRecordId}
                                         >
                                             {question.externalRecordId}
-                                        </div>
-                                        <div
-                                            style={cellStyle}
-                                            title={question.title}
-                                        >
-                                            <div style={{ fontWeight: 700 }}>
-                                                {question.title}
-                                            </div>
                                         </div>
                                         <div>
                                             <Tag
@@ -614,17 +578,6 @@ export function ReviewQuestionList({
                                             {new Date(
                                                 question.updatedAt,
                                             ).toLocaleString("zh-CN")}
-                                        </div>
-                                        <div>
-                                            <Button
-                                                type="primary"
-                                                size="small"
-                                                onClick={() =>
-                                                    openReviewModal(question.id)
-                                                }
-                                            >
-                                                审核
-                                            </Button>
                                         </div>
                                         {rawColumns.map((column) => {
                                             const value =
@@ -864,103 +817,7 @@ export function ReviewQuestionList({
                                     );
                                 })}
                             </div>
-
-                            <Space>
-                                <Button
-                                    icon={<Plus size={16} />}
-                                    onClick={() => {
-                                        setDraftConditions((prev) => [
-                                            ...prev,
-                                            createCondition(prev.length + 1),
-                                        ]);
-                                    }}
-                                >
-                                    添加条件
-                                </Button>
-                                <Button
-                                    onClick={() =>
-                                        setDraftConditions([createCondition(1)])
-                                    }
-                                >
-                                    重置草稿
-                                </Button>
-                            </Space>
                         </div>
-                    </Modal>
-
-                    <Modal
-                        open={reviewModalOpen}
-                        onCancel={() => setReviewModalOpen(false)}
-                        onOk={submitReview}
-                        okText="提交审核"
-                        confirmLoading={isSubmittingReview}
-                        cancelText="取消"
-                        width={680}
-                        title="提交审核结论"
-                        destroyOnHidden
-                    >
-                        {activeQuestion ? (
-                            <div
-                                style={{
-                                    display: "grid",
-                                    gap: 16,
-                                    marginTop: 12,
-                                }}
-                            >
-                                <div className="workspace-tip">
-                                    <Tag color="blue">
-                                        {activeQuestion.projectCode}
-                                    </Tag>
-                                    <span>
-                                        {activeQuestion.title} ·{" "}
-                                        {activeQuestion.datasourceName}
-                                    </span>
-                                </div>
-
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="review-decision"
-                                    >
-                                        审核结论
-                                    </label>
-                                    <Select
-                                        id="review-decision"
-                                        value={reviewDecision}
-                                        onChange={(value) =>
-                                            setReviewDecision(value)
-                                        }
-                                        options={[
-                                            { value: "PASS", label: "通过" },
-                                            {
-                                                value: "NEEDS_REVISION",
-                                                label: "退回修改",
-                                            },
-                                            { value: "REJECT", label: "驳回" },
-                                        ]}
-                                        size="large"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="review-comment"
-                                    >
-                                        审核意见
-                                    </label>
-                                    <Input.TextArea
-                                        id="review-comment"
-                                        value={reviewComment}
-                                        onChange={(event) =>
-                                            setReviewComment(event.target.value)
-                                        }
-                                        rows={6}
-                                        placeholder="请输入审核意见、修改建议或驳回原因"
-                                    />
-                                </div>
-                            </div>
-                        ) : null}
                     </Modal>
                 </>
             )}

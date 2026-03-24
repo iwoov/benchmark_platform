@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
 import { ReviewQuestionList } from "@/components/workspace/review-question-list";
-import { prisma } from "@/lib/db/prisma";
 import { getReviewQuestionListData } from "@/lib/reviews/question-list-data";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 
