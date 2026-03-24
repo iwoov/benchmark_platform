@@ -13,6 +13,7 @@ enum UserStatus {
 }
 
 enum PlatformRole {
+  SUPER_ADMIN
   PLATFORM_ADMIN
   USER
 }
@@ -24,7 +25,6 @@ enum ProjectStatus {
 }
 
 enum ProjectMemberRole {
-  PROJECT_MANAGER
   AUTHOR
   REVIEWER
 }
@@ -57,6 +57,14 @@ enum ReviewDecision {
 enum AiProtocol {
   OPENAI_COMPATIBLE
   GEMINI_COMPATIBLE
+  ANTHROPIC_COMPATIBLE
+}
+
+enum AiReasoningLevel {
+  DISABLED
+  LOW
+  MEDIUM
+  HIGH
 }
 
 enum RunStatus {
@@ -243,14 +251,20 @@ model AiProviderEndpoint {
 }
 
 model AiModel {
-  id          String                  @id @default(cuid())
-  code        String                  @unique
-  protocol    AiProtocol
-  label       String?
-  note        String?
-  endpoints   AiProviderEndpointModel[]
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  id             String                  @id @default(cuid())
+  code           String                  @unique
+  protocol       AiProtocol
+  streamDefault  Boolean                 @default(true)
+  reasoningLevel AiReasoningLevel        @default(DISABLED)
+  maxTokensDefault Int?
+  temperatureDefault Float?
+  maxRetries     Int                     @default(1)
+  allowFallback  Boolean                 @default(true)
+  label          String?
+  note           String?
+  endpoints      AiProviderEndpointModel[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 }
 
 model AiProviderEndpointModel {

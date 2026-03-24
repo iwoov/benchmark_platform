@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "AiModel"
+ADD COLUMN "maxTokensDefault" INTEGER,
+ADD COLUMN "temperatureDefault" DOUBLE PRECISION,
+ADD COLUMN "maxRetries" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN "allowFallback" BOOLEAN NOT NULL DEFAULT true;

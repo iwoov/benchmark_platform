@@ -25,7 +25,6 @@ function revalidateImportPaths() {
     revalidatePath("/admin/datasources");
     revalidatePath("/admin/projects");
     revalidatePath("/workspace");
-    revalidatePath("/workspace/manage");
     revalidatePath("/workspace/projects");
     revalidatePath("/workspace/submissions");
     revalidatePath("/workspace/reviews");

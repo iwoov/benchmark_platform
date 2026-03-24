@@ -1,7 +1,10 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
-import type { AiProtocol } from "@/lib/ai/provider-catalog";
+import type {
+  AiProtocol,
+  AiReasoningLevel,
+} from "@/lib/ai/provider-catalog";
 
 export type AiResolvedRoute = {
   priority: number;
@@ -20,6 +23,12 @@ export type AiModelRoutingConfig = {
   modelId: string;
   modelCode: string;
   protocol: AiProtocol;
+  streamDefault: boolean;
+  reasoningLevel: AiReasoningLevel;
+  maxTokensDefault: number | null;
+  temperatureDefault: number | null;
+  maxRetries: number;
+  allowFallback: boolean;
   routes: AiResolvedRoute[];
 };
 
@@ -61,6 +70,12 @@ export async function getAiModelRoutingConfig(
     modelId: model.id,
     modelCode: model.code,
     protocol: model.protocol,
+    streamDefault: model.streamDefault,
+    reasoningLevel: model.reasoningLevel,
+    maxTokensDefault: model.maxTokensDefault,
+    temperatureDefault: model.temperatureDefault,
+    maxRetries: model.maxRetries,
+    allowFallback: model.allowFallback,
     routes: model.endpoints.map((route) => ({
       priority: route.priority,
       timeoutMs: route.timeoutMs,

@@ -1,6 +1,6 @@
 export type SessionUser = {
-  id: string;
-  name: string;
-  email: string;
-  platformRole: "PLATFORM_ADMIN" | "USER";
+    id: string;
+    name: string;
+    email: string;
+    platformRole: "SUPER_ADMIN" | "PLATFORM_ADMIN" | "USER";
 };

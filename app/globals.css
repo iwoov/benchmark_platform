@@ -35,16 +35,16 @@ body {
     min-height: 100%;
     margin: 0;
     background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 30%),
+        radial-gradient(
+            circle at top left,
+            rgba(37, 99, 235, 0.08),
+            transparent 30%
+        ),
         linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
     color: var(--text);
     font-family:
-        "SF Pro Display",
-        "SF Pro Text",
-        "PingFang SC",
-        "Microsoft YaHei",
-        "Helvetica Neue",
-        sans-serif;
+        "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei",
+        "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
 }
@@ -525,6 +525,7 @@ select {
 .import-form-submit {
     display: flex;
     justify-content: flex-end;
+    gap: 12px;
 }
 
 .field-file {
@@ -699,48 +700,22 @@ select {
     border-radius: var(--radius-sm);
 }
 
-.datasource-card-grid {
+.datasource-list-head,
+.datasource-list-row {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 0.6fr 1fr 1.2fr;
     gap: 16px;
-}
-
-.datasource-card {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    background: rgba(255, 255, 255, 0.84);
-    padding: 18px;
-    box-shadow: var(--shadow);
-}
-
-.datasource-card-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.datasource-mini-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 16px;
-}
-
-.datasource-mini-card {
-    display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px;
-    border-radius: var(--radius-sm);
-    background: rgba(247, 249, 252, 0.86);
-    border: 1px solid var(--line-soft);
+    padding: 14px 16px;
 }
 
-.datasource-mini-value {
-    font-size: 18px;
+.datasource-list-head {
+    background: rgba(248, 250, 252, 0.9);
     font-weight: 700;
-    line-height: 1.1;
+}
+
+.datasource-list-row {
+    border-top: 1px solid rgba(217, 224, 234, 0.85);
 }
 
 .ai-settings-page {
@@ -933,11 +908,11 @@ select {
 .ai-model-table-row {
     display: grid;
     grid-template-columns:
-        minmax(180px, 1fr) minmax(140px, 0.7fr) minmax(320px, 1.5fr)
-        minmax(180px, 0.9fr) auto;
+        minmax(180px, 1fr) minmax(140px, 0.7fr) minmax(180px, 0.9fr)
+        minmax(320px, 1.5fr) minmax(180px, 0.9fr) auto;
     gap: 16px;
     align-items: center;
-    min-width: 960px;
+    min-width: 1140px;
 }
 
 .ai-model-table {
@@ -1124,7 +1099,11 @@ select {
     padding: 20px;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
-    background: linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(255, 255, 255, 0.96));
+    background: linear-gradient(
+        180deg,
+        rgba(239, 246, 255, 0.9),
+        rgba(255, 255, 255, 0.96)
+    );
 }
 
 .overview-side-card-label {
@@ -1212,7 +1191,11 @@ select {
     flex-direction: column;
     justify-content: space-between;
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 252, 0.94)),
+        linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.96),
+            rgba(247, 249, 252, 0.94)
+        ),
         var(--panel-strong);
 }
 
@@ -1328,8 +1311,8 @@ select {
         grid-column: auto;
     }
 
-    .datasource-card-grid,
-    .datasource-mini-grid,
+    .datasource-list-head,
+    .datasource-list-row,
     .overview-stat-grid,
     .login-meta-grid,
     .ai-provider-overview-grid,
@@ -1357,7 +1340,6 @@ select {
     .ai-route-card,
     .ai-route-card-top,
     .ai-route-card-controls,
-    .datasource-card-top,
     .ai-route-card-actions {
         flex-direction: column;
         align-items: flex-start;

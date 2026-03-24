@@ -20,10 +20,11 @@ pnpm dev
 - `docs/tech_selection.md`
 - `docs/database_design.md`
 - `docs/admin_navigation.md`
+- `docs/permission-model.md`
 
-## 管理员账号
+## 超级管理员账号
 
-管理员账号由 `.env` 控制：
+超级管理员账号由 `.env` 控制：
 
 ```env
 ADMIN_NAME="Platform Admin"
@@ -32,7 +33,7 @@ ADMIN_EMAIL="admin@example.com"
 ADMIN_PASSWORD="admin123456"
 ```
 
-`pnpm seed` 会根据这些环境变量创建或更新管理员账号。
+`pnpm seed` 会根据这些环境变量创建或更新超级管理员账号。
 
 ## 检查与排错
 

@@ -30,7 +30,12 @@ import {
   saveAiModelAction,
   updateAiProviderConfigAction,
 } from "@/app/actions/ai-settings";
-import { aiProtocolLabels, type AiProtocol } from "@/lib/ai/provider-catalog";
+import {
+  aiProtocolLabels,
+  aiReasoningLabels,
+  type AiProtocol,
+  type AiReasoningLevel,
+} from "@/lib/ai/provider-catalog";
 import type {
   AiSettingsEndpointOption,
   AiSettingsModel,
@@ -47,6 +52,12 @@ type ModelFormState = {
   modelId?: string;
   code: string;
   protocol: AiProtocol;
+  streamDefault: boolean;
+  reasoningLevel: AiReasoningLevel;
+  maxTokensDefault: number | null;
+  temperatureDefault: number | null;
+  maxRetries: number;
+  allowFallback: boolean;
   label: string;
   note: string;
   routes: ModelRouteFormState[];
@@ -71,6 +82,12 @@ function createModelFormState(model?: AiSettingsModel): ModelFormState {
     modelId: model?.id,
     code: model?.code ?? "",
     protocol: model?.protocol ?? "OPENAI_COMPATIBLE",
+    streamDefault: model?.streamDefault ?? true,
+    reasoningLevel: model?.reasoningLevel ?? "DISABLED",
+    maxTokensDefault: model?.maxTokensDefault ?? null,
+    temperatureDefault: model?.temperatureDefault ?? null,
+    maxRetries: model?.maxRetries ?? 1,
+    allowFallback: model?.allowFallback ?? true,
     label: model?.label ?? "",
     note: model?.note ?? "",
     routes:
@@ -318,6 +335,12 @@ export function AiSettingsConsole({
         modelId: modelForm.modelId,
         code: modelForm.code,
         protocol: modelForm.protocol,
+        streamDefault: modelForm.streamDefault,
+        reasoningLevel: modelForm.reasoningLevel,
+        maxTokensDefault: modelForm.maxTokensDefault,
+        temperatureDefault: modelForm.temperatureDefault,
+        maxRetries: modelForm.maxRetries,
+        allowFallback: modelForm.allowFallback,
         label: modelForm.label,
         note: modelForm.note,
         routes: modelForm.routes,
@@ -672,12 +695,145 @@ export function AiSettingsConsole({
                     value: "GEMINI_COMPATIBLE",
                     label: aiProtocolLabels.GEMINI_COMPATIBLE,
                   },
+                  {
+                    value: "ANTHROPIC_COMPATIBLE",
+                    label: aiProtocolLabels.ANTHROPIC_COMPATIBLE,
+                  },
                 ]}
                 onChange={(value) =>
                   setModelForm((current) => ({
                     ...current,
                     protocol: value as AiProtocol,
                     routes: [],
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-stream-default">
+                默认 Stream
+              </label>
+              <Switch
+                id="ai-model-stream-default"
+                checked={modelForm.streamDefault}
+                onChange={(checked) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    streamDefault: checked,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-reasoning">
+                Reasoning
+              </label>
+              <Select
+                id="ai-model-reasoning"
+                size="large"
+                value={modelForm.reasoningLevel}
+                options={[
+                  {
+                    value: "DISABLED",
+                    label: aiReasoningLabels.DISABLED,
+                  },
+                  {
+                    value: "LOW",
+                    label: aiReasoningLabels.LOW,
+                  },
+                  {
+                    value: "MEDIUM",
+                    label: aiReasoningLabels.MEDIUM,
+                  },
+                  {
+                    value: "HIGH",
+                    label: aiReasoningLabels.HIGH,
+                  },
+                ]}
+                onChange={(value) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    reasoningLevel: value as AiReasoningLevel,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-max-tokens">
+                默认 Max Tokens
+              </label>
+              <InputNumber
+                id="ai-model-max-tokens"
+                min={1}
+                max={32768}
+                style={{ width: "100%" }}
+                value={modelForm.maxTokensDefault}
+                placeholder="留空表示不设默认值"
+                onChange={(value) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    maxTokensDefault:
+                      typeof value === "number" ? value : null,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-temperature">
+                默认 Temperature
+              </label>
+              <InputNumber
+                id="ai-model-temperature"
+                min={0}
+                max={2}
+                step={0.1}
+                style={{ width: "100%" }}
+                value={modelForm.temperatureDefault}
+                placeholder="留空表示不设默认值"
+                onChange={(value) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    temperatureDefault:
+                      typeof value === "number" ? value : null,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-max-retries">
+                最大重试次数
+              </label>
+              <InputNumber
+                id="ai-model-max-retries"
+                min={0}
+                max={10}
+                style={{ width: "100%" }}
+                value={modelForm.maxRetries}
+                onChange={(value) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    maxRetries: typeof value === "number" ? value : 1,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="ai-model-allow-fallback">
+                允许备用路由
+              </label>
+              <Switch
+                id="ai-model-allow-fallback"
+                checked={modelForm.allowFallback}
+                onChange={(checked) =>
+                  setModelForm((current) => ({
+                    ...current,
+                    allowFallback: checked,
                   }))
                 }
               />

@@ -1,4 +1,7 @@
-import type { AiProtocol } from "@/lib/ai/provider-catalog";
+import type {
+  AiProtocol,
+  AiReasoningLevel,
+} from "@/lib/ai/provider-catalog";
 
 export type AiSettingsEndpointOption = {
   id: string;
@@ -28,6 +31,12 @@ export type AiSettingsModel = {
   id: string;
   code: string;
   protocol: AiProtocol;
+  streamDefault: boolean;
+  reasoningLevel: AiReasoningLevel;
+  maxTokensDefault: number | null;
+  temperatureDefault: number | null;
+  maxRetries: number;
+  allowFallback: boolean;
   label: string | null;
   note: string | null;
   routes: Array<

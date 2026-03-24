@@ -1,43 +1,28 @@
-import { ProjectMemberRole } from "@prisma/client";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db/prisma";
+import { isAdminRole } from "@/lib/auth/roles";
 
-export type ProjectMemberManagerScope = "PLATFORM_ADMIN" | "PROJECT_MANAGER";
+export type ProjectMemberManagerScope = "SUPER_ADMIN" | "PLATFORM_ADMIN";
 
 export async function getProjectManagerScope(
-  projectId: string,
+    _projectId: string,
 ): Promise<ProjectMemberManagerScope> {
-  const session = await auth();
+    const session = await auth();
 
-  if (!session?.user) {
-    throw new Error("请先登录后再执行该操作。");
-  }
+    if (!session?.user) {
+        throw new Error("请先登录后再执行该操作。");
+    }
 
-  if (session.user.platformRole === "PLATFORM_ADMIN") {
-    return "PLATFORM_ADMIN";
-  }
+    if (!isAdminRole(session.user.platformRole)) {
+        throw new Error(
+            "只有超级管理员或平台管理员可以管理项目成员和数据导入。",
+        );
+    }
 
-  const membership = await prisma.projectMember.findUnique({
-    where: {
-      projectId_userId: {
-        projectId,
-        userId: session.user.id,
-      },
-    },
-    select: {
-      role: true,
-    },
-  });
-
-  if (membership?.role !== ProjectMemberRole.PROJECT_MANAGER) {
-    throw new Error("只有平台管理员或当前项目负责人可以管理项目成员。");
-  }
-
-  return "PROJECT_MANAGER";
+    return session.user.platformRole;
 }
 
 export async function getProjectMemberManagerScope(
-  projectId: string,
+    projectId: string,
 ): Promise<ProjectMemberManagerScope> {
-  return getProjectManagerScope(projectId);
+    return getProjectManagerScope(projectId);
 }

@@ -21,7 +21,10 @@ export async function ensureDefaultAiProviders() {
   for (const provider of defaultAiProviders) {
     const savedProvider = await prisma.aiProvider.upsert({
       where: { code: provider.id },
-      update: {},
+      update: {
+        name: provider.name,
+        note: provider.note,
+      },
       create: {
         code: provider.id,
         name: provider.name,
@@ -32,7 +35,12 @@ export async function ensureDefaultAiProviders() {
     for (const endpoint of provider.endpoints) {
       await prisma.aiProviderEndpoint.upsert({
         where: { code: endpoint.id },
-        update: {},
+        update: {
+          label: endpoint.label,
+          protocol: endpoint.protocol,
+          baseUrl: endpoint.baseUrl,
+          sortOrder: endpoint.sortOrder,
+        },
         create: {
           providerId: savedProvider.id,
           code: endpoint.id,
@@ -130,6 +138,12 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
     id: model.id,
     code: model.code,
     protocol: model.protocol,
+    streamDefault: model.streamDefault,
+    reasoningLevel: model.reasoningLevel,
+    maxTokensDefault: model.maxTokensDefault,
+    temperatureDefault: model.temperatureDefault,
+    maxRetries: model.maxRetries,
+    allowFallback: model.allowFallback,
     label: model.label,
     note: model.note,
     routes: model.endpoints.map((item) => ({

@@ -1,5 +1,5 @@
-export type PlatformRole = "PLATFORM_ADMIN" | "USER";
+import { isAdminRole, type PlatformRoleValue } from "@/lib/auth/roles";
 
-export function getHomePathByRole(platformRole: PlatformRole) {
-  return platformRole === "PLATFORM_ADMIN" ? "/admin" : "/workspace";
+export function getHomePathByRole(platformRole: PlatformRoleValue) {
+    return isAdminRole(platformRole) ? "/admin" : "/workspace";
 }
