@@ -752,6 +752,129 @@ select {
     margin-bottom: 18px;
 }
 
+.ai-provider-overview-grid,
+.ai-model-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.ai-provider-overview-card,
+.ai-model-overview-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: var(--shadow);
+}
+
+.ai-provider-overview-head,
+.ai-model-overview-head,
+.ai-provider-endpoint-edit-head,
+.ai-modal-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-provider-overview-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.ai-provider-overview-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.ai-provider-overview-metric {
+    padding: 14px 16px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: var(--panel-soft);
+}
+
+.ai-provider-overview-metric-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ai-provider-overview-metric-value {
+    margin-top: 8px;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ai-provider-endpoint-list,
+.ai-provider-endpoint-edit-list {
+    display: grid;
+    gap: 12px;
+}
+
+.ai-provider-endpoint-item,
+.ai-provider-endpoint-edit-item {
+    display: grid;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    background: var(--panel-soft);
+}
+
+.ai-provider-overview-actions,
+.ai-model-overview-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.ai-model-overview-meta {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.ai-model-route-more,
+.ai-model-overview-note {
+    line-height: 1.7;
+}
+
+.ai-modal-form {
+    display: grid;
+    gap: 16px;
+}
+
+.ai-model-form-compact {
+    gap: 14px;
+}
+
+.ai-modal-header-inline {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-modal-panel {
+    display: grid;
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(247, 249, 252, 0.68);
+}
+
 .ai-provider-stack {
     display: grid;
     gap: 16px;
@@ -791,6 +914,10 @@ select {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+}
+
+.ai-model-form-grid-compact {
+    gap: 14px;
 }
 
 .ai-provider-form-full,
@@ -871,6 +998,17 @@ select {
     gap: 16px;
 }
 
+.ai-route-builder-compact {
+    gap: 12px;
+}
+
+.ai-route-builder-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+}
+
 .ai-route-builder-head {
     display: flex;
     align-items: flex-end;
@@ -938,6 +1076,24 @@ select {
     align-items: flex-start;
     gap: 8px;
     flex-shrink: 0;
+}
+
+.ai-route-stack-compact {
+    gap: 10px;
+}
+
+.ai-route-card-compact {
+    gap: 12px;
+    padding: 14px;
+}
+
+.ai-route-card-controls-compact {
+    margin-top: 12px;
+    gap: 12px;
+}
+
+.ai-route-card-actions-compact .ant-btn {
+    min-width: 40px;
 }
 
 .overview-hero {
@@ -1175,7 +1331,10 @@ select {
     .datasource-card-grid,
     .datasource-mini-grid,
     .overview-stat-grid,
-    .login-meta-grid {
+    .login-meta-grid,
+    .ai-provider-overview-grid,
+    .ai-model-overview-grid,
+    .ai-provider-overview-meta {
         grid-template-columns: 1fr;
     }
 
@@ -1189,6 +1348,12 @@ select {
     .ai-provider-actions,
     .ai-model-row-actions,
     .ai-route-builder-head,
+    .ai-route-builder-toolbar,
+    .ai-provider-overview-head,
+    .ai-model-overview-head,
+    .ai-provider-endpoint-edit-head,
+    .ai-modal-header-inline,
+    .ai-modal-panel-head,
     .ai-route-card,
     .ai-route-card-top,
     .ai-route-card-controls,
@@ -1197,7 +1362,6 @@ select {
         flex-direction: column;
         align-items: flex-start;
     }
-
     .sidebar-footer {
         margin-top: 18px;
         padding-top: 16px;

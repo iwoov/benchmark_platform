@@ -21,7 +21,7 @@ import {
   KeyRound,
   PencilLine,
   Plus,
-  Save,
+  Settings2,
   Trash2,
   X,
 } from "lucide-react";
@@ -52,6 +52,20 @@ type ModelFormState = {
   routes: ModelRouteFormState[];
 };
 
+type ProviderFormState = {
+  providerId: string;
+  name: string;
+  note: string;
+  apiKey: string;
+  endpoints: Array<{
+    id: string;
+    label: string;
+    protocol: AiProtocol;
+    baseUrl: string;
+    modelCount: number;
+  }>;
+};
+
 function createModelFormState(model?: AiSettingsModel): ModelFormState {
   return {
     modelId: model?.id,
@@ -65,6 +79,28 @@ function createModelFormState(model?: AiSettingsModel): ModelFormState {
         enabled: route.enabled,
         timeoutMs: route.timeoutMs,
       })) ?? [],
+  };
+}
+
+function createProviderFormState(
+  provider?: AiSettingsProvider,
+): ProviderFormState | null {
+  if (!provider) {
+    return null;
+  }
+
+  return {
+    providerId: provider.id,
+    name: provider.name,
+    note: provider.note ?? "",
+    apiKey: "",
+    endpoints: provider.endpoints.map((endpoint) => ({
+      id: endpoint.id,
+      label: endpoint.label,
+      protocol: endpoint.protocol,
+      baseUrl: endpoint.baseUrl,
+      modelCount: endpoint.modelCount,
+    })),
   };
 }
 
@@ -89,12 +125,16 @@ export function AiSettingsConsole({
 }) {
   const router = useRouter();
   const { notification } = App.useApp();
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [modelModalOpen, setModelModalOpen] = useState(false);
   const [providerPendingId, setProviderPendingId] = useState<string | null>(
     null,
   );
   const [savingModelId, setSavingModelId] = useState<string | null>(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
-  const [modelModalOpen, setModelModalOpen] = useState(false);
+  const [providerForm, setProviderForm] = useState<ProviderFormState | null>(
+    null,
+  );
   const [modelForm, setModelForm] = useState<ModelFormState>(
     createModelFormState(),
   );
@@ -147,6 +187,16 @@ export function AiSettingsConsole({
 
     router.refresh();
     return true;
+  }
+
+  function openProviderModal(provider: AiSettingsProvider) {
+    setProviderForm(createProviderFormState(provider));
+    setProviderModalOpen(true);
+  }
+
+  function closeProviderModal() {
+    setProviderModalOpen(false);
+    setProviderForm(null);
   }
 
   function openCreateModelModal() {
@@ -213,28 +263,48 @@ export function AiSettingsConsole({
     }));
   }
 
-  function handleProviderSubmit(
-    provider: AiSettingsProvider,
-    event: FormEvent<HTMLFormElement>,
+  function updateProviderEndpoint(
+    endpointId: string,
+    patch: Partial<ProviderFormState["endpoints"][number]>,
   ) {
+    setProviderForm((current) =>
+      current
+        ? {
+            ...current,
+            endpoints: current.endpoints.map((endpoint) =>
+              endpoint.id === endpointId ? { ...endpoint, ...patch } : endpoint,
+            ),
+          }
+        : current,
+    );
+  }
+
+  function handleProviderSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const formData = new FormData(event.currentTarget);
+    if (!providerForm) {
+      return;
+    }
 
-    setProviderPendingId(provider.id);
+    setProviderPendingId(providerForm.providerId);
     startSavingProvider(async () => {
       const result = await updateAiProviderConfigAction({
-        providerId: provider.id,
-        name: provider.name,
-        note: provider.note ?? "",
-        apiKey: String(formData.get("apiKey") ?? ""),
-        endpoints: provider.endpoints.map((endpoint) => ({
+        providerId: providerForm.providerId,
+        name: providerForm.name,
+        note: providerForm.note,
+        apiKey: providerForm.apiKey,
+        endpoints: providerForm.endpoints.map((endpoint) => ({
           id: endpoint.id,
-          baseUrl: String(formData.get(`endpoint-${endpoint.id}`) ?? ""),
+          baseUrl: endpoint.baseUrl,
         })),
       });
 
-      notifyResult(result);
+      const success = notifyResult(result);
+
+      if (success) {
+        closeProviderModal();
+      }
+
       setProviderPendingId(null);
     });
   }
@@ -281,13 +351,10 @@ export function AiSettingsConsole({
         <div className="section-head ai-settings-section-head">
           <div>
             <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
-              AI 模块设置
+              提供商配置
             </h2>
-            <p
-              className="muted"
-              style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-            >
-              维护提供商 API Key、接口地址，以及模型调用时的主备路由链。
+            <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
+              这里只看接入状态、接口地址和模型覆盖情况，修改统一走弹窗。
             </p>
           </div>
         </div>
@@ -295,19 +362,13 @@ export function AiSettingsConsole({
         {!databaseEnabled ? (
           <Empty description="当前未配置数据库，无法保存 AI 配置。" />
         ) : (
-          <div className="ai-provider-stack">
+          <div className="ai-provider-overview-grid">
             {providers.map((provider) => (
-              <form
-                key={provider.id}
-                className="ai-provider-card"
-                onSubmit={(event) => handleProviderSubmit(provider, event)}
-              >
-                <div className="ai-provider-card-head">
+              <article key={provider.id} className="ai-provider-overview-card">
+                <div className="ai-provider-overview-head">
                   <div>
-                    <div className="ai-provider-title-row">
-                      <h3 style={{ margin: 0, fontSize: 18 }}>
-                        {provider.name}
-                      </h3>
+                    <div className="ai-provider-overview-title">
+                      <h3 style={{ margin: 0, fontSize: 18 }}>{provider.name}</h3>
                       <Tag>{provider.code}</Tag>
                     </div>
                     {provider.note ? (
@@ -319,76 +380,57 @@ export function AiSettingsConsole({
                       </p>
                     ) : null}
                   </div>
-
-                  <Tag
-                    color={provider.apiKeyConfigured ? "success" : "default"}
-                  >
-                    {provider.apiKeyConfigured
-                      ? "已保存 API Key"
-                      : "未填写 API Key"}
+                  <Tag color={provider.apiKeyConfigured ? "success" : "default"}>
+                    {provider.apiKeyConfigured ? "已配置" : "未配置"}
                   </Tag>
                 </div>
 
-                <div className="ai-provider-form-grid">
-                  <div className="ai-provider-form-full">
-                    <label
-                      className="field-label"
-                      htmlFor={`api-key-${provider.id}`}
-                    >
-                      API Key
-                    </label>
-                    <Input.Password
-                      id={`api-key-${provider.id}`}
-                      name="apiKey"
-                      size="large"
-                      prefix={<KeyRound size={16} />}
-                      placeholder={
-                        provider.apiKeyConfigured
-                          ? "已保存，如需更换请输入新的 API Key"
-                          : "请输入提供商 API Key"
-                      }
-                    />
+                <div className="ai-provider-overview-meta">
+                  <div className="ai-provider-overview-metric">
+                    <div className="ai-provider-overview-metric-label">接口数量</div>
+                    <div className="ai-provider-overview-metric-value">
+                      {provider.endpoints.length}
+                    </div>
                   </div>
+                  <div className="ai-provider-overview-metric">
+                    <div className="ai-provider-overview-metric-label">覆盖模型</div>
+                    <div className="ai-provider-overview-metric-value">
+                      {provider.endpoints.reduce(
+                        (total, endpoint) => total + endpoint.modelCount,
+                        0,
+                      )}
+                    </div>
+                  </div>
+                </div>
 
+                <div className="ai-provider-endpoint-list">
                   {provider.endpoints.map((endpoint) => (
-                    <div key={endpoint.id}>
-                      <div className="ai-provider-endpoint-head">
-                        <label
-                          className="field-label"
-                          htmlFor={`endpoint-${endpoint.id}`}
-                        >
-                          {endpoint.label}
-                        </label>
-                        <Space size={8}>
-                          <Tag color="blue">
-                            {aiProtocolLabels[endpoint.protocol]}
-                          </Tag>
-                          <Tag>{endpoint.modelCount} 个模型</Tag>
-                        </Space>
+                    <div key={endpoint.id} className="ai-provider-endpoint-item">
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{endpoint.label}</div>
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          {endpoint.baseUrl}
+                        </div>
                       </div>
-                      <Input
-                        id={`endpoint-${endpoint.id}`}
-                        name={`endpoint-${endpoint.id}`}
-                        size="large"
-                        defaultValue={endpoint.baseUrl}
-                      />
+                      <Space size={[8, 8]} wrap>
+                        <Tag color="blue">
+                          {aiProtocolLabels[endpoint.protocol]}
+                        </Tag>
+                        <Tag>{endpoint.modelCount} 个模型</Tag>
+                      </Space>
                     </div>
                   ))}
                 </div>
 
-                <div className="ai-provider-actions">
+                <div className="ai-provider-overview-actions">
                   <Button
-                    type="primary"
-                    htmlType="submit"
-                    icon={<Save size={16} />}
-                    loading={
-                      isSavingProvider && providerPendingId === provider.id
-                    }
+                    icon={<PencilLine size={16} />}
+                    onClick={() => openProviderModal(provider)}
                   >
-                    保存提供商配置
+                    编辑提供商
                   </Button>
                 </div>
-              </form>
+              </article>
             ))}
           </div>
         )}
@@ -400,11 +442,8 @@ export function AiSettingsConsole({
             <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
               模型路由
             </h2>
-            <p
-              className="muted"
-              style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-            >
-              每个模型配置一条有顺序的路由链。系统调用时会先走主路由，不可用时按顺序切备用。
+            <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
+              每个模型只在列表里展示协议、主路由和备用数量，详细调整放进弹窗。
             </p>
           </div>
           <Button
@@ -413,7 +452,7 @@ export function AiSettingsConsole({
             onClick={openCreateModelModal}
             disabled={!databaseEnabled || !endpointOptions.length}
           >
-            添加模型
+            新建模型
           </Button>
         </div>
 
@@ -422,53 +461,38 @@ export function AiSettingsConsole({
         ) : !models.length ? (
           <Empty description="当前还没有模型，点击右上角开始添加。" />
         ) : (
-          <div className="table-surface ai-model-table">
-            <div className="ai-model-table-head">
-              <div>模型名</div>
-              <div>协议</div>
-              <div>路由链</div>
-              <div>备注</div>
-              <div>操作</div>
-            </div>
-
+          <div className="ai-model-overview-grid">
             {models.map((model) => (
-              <div key={model.id} className="ai-model-table-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>{model.code}</div>
-                  {model.label ? (
-                    <div className="muted" style={{ marginTop: 4 }}>
-                      {model.label}
+              <article key={model.id} className="ai-model-overview-card">
+                <div className="ai-model-overview-head">
+                  <div>
+                    <div className="ai-provider-overview-title">
+                      <h3 style={{ margin: 0, fontSize: 18 }}>{model.code}</h3>
+                      <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
+                      <Tag>{model.routes.length} 条路由</Tag>
                     </div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
-                </div>
-
-                <div className="ai-model-route-summary">
-                  {model.routes.map((route, index) => (
-                    <div
-                      key={`${model.id}-${route.id}`}
-                      className={`ai-model-route-chip ${
-                        route.enabled ? "" : "disabled"
-                      }`}
-                    >
-                      <div style={{ fontWeight: 600 }}>
-                        {index + 1}.{" "}
-                        {endpointLabel(route.providerName, route.label)}
+                    {model.label ? (
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        {model.label}
                       </div>
-                      <div className="muted">
-                        {routeStatusLabel(index)} · {route.timeoutMs}ms
-                        {route.enabled ? "" : " · 已停用"}
-                      </div>
-                    </div>
-                  ))}
+                    ) : null}
+                  </div>
+                  <div className="ai-model-overview-meta">
+                    <span className="muted">
+                      {model.routes[0]
+                        ? `主路由：${endpointLabel(
+                            model.routes[0].providerName,
+                            model.routes[0].label,
+                          )}`
+                        : "未配置路由"}
+                    </span>
+                    {model.note ? (
+                      <span className="muted">备注：{model.note}</span>
+                    ) : null}
+                  </div>
                 </div>
 
-                <div className="muted">{model.note || "-"}</div>
-
-                <div className="ai-model-row-actions">
+                <div className="ai-model-overview-actions">
                   <Button
                     icon={<PencilLine size={16} />}
                     onClick={() => openEditModelModal(model)}
@@ -491,22 +515,128 @@ export function AiSettingsConsole({
                     </Button>
                   </Popconfirm>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
       </section>
 
       <Modal
+        open={providerModalOpen}
+        onCancel={closeProviderModal}
+        footer={null}
+        destroyOnHidden
+        width={760}
+        title={providerForm ? `编辑提供商 · ${providerForm.name}` : "编辑提供商"}
+      >
+        {providerForm ? (
+          <form className="ai-modal-form" onSubmit={handleProviderSubmit}>
+            <div className="ai-modal-panel">
+              <div className="ai-modal-panel-head">
+                <div>
+                  <div style={{ fontWeight: 700 }}>基础配置</div>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    API Key 和接口地址修改后会立即影响模型路由调用。
+                  </div>
+                </div>
+                <Tag>{providerForm.endpoints.length} 个接口</Tag>
+              </div>
+
+              <div className="ai-provider-form-grid">
+                <div className="ai-provider-form-full">
+                  <label className="field-label" htmlFor="provider-api-key">
+                    API Key
+                  </label>
+                  <Input.Password
+                    id="provider-api-key"
+                    size="large"
+                    prefix={<KeyRound size={16} />}
+                    value={providerForm.apiKey}
+                    onChange={(event) =>
+                      setProviderForm((current) =>
+                        current
+                          ? { ...current, apiKey: event.target.value }
+                          : current,
+                      )
+                    }
+                    placeholder="留空表示不更换已保存的 API Key"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="ai-modal-panel">
+              <div className="ai-modal-panel-head">
+                <div style={{ fontWeight: 700 }}>接口地址</div>
+                <Tag color="blue">按协议区分</Tag>
+              </div>
+
+              <div className="ai-provider-endpoint-edit-list">
+                {providerForm.endpoints.map((endpoint) => (
+                  <div key={endpoint.id} className="ai-provider-endpoint-edit-item">
+                    <div className="ai-provider-endpoint-edit-head">
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{endpoint.label}</div>
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          已绑定 {endpoint.modelCount} 个模型
+                        </div>
+                      </div>
+                      <Tag color="blue">{aiProtocolLabels[endpoint.protocol]}</Tag>
+                    </div>
+                    <Input
+                      size="large"
+                      value={endpoint.baseUrl}
+                      onChange={(event) =>
+                        updateProviderEndpoint(endpoint.id, {
+                          baseUrl: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="ai-model-form-actions">
+              <Button onClick={closeProviderModal}>取消</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<Settings2 size={16} />}
+                loading={
+                  isSavingProvider &&
+                  providerPendingId === providerForm.providerId
+                }
+              >
+                保存提供商配置
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      <Modal
         open={modelModalOpen}
         onCancel={closeModelModal}
         footer={null}
         destroyOnHidden
-        title={modelForm.modelId ? "编辑模型路由" : "添加模型路由"}
-        width={860}
+        title={modelForm.modelId ? "编辑模型路由" : "新建模型路由"}
+        width={760}
       >
-        <form className="ai-model-form" onSubmit={handleModelSubmit}>
-          <div className="ai-model-form-grid">
+        <form className="ai-model-form ai-model-form-compact" onSubmit={handleModelSubmit}>
+          <div className="ai-modal-header-inline">
+            <div>
+              <div style={{ fontWeight: 700 }}>
+                {modelForm.modelId ? "编辑模型" : "新建模型"}
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                基础信息和路由链集中在一个弹窗内完成。
+              </div>
+            </div>
+            <Tag color="blue">{aiProtocolLabels[modelForm.protocol]}</Tag>
+          </div>
+
+          <div className="ai-model-form-grid ai-model-form-grid-compact">
             <div>
               <label className="field-label" htmlFor="ai-model-code">
                 模型名
@@ -567,16 +697,17 @@ export function AiSettingsConsole({
                     label: event.target.value,
                   }))
                 }
-                placeholder="可选，用于后台展示"
+                placeholder="可选"
               />
             </div>
 
-            <div className="ai-model-form-full">
+            <div>
               <label className="field-label" htmlFor="ai-model-note">
                 备注
               </label>
-              <Input.TextArea
+              <Input
                 id="ai-model-note"
+                size="large"
                 value={modelForm.note}
                 onChange={(event) =>
                   setModelForm((current) => ({
@@ -584,26 +715,24 @@ export function AiSettingsConsole({
                     note: event.target.value,
                   }))
                 }
-                placeholder="可选，例如调用策略说明"
-                autoSize={{ minRows: 3, maxRows: 5 }}
+                placeholder="可选"
               />
             </div>
           </div>
 
-          <div className="ai-route-builder">
-            <div className="ai-route-builder-head">
+          <div className="ai-route-builder ai-route-builder-compact">
+            <div className="ai-route-builder-toolbar">
               <div>
                 <div style={{ fontWeight: 700 }}>路由链</div>
                 <div className="muted" style={{ marginTop: 4 }}>
-                  从上到下依次尝试。第 1 条为主路由，其余为备用。
+                  第 1 条为主路由，其余按顺序回退。
                 </div>
               </div>
-
               <Select<string>
                 size="large"
                 value={undefined}
                 placeholder="添加路由接口"
-                style={{ minWidth: 280 }}
+                style={{ minWidth: 240 }}
                 options={availableRouteOptions.map((endpoint) => ({
                   value: endpoint.id,
                   label: endpointLabel(endpoint.providerName, endpoint.label),
@@ -623,7 +752,7 @@ export function AiSettingsConsole({
                 <span>当前还没有配置路由，请先添加至少一个接口。</span>
               </div>
             ) : (
-              <div className="ai-route-stack">
+              <div className="ai-route-stack ai-route-stack-compact">
                 {modelForm.routes.map((route, index) => {
                   const endpoint = endpointMap[route.endpointId];
 
@@ -634,7 +763,7 @@ export function AiSettingsConsole({
                   return (
                     <div
                       key={`${route.endpointId}-${index}`}
-                      className="ai-route-card"
+                      className="ai-route-card ai-route-card-compact"
                     >
                       <div className="ai-route-card-main">
                         <div className="ai-route-card-index">{index + 1}</div>
@@ -648,10 +777,10 @@ export function AiSettingsConsole({
                                 )}
                               </div>
                               <div className="muted" style={{ marginTop: 4 }}>
-                                {routeStatusLabel(index)}
+                                {routeStatusLabel(index)} · {endpoint.baseUrl}
                               </div>
                             </div>
-                            <Space size={8}>
+                            <Space size={8} wrap>
                               <Tag color="blue">
                                 {aiProtocolLabels[endpoint.protocol]}
                               </Tag>
@@ -659,11 +788,7 @@ export function AiSettingsConsole({
                             </Space>
                           </div>
 
-                          <div className="muted" style={{ marginTop: 8 }}>
-                            {endpoint.baseUrl}
-                          </div>
-
-                          <div className="ai-route-card-controls">
+                          <div className="ai-route-card-controls ai-route-card-controls-compact">
                             <div>
                               <div className="review-toolbar-label">超时</div>
                               <InputNumber
@@ -675,7 +800,9 @@ export function AiSettingsConsole({
                                 onChange={(value) =>
                                   updateRoute(index, {
                                     timeoutMs:
-                                      typeof value === "number" ? value : 15000,
+                                      typeof value === "number"
+                                        ? value
+                                        : 15000,
                                   })
                                 }
                               />
@@ -694,7 +821,7 @@ export function AiSettingsConsole({
                         </div>
                       </div>
 
-                      <div className="ai-route-card-actions">
+                      <div className="ai-route-card-actions ai-route-card-actions-compact">
                         <Button
                           icon={<ArrowUp size={16} />}
                           onClick={() => moveRoute(index, -1)}
