@@ -1,4 +1,4 @@
-import { Card, Col, Progress, Row, Space, Tag } from "antd";
+import { Progress, Tag } from "antd";
 import { Activity, DatabaseZap, FolderOpenDot, Users } from "lucide-react";
 
 const stats = [
@@ -7,149 +7,153 @@ const stats = [
     value: "3",
     hint: "当前已建项目",
     icon: FolderOpenDot,
-    color: "#409eff",
+    color: "#2563eb",
   },
   {
     label: "平台用户",
     value: "12",
     hint: "含管理员与专家",
     icon: Users,
-    color: "#0f9f6e",
+    color: "#0f766e",
   },
   {
     label: "数据源",
     value: "5",
-    hint: "钉钉表格绑定",
+    hint: "已接入钉钉表格",
     icon: DatabaseZap,
-    color: "#d97706",
+    color: "#b45309",
   },
   {
     label: "待接入模块",
     value: "AI",
-    hint: "审核能力待实现",
+    hint: "审核能力待完善",
     icon: Activity,
-    color: "#909399",
+    color: "#475467",
   },
+];
+
+const progressItems = [
+  { label: "项目初始化", percent: 100, color: "#2563eb" },
+  { label: "鉴权基础能力", percent: 85, color: "#0f766e" },
+  { label: "钉钉与 AI 集成", percent: 20, color: "#b45309" },
 ];
 
 const nextItems = [
   "配置 PostgreSQL 并执行首个 Prisma migration",
-  "落项目管理与成员管理 CRUD",
+  "补齐项目管理与成员管理 CRUD",
   "接入钉钉 OAuth 与数据源绑定",
-  "补审核记录与 AI 调用页面",
+  "完成审核记录与 AI 调用页面",
 ];
 
 export default function DashboardPage() {
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Card className="panel">
-        <h2 style={{ margin: "0 0 16px", fontSize: 30, lineHeight: 1.1 }}>
-          一期基础框架已就位
-        </h2>
-        <p
-          className="muted"
-          style={{ marginBottom: 0, maxWidth: 720, lineHeight: 1.75 }}
-        >
-          当前版本已完成 Next.js 应用结构、Prisma 数据模型、Auth.js
-          账号密码登录和后台基础导航。下一步可以接项目 CRUD、钉钉 OAuth
-          和数据源同步。
-        </p>
-      </Card>
+    <>
+      <section className="content-surface overview-hero">
+        <div className="overview-hero-copy">
+          <div className="dashboard-kicker">Admin Overview</div>
+          <h2>一期基础框架已经成型，接下来重点补业务闭环。</h2>
+          <p>
+            当前版本已经完成 Next.js 应用结构、Prisma 数据模型、Auth.js
+            登录和后台基础导航。界面层这次重构收敛为中性配色和更明确的层级，后续扩展 CRUD、
+            数据接入和审核流程时会更稳定。
+          </p>
+        </div>
 
-      <Row gutter={[16, 16]}>
+        <div className="overview-side-card">
+          <div>
+            <div className="overview-side-card-label">Current Phase</div>
+            <div className="overview-side-card-value">Phase 1</div>
+          </div>
+          <div className="muted" style={{ lineHeight: 1.7 }}>
+            先把权限、项目、数据源和 AI 配置四块平台能力串起来，再补完整审核链路。
+          </div>
+        </div>
+      </section>
+
+      <section className="overview-stat-grid">
         {stats.map((item) => {
           const Icon = item.icon;
 
           return (
-            <Col xs={24} md={12} xl={6} key={item.label}>
-              <Card className="panel">
-                <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 8,
-                      display: "grid",
-                      placeItems: "center",
-                      background: `${item.color}18`,
-                      color: item.color,
-                    }}
-                  >
-                    <Icon size={22} />
-                  </div>
-                  <div className="stat-value">{item.value}</div>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{item.label}</div>
-                    <div className="muted">{item.hint}</div>
-                  </div>
-                </Space>
-              </Card>
-            </Col>
+            <div key={item.label} className="content-surface overview-stat-card">
+              <div
+                className="overview-stat-icon"
+                style={{ color: item.color }}
+              >
+                <Icon size={20} />
+              </div>
+              <div className="stat-value">{item.value}</div>
+              <div>
+                <div className="overview-stat-title">{item.label}</div>
+                <div className="muted" style={{ marginTop: 6 }}>
+                  {item.hint}
+                </div>
+              </div>
+            </div>
           );
         })}
-      </Row>
+      </section>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={14}>
-          <Card className="panel" title="一期实施进度">
-            <Space direction="vertical" size={18} style={{ width: "100%" }}>
-              <div>
-                <Space
-                  style={{ width: "100%", justifyContent: "space-between" }}
-                >
-                  <span>项目初始化</span>
-                  <strong>100%</strong>
-                </Space>
-                <Progress
-                  percent={100}
-                  showInfo={false}
-                  strokeColor="#409eff"
-                />
-              </div>
-              <div>
-                <Space
-                  style={{ width: "100%", justifyContent: "space-between" }}
-                >
-                  <span>鉴权基础能力</span>
-                  <strong>85%</strong>
-                </Space>
-                <Progress percent={85} showInfo={false} strokeColor="#0f9f6e" />
-              </div>
-              <div>
-                <Space
-                  style={{ width: "100%", justifyContent: "space-between" }}
-                >
-                  <span>钉钉与 AI 集成</span>
-                  <strong>20%</strong>
-                </Space>
-                <Progress percent={20} showInfo={false} strokeColor="#d97706" />
-              </div>
-            </Space>
-          </Card>
-        </Col>
+      <section className="overview-panel-grid">
+        <div className="content-surface">
+          <div className="section-head" style={{ marginBottom: 18 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                一期实施进度
+              </h2>
+              <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
+                将平台能力拆成三个阶段，先保证基础设施稳定，再补外围集成。
+              </p>
+            </div>
+          </div>
 
-        <Col xs={24} xl={10}>
-          <Card className="panel" title="后续优先事项">
-            <div style={{ display: "grid", gap: 12 }}>
-              {nextItems.map((item) => (
+          <div style={{ display: "grid", gap: 18 }}>
+            {progressItems.map((item) => (
+              <div key={item.label}>
                 <div
-                  key={item}
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
-                    padding: "12px 0",
-                    borderBottom: "1px solid var(--line)",
+                    justifyContent: "space-between",
+                    marginBottom: 10,
                   }}
                 >
-                  <Tag color="blue">Next</Tag>
-                  <span>{item}</span>
+                  <span>{item.label}</span>
+                  <strong>{item.percent}%</strong>
                 </div>
-              ))}
+                <Progress
+                  percent={item.percent}
+                  showInfo={false}
+                  strokeColor={item.color}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="content-surface">
+          <div className="section-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                后续优先事项
+              </h2>
+              <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
+                保持顺序推进，避免并行改动过多造成后台结构反复。
+              </p>
             </div>
-          </Card>
-        </Col>
-      </Row>
-    </Space>
+          </div>
+
+          <div className="overview-list">
+            {nextItems.map((item, index) => (
+              <div key={item} className="overview-list-item">
+                <div className="overview-list-index">{index + 1}</div>
+                <div style={{ minWidth: 0, flex: 1 }}>{item}</div>
+                <Tag color="blue">Next</Tag>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

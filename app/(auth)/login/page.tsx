@@ -11,77 +11,49 @@ export default function LoginPage() {
       }}
     >
       <div className="login-grid">
-        <section
-          className="panel"
-          style={{
-            padding: 36,
-            minHeight: 520,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
+        <section className="panel login-showcase">
+          <div className="login-showcase-copy">
             <p
               style={{
-                color: "var(--brand)",
+                color: "var(--muted)",
                 fontWeight: 700,
                 marginBottom: 16,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                fontSize: 12,
               }}
             >
-              一期初始化骨架
+              Benchmark Platform
             </p>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "clamp(40px, 7vw, 68px)",
-                lineHeight: 0.95,
-                letterSpacing: "-0.06em",
-              }}
-            >
-              Benchmark
+            <h1 className="login-showcase-title">
+              Review
               <br />
-              Review Console
+              Console
             </h1>
             <p
               style={{
                 marginTop: 24,
-                maxWidth: 460,
-                color: "var(--muted)",
+                maxWidth: 500,
                 fontSize: 16,
-                lineHeight: 1.7,
+                lineHeight: 1.75,
               }}
             >
-              面向项目管理、钉钉表格同步与 AI
-              审核的协作后台。当前版本已完成项目骨架、用户鉴权和后台基础框架。
+              面向项目管理、数据源同步与 AI 审核的协作后台。界面收敛为低饱和配色和更清晰的结构，优先服务后台日常操作。
             </p>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-              gap: 16,
-            }}
-          >
+          <div className="login-meta-grid">
             {[
               { value: "Projects", label: "项目管理" },
               { value: "Auth.js", label: "登录鉴权" },
               { value: "Prisma", label: "数据模型" },
             ].map((item) => (
-              <div
-                key={item.label}
-                style={{
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  padding: 20,
-                  background: "var(--panel-soft)",
-                }}
-              >
-                <div style={{ fontSize: 24, fontWeight: 700 }}>
-                  {item.value}
-                </div>
-                <div style={{ marginTop: 8, color: "var(--muted)" }}>
+              <div key={item.label} className="login-meta-item">
+                <div className="login-meta-item-value">{item.value}</div>
+                <div
+                  className="login-meta-item-copy"
+                  style={{ marginTop: 8, lineHeight: 1.6 }}
+                >
                   {item.label}
                 </div>
               </div>

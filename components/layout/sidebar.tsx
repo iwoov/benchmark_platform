@@ -125,12 +125,12 @@ export function Sidebar({
           }),
         }));
   const rootPath = variant === "admin" ? "/admin" : "/workspace";
-  const title = variant === "admin" ? "Admin Console" : "Expert Workspace";
+  const title = variant === "admin" ? "Platform Admin" : "Expert Workspace";
   const copy =
     variant === "admin"
-      ? "平台级配置、组织与数据源管理"
-      : "项目管理、出题、审核协作工作台";
-  const showSidebarHeader = variant !== "admin";
+      ? "平台配置、权限和数据接入统一在这里管理。"
+      : "项目协作、出题与审核在同一工作流内完成。";
+  const showSidebarHeader = true;
 
   return (
     <aside className="dashboard-sidebar">
@@ -208,6 +208,12 @@ export function Sidebar({
             </div>
           ) : (
             <div className="sidebar-admin-actions">
+              {currentUser ? (
+                <div style={{ marginBottom: 12 }}>
+                  <div className="sidebar-user-name">{currentUser.name}</div>
+                  <div className="sidebar-user-id">@{currentUser.username}</div>
+                </div>
+              ) : null}
               <div className="sidebar-logout">
                 <LogoutButton />
               </div>

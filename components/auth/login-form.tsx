@@ -20,11 +20,7 @@ export function LoginForm() {
 
   return (
     <Card
-      className="panel"
-      style={{
-        width: "100%",
-        maxWidth: 460,
-      }}
+      className="panel login-form-card"
       styles={{
         body: {
           padding: 28,
@@ -33,7 +29,7 @@ export function LoginForm() {
     >
       <Space direction="vertical" size={24} style={{ width: "100%" }}>
         <Space direction="vertical" size={8}>
-          <div style={{ color: "var(--brand)", fontWeight: 700 }}>
+          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" }}>
             Benchmark Platform
           </div>
           <h2 style={{ margin: 0, fontSize: 32, lineHeight: 1.1 }}>登录后台</h2>
@@ -90,10 +86,7 @@ export function LoginForm() {
         </form>
 
         <Card
-          style={{
-            background: "var(--panel-soft)",
-            borderColor: "var(--line)",
-          }}
+          className="login-hint-card"
         >
           <div style={{ fontWeight: 700 }}>管理员账号</div>
           <p
