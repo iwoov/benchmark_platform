@@ -1,0 +1,412 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/db/prisma";
+import { canUserReviewProject } from "@/lib/reviews/permissions";
+import { isAdminRole } from "@/lib/auth/roles";
+import {
+    aiReviewStrategyPersistedSchema,
+    type AiReviewStrategyPersistedInput,
+} from "@/lib/ai/review-strategy-schema";
+import { executeAiReviewStrategy } from "@/lib/ai/review-strategies";
+
+export type AiReviewStrategyActionState = {
+    error?: string;
+    success?: string;
+};
+
+const saveStrategySchema = z.object({
+    strategyId: z
+        .string()
+        .trim()
+        .optional()
+        .transform((value) => value || undefined),
+    payload: aiReviewStrategyPersistedSchema,
+});
+
+const deleteStrategySchema = z.object({
+    strategyId: z.string().trim().min(1, "缺少策略 ID"),
+});
+
+const runStrategySchema = z.object({
+    strategyId: z.string().trim().min(1, "请选择要执行的策略"),
+    questionId: z.string().trim().min(1, "缺少题目 ID"),
+});
+
+async function requireStrategyAdminAccess() {
+    const session = await auth();
+
+    if (!isAdminRole(session?.user.platformRole)) {
+        return {
+            error: "只有管理员可以维护 AI 审核策略。",
+        } satisfies AiReviewStrategyActionState;
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法保存审核策略。",
+        } satisfies AiReviewStrategyActionState;
+    }
+
+    return null;
+}
+
+function revalidateStrategyPaths(questionId?: string) {
+    revalidatePath("/admin/ai-strategies");
+    revalidatePath("/dashboard/ai-strategies");
+
+    if (questionId) {
+        revalidatePath(`/admin/review-tasks/${questionId}`);
+        revalidatePath(`/workspace/reviews/${questionId}`);
+    }
+}
+
+function extractRawFieldOrder(input: unknown) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return [] as string[];
+    }
+
+    const rawFieldOrder = (input as Record<string, unknown>).rawFieldOrder;
+
+    if (!Array.isArray(rawFieldOrder)) {
+        return [] as string[];
+    }
+
+    return rawFieldOrder.filter(
+        (value): value is string =>
+            typeof value === "string" && Boolean(value.trim()),
+    );
+}
+
+async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
+    const projectIds = [...new Set(input.projectIds)];
+    const datasourceIds = [...new Set(input.datasourceIds)];
+    let datasourceFieldSet = new Set<string>();
+
+    if (projectIds.length) {
+        const projects = await prisma.project.findMany({
+            where: {
+                id: {
+                    in: projectIds,
+                },
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        if (projects.length !== projectIds.length) {
+            return "部分项目不存在，请刷新后重试。";
+        }
+    }
+
+    if (datasourceIds.length) {
+        const datasources = await prisma.projectDataSource.findMany({
+            where: {
+                id: {
+                    in: datasourceIds,
+                },
+            },
+            select: {
+                id: true,
+                projectId: true,
+            },
+        });
+
+        if (datasources.length !== datasourceIds.length) {
+            return "部分数据源不存在，请刷新后重试。";
+        }
+
+        if (
+            projectIds.length &&
+            datasources.some(
+                (datasource) => !projectIds.includes(datasource.projectId),
+            )
+        ) {
+            return "所选数据源与适用项目不匹配，请调整后再保存。";
+        }
+
+        const datasourceDetails = await prisma.projectDataSource.findMany({
+            where: {
+                id: {
+                    in: datasourceIds,
+                },
+            },
+            select: {
+                syncConfig: true,
+            },
+        });
+
+        datasourceFieldSet = new Set(
+            datasourceDetails.flatMap((datasource) =>
+                extractRawFieldOrder(datasource.syncConfig),
+            ),
+        );
+    }
+
+    const modelCodes = [
+        ...new Set(
+            input.definition.steps
+                .filter((step) => step.kind === "AI_TOOL")
+                .map((step) => step.modelCode),
+        ),
+    ];
+
+    if (modelCodes.length) {
+        const models = await prisma.aiModel.findMany({
+            where: {
+                code: {
+                    in: modelCodes,
+                },
+            },
+            select: {
+                code: true,
+            },
+        });
+
+        if (models.length !== modelCodes.length) {
+            return "部分步骤引用的模型不存在，请先到 AI 设置页维护模型。";
+        }
+    }
+
+    const aiToolSteps = input.definition.steps.filter(
+        (
+            step,
+        ): step is Extract<
+            (typeof input.definition.steps)[number],
+            { kind: "AI_TOOL" }
+        > => step.kind === "AI_TOOL",
+    );
+
+    if (aiToolSteps.length && !datasourceIds.length) {
+        return "请先选择适用数据源，再配置 AI 步骤要提交的原始字段。";
+    }
+
+    for (const step of aiToolSteps) {
+        if (
+            step.fieldKeys.some((fieldKey) => !datasourceFieldSet.has(fieldKey))
+        ) {
+            return `步骤 ${step.name} 选择了不属于当前数据源的原始字段，请重新选择。`;
+        }
+    }
+
+    return null;
+}
+
+export async function saveAiReviewStrategyAction(
+    input: z.input<typeof saveStrategySchema>,
+): Promise<AiReviewStrategyActionState> {
+    const accessError = await requireStrategyAdminAccess();
+
+    if (accessError) {
+        return accessError;
+    }
+
+    const parsed = saveStrategySchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "审核策略参数不完整。",
+        };
+    }
+
+    const validationError = await validateStrategyPayload(parsed.data.payload);
+
+    if (validationError) {
+        return {
+            error: validationError,
+        };
+    }
+
+    const session = await auth();
+    const duplicate = await prisma.aiReviewStrategy.findFirst({
+        where: parsed.data.strategyId
+            ? {
+                  code: parsed.data.payload.code,
+                  NOT: {
+                      id: parsed.data.strategyId,
+                  },
+              }
+            : {
+                  code: parsed.data.payload.code,
+              },
+        select: {
+            id: true,
+        },
+    });
+
+    if (duplicate) {
+        return {
+            error: "策略编码已存在，请更换后再保存。",
+        };
+    }
+
+    const data = {
+        code: parsed.data.payload.code,
+        name: parsed.data.payload.name,
+        description: parsed.data.payload.description,
+        enabled: parsed.data.payload.enabled,
+        projectIds: parsed.data.payload.projectIds,
+        datasourceIds: parsed.data.payload.datasourceIds,
+        definition: parsed.data.payload.definition,
+    };
+
+    if (parsed.data.strategyId) {
+        const current = await prisma.aiReviewStrategy.findUnique({
+            where: {
+                id: parsed.data.strategyId,
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        if (!current) {
+            return {
+                error: "要编辑的审核策略不存在。",
+            };
+        }
+
+        await prisma.aiReviewStrategy.update({
+            where: {
+                id: current.id,
+            },
+            data,
+        });
+    } else {
+        await prisma.aiReviewStrategy.create({
+            data: {
+                ...data,
+                createdById: session!.user.id,
+            },
+        });
+    }
+
+    revalidateStrategyPaths();
+
+    return {
+        success: `审核策略 ${parsed.data.payload.name} 已保存。`,
+    };
+}
+
+export async function deleteAiReviewStrategyAction(
+    input: z.input<typeof deleteStrategySchema>,
+): Promise<AiReviewStrategyActionState> {
+    const accessError = await requireStrategyAdminAccess();
+
+    if (accessError) {
+        return accessError;
+    }
+
+    const parsed = deleteStrategySchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "删除参数不完整。",
+        };
+    }
+
+    const strategy = await prisma.aiReviewStrategy.findUnique({
+        where: {
+            id: parsed.data.strategyId,
+        },
+        select: {
+            id: true,
+            name: true,
+        },
+    });
+
+    if (!strategy) {
+        return {
+            error: "审核策略不存在。",
+        };
+    }
+
+    await prisma.aiReviewStrategy.delete({
+        where: {
+            id: strategy.id,
+        },
+    });
+
+    revalidateStrategyPaths();
+
+    return {
+        success: `审核策略 ${strategy.name} 已删除。`,
+    };
+}
+
+export async function runAiReviewStrategyAction(
+    input: z.input<typeof runStrategySchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再执行 AI 审核策略。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法执行 AI 审核策略。",
+        };
+    }
+
+    const parsed = runStrategySchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "策略执行参数不完整。",
+        };
+    }
+
+    const question = await prisma.question.findUnique({
+        where: {
+            id: parsed.data.questionId,
+        },
+        select: {
+            id: true,
+            projectId: true,
+            title: true,
+        },
+    });
+
+    if (!question) {
+        return {
+            error: "题目不存在或已被删除。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        question.projectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    try {
+        await executeAiReviewStrategy(
+            parsed.data.strategyId,
+            parsed.data.questionId,
+            session.user.id,
+        );
+    } catch (error) {
+        revalidateStrategyPaths(question.id);
+        return {
+            error: error instanceof Error ? error.message : "策略执行失败。",
+        };
+    }
+
+    revalidateStrategyPaths(question.id);
+
+    return {
+        success: `题目 ${question.title} 的 AI 审核策略已执行完成。`,
+    };
+}

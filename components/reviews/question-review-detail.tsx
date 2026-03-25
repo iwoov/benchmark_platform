@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { App, Button, Input, Select, Space, Tag } from "antd";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { submitReviewAction } from "@/app/actions/reviews";
+import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import type {
     ReviewQuestionDetail,
     ReviewQuestionNavigation,
@@ -23,11 +24,74 @@ export function QuestionReviewDetail({
     canReview,
     listPath,
     navigation,
+    reviewStrategies,
+    strategyRuns,
 }: {
     question: ReviewQuestionDetail;
     canReview: boolean;
     listPath: string;
     navigation: ReviewQuestionNavigation;
+    reviewStrategies: Array<{
+        id: string;
+        name: string;
+        code: string;
+        description: string | null;
+        stepCount: number;
+        datasourceIds: string[];
+    }>;
+    strategyRuns: Array<{
+        id: string;
+        status: string;
+        errorMessage: string | null;
+        createdAt: string;
+        finishedAt: string | null;
+        strategy: {
+            id: string;
+            name: string;
+            code: string;
+        };
+        triggeredByName: string;
+        parsedResult: {
+            version: 1;
+            strategy: {
+                id: string;
+                code: string;
+                name: string;
+            };
+            question: {
+                id: string;
+                title: string;
+                projectName: string;
+                projectCode: string;
+                datasourceName: string;
+            };
+            status: "SUCCESS" | "FAILED";
+            stepResults: Array<{
+                stepId: string;
+                stepName: string;
+                stepKind: "AI_TOOL" | "RULE";
+                stepType: string;
+                status: "SUCCESS" | "FAILED" | "SKIPPED";
+                summary: string;
+                outcomeLabel?: string;
+                items: Array<{
+                    index: number;
+                    status: "SUCCESS" | "FAILED";
+                    sourceStepId?: string;
+                    output?: unknown;
+                    derived?: Record<string, unknown>;
+                    error?: string;
+                }>;
+                metrics?: Record<string, unknown>;
+                error?: string;
+            }>;
+            finalRecommendation: {
+                decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+                riskLevel?: string;
+                summary: string;
+            } | null;
+        } | null;
+    }>;
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
@@ -182,6 +246,14 @@ export function QuestionReviewDetail({
                     <div className="muted">当前题目没有原始字段可展示。</div>
                 )}
             </section>
+
+            {canReview ? (
+                <AiReviewStrategyRunner
+                    questionId={question.id}
+                    strategies={reviewStrategies}
+                    runs={strategyRuns}
+                />
+            ) : null}
 
             {canReview ? (
                 <section className="content-surface">

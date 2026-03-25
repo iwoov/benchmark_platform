@@ -693,7 +693,7 @@ select {
 }
 
 .ant-modal .ant-modal-content {
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
@@ -708,7 +708,29 @@ select {
 }
 
 .ant-modal .ant-modal-body {
+    overflow: visible;
     padding: 20px;
+}
+
+.strategy-form-shell .ant-select {
+    width: 100%;
+}
+
+.strategy-modal-wrap .ant-modal {
+    max-width: calc(100vw - 40px);
+}
+
+.strategy-modal-wrap .ant-modal-header {
+    padding: 14px 16px;
+}
+
+.strategy-modal-wrap .ant-modal-body {
+    padding: 16px;
+}
+
+.strategy-modal-wrap .field-label {
+    margin-bottom: 6px;
+    font-size: 13px;
 }
 
 .ant-modal .ant-modal-footer {
@@ -1095,6 +1117,175 @@ select {
     flex-shrink: 0;
 }
 
+.ai-review-strategy-page {
+    display: grid;
+    gap: 16px;
+}
+
+.ai-review-strategy-head {
+    margin-bottom: 18px;
+}
+
+.strategy-card-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.strategy-card,
+.strategy-step-editor-card,
+.strategy-run-card {
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: rgba(247, 249, 252, 0.86);
+}
+
+.strategy-card-head,
+.strategy-title-row,
+.strategy-run-head,
+.strategy-builder-head,
+.strategy-step-editor-head,
+.strategy-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.strategy-card-head,
+.strategy-run-head,
+.strategy-builder-head,
+.strategy-step-editor-head,
+.strategy-switch-row {
+    align-items: flex-start;
+}
+
+.strategy-title-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.strategy-meta-row,
+.strategy-tag-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.strategy-scope-block {
+    display: grid;
+    gap: 8px;
+}
+
+.strategy-scope-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.strategy-scope-inline {
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.strategy-step-stack,
+.strategy-step-editor-stack,
+.strategy-run-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.strategy-step-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.84);
+}
+
+.strategy-step-index,
+.strategy-step-order-chip {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.strategy-step-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-weight: 600;
+}
+
+.strategy-step-copy {
+    margin-top: 6px;
+    line-height: 1.7;
+}
+
+.strategy-form-shell,
+.strategy-builder {
+    display: grid;
+    gap: 20px;
+}
+
+.strategy-form-grid,
+.strategy-step-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.strategy-step-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.strategy-step-form-full {
+    grid-column: 1 / -1;
+}
+
+.strategy-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.strategy-modal-wrap .strategy-form-shell,
+.strategy-modal-wrap .strategy-builder {
+    gap: 14px;
+}
+
+.strategy-modal-wrap .strategy-form-grid,
+.strategy-modal-wrap .strategy-step-form-grid {
+    gap: 12px;
+}
+
+.strategy-modal-wrap .strategy-switch-row {
+    gap: 12px;
+    padding: 10px 0 2px;
+}
+
+.strategy-modal-wrap .strategy-step-editor-stack {
+    gap: 10px;
+}
+
+.strategy-modal-wrap .strategy-step-editor-card {
+    gap: 12px;
+    padding: 14px;
+}
+
 .ai-route-stack-compact {
     gap: 10px;
 }
@@ -1111,6 +1302,49 @@ select {
 
 .ai-route-card-actions-compact .ant-btn {
     min-width: 40px;
+}
+
+.strategy-modal-wrap .strategy-step-editor-head {
+    gap: 10px;
+}
+
+.strategy-modal-wrap .strategy-builder-head {
+    margin-bottom: 2px;
+}
+
+.strategy-modal-wrap .strategy-modal-actions {
+    gap: 10px;
+    padding-top: 2px;
+}
+
+.strategy-run-summary {
+    padding: 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.84);
+}
+
+.strategy-run-summary-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.strategy-run-error {
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(220, 38, 38, 0.14);
+    background: rgba(254, 242, 242, 0.9);
+    color: var(--danger);
+    line-height: 1.6;
+}
+
+.strategy-run-inline-errors {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
 }
 
 .overview-hero {
@@ -1365,7 +1599,9 @@ select {
     }
 
     .ai-provider-form-grid,
-    .ai-model-form-grid {
+    .ai-model-form-grid,
+    .strategy-form-grid,
+    .strategy-step-form-grid {
         grid-template-columns: 1fr;
     }
 
@@ -1383,7 +1619,12 @@ select {
     .ai-route-card,
     .ai-route-card-top,
     .ai-route-card-controls,
-    .ai-route-card-actions {
+    .ai-route-card-actions,
+    .strategy-card-head,
+    .strategy-run-head,
+    .strategy-builder-head,
+    .strategy-step-editor-head,
+    .strategy-switch-row {
         flex-direction: column;
         align-items: flex-start;
     }

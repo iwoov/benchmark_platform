@@ -1,6 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { QuestionReviewDetail } from "@/components/reviews/question-review-detail";
+import {
+    getAiReviewStrategyRunsForQuestion,
+    getApplicableAiReviewStrategies,
+} from "@/lib/ai/review-strategies";
 import { getHomePathByRole } from "@/lib/auth/navigation";
 import { isAdminRole } from "@/lib/auth/roles";
 import {
@@ -33,12 +37,19 @@ export default async function ReviewTaskDetailPage({
         notFound();
     }
 
+    const [reviewStrategies, strategyRuns] = await Promise.all([
+        getApplicableAiReviewStrategies(question),
+        getAiReviewStrategyRunsForQuestion(question.id),
+    ]);
+
     return (
         <QuestionReviewDetail
             question={question}
             canReview
             listPath="/admin/review-tasks"
             navigation={navigation}
+            reviewStrategies={reviewStrategies}
+            strategyRuns={strategyRuns}
         />
     );
 }
