@@ -275,6 +275,8 @@ function getToolContract(type: AiReviewAiToolType) {
             return `{"passed":boolean,"severity":"LOW|MEDIUM|HIGH","summary":string,"issues":[{"field":string,"type":string,"content":string}],"suggestions":string[]}`;
         case "AI_SOLVE_QUESTION":
             return `{"answer":string,"normalizedAnswer":string,"reasoning":string,"confidence":0-1}`;
+        case "ANSWER_CORRECTNESS_CHECK":
+            return `{"isCorrect":boolean,"matchLevel":"EXACT|SEMANTIC_MATCH|PARTIAL_MATCH|MISMATCH|UNKNOWN","summary":string,"reason":string|null}`;
         case "ANSWER_MATCH_CHECK":
             return `{"matchLevel":"EXACT|SEMANTIC_MATCH|PARTIAL_MATCH|MISMATCH|UNKNOWN","isConsistent":boolean,"summary":string,"difference":string|null}`;
         case "REASONING_COMPARE":
@@ -395,6 +397,10 @@ function deriveMetrics(
         metrics.isConsistent = output.isConsistent;
     }
 
+    if (typeof output.isCorrect === "boolean") {
+        metrics.isCorrect = output.isCorrect;
+    }
+
     if (typeof output.confidence === "number") {
         metrics.confidence = output.confidence;
     }
@@ -431,11 +437,13 @@ function deriveMetrics(
         const standardAnswer = normalizeAnswer(question.answer);
 
         metrics.normalizedAnswer = normalizedAnswerValue;
-        metrics.isCorrect = Boolean(
-            normalizedAnswerValue &&
-            standardAnswer &&
-            normalizedAnswerValue === standardAnswer,
-        );
+
+        // Keep the old exact-match result for backward compatibility with
+        // existing strategies, but new strategies should use the dedicated
+        // ANSWER_CORRECTNESS_CHECK tool instead of relying on this comparison.
+        if (normalizedAnswerValue && standardAnswer) {
+            metrics.isCorrect = normalizedAnswerValue === standardAnswer;
+        }
     }
 
     return metrics;

@@ -5,6 +5,7 @@ export const aiReviewAiToolTypes = [
     "QUESTION_COMPLETENESS_CHECK",
     "TEXT_QUALITY_CHECK",
     "AI_SOLVE_QUESTION",
+    "ANSWER_CORRECTNESS_CHECK",
     "ANSWER_MATCH_CHECK",
     "REASONING_COMPARE",
     "DIFFICULTY_EVALUATION",
@@ -49,6 +50,7 @@ export const aiReviewToolLabels: Record<AiReviewAiToolType, string> = {
     QUESTION_COMPLETENESS_CHECK: "题目完整性检查",
     TEXT_QUALITY_CHECK: "文本质量检查",
     AI_SOLVE_QUESTION: "AI 解题任务",
+    ANSWER_CORRECTNESS_CHECK: "答案正确性判断",
     ANSWER_MATCH_CHECK: "答案一致性比对",
     REASONING_COMPARE: "解题过程比对",
     DIFFICULTY_EVALUATION: "难度评估",
@@ -84,6 +86,8 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
         "请检查字段中的错别字、病句、歧义表达和格式问题，并给出简明修改建议。",
     AI_SOLVE_QUESTION:
         "请像正式答题一样独立完成作答，并输出简洁可信的解题过程。",
+    ANSWER_CORRECTNESS_CHECK:
+        "请结合标准答案、题目上下文与上游 AI 作答结果，判断该次作答是否应视为正确。若只是表达不同但语义等价，应判为正确；若答案不完整、逻辑冲突或明显错误，应判为不正确。必须给出结构化判断结果。",
     ANSWER_MATCH_CHECK:
         "请判断标准答案与模型答案是完全一致、语义一致、部分一致还是明显不一致。",
     REASONING_COMPARE:
@@ -107,7 +111,10 @@ export const aiReviewMetricOptionsByToolType: Record<
     AI_SOLVE_QUESTION: [
         { value: "normalizedAnswer", label: "标准化答案" },
         { value: "confidence", label: "置信度" },
+    ],
+    ANSWER_CORRECTNESS_CHECK: [
         { value: "isCorrect", label: "是否答对" },
+        { value: "matchLevel", label: "匹配等级" },
     ],
     ANSWER_MATCH_CHECK: [
         { value: "isConsistent", label: "是否一致" },
@@ -348,6 +355,13 @@ export const answerMatchOutputSchema = z.object({
     difference: z.string().nullable(),
 });
 
+export const answerCorrectnessOutputSchema = z.object({
+    isCorrect: z.boolean(),
+    matchLevel: z.enum(aiReviewMatchLevels),
+    summary: z.string().min(1),
+    reason: z.string().nullable(),
+});
+
 export const reasoningCompareOutputSchema = z.object({
     isConsistent: z.boolean(),
     summary: z.string().min(1),
@@ -374,6 +388,7 @@ export const aiReviewOutputSchemas = {
     QUESTION_COMPLETENESS_CHECK: completenessOutputSchema,
     TEXT_QUALITY_CHECK: textQualityOutputSchema,
     AI_SOLVE_QUESTION: aiSolveOutputSchema,
+    ANSWER_CORRECTNESS_CHECK: answerCorrectnessOutputSchema,
     ANSWER_MATCH_CHECK: answerMatchOutputSchema,
     REASONING_COMPARE: reasoningCompareOutputSchema,
     DIFFICULTY_EVALUATION: difficultyEvaluationOutputSchema,
@@ -404,6 +419,7 @@ export type AiReviewToolOutputMap = {
     QUESTION_COMPLETENESS_CHECK: z.infer<typeof completenessOutputSchema>;
     TEXT_QUALITY_CHECK: z.infer<typeof textQualityOutputSchema>;
     AI_SOLVE_QUESTION: z.infer<typeof aiSolveOutputSchema>;
+    ANSWER_CORRECTNESS_CHECK: z.infer<typeof answerCorrectnessOutputSchema>;
     ANSWER_MATCH_CHECK: z.infer<typeof answerMatchOutputSchema>;
     REASONING_COMPARE: z.infer<typeof reasoningCompareOutputSchema>;
     DIFFICULTY_EVALUATION: z.infer<typeof difficultyEvaluationOutputSchema>;

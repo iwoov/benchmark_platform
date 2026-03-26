@@ -96,7 +96,12 @@ export default async function ReviewsPage() {
                                     {decisionLabel[record.decision]}
                                 </Tag>
                             </div>
-                            <div className="muted">{record.comment}</div>
+                            <div
+                                className="muted review-record-comment"
+                                title={record.comment}
+                            >
+                                {record.comment}
+                            </div>
                             <div className="muted">
                                 {record.createdAt.toLocaleString("zh-CN")}
                             </div>

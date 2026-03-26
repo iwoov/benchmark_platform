@@ -816,6 +816,19 @@ select {
     border-top: 1px solid rgba(217, 224, 234, 0.85);
 }
 
+.datasource-list-head > div,
+.datasource-list-row > div {
+    min-width: 0;
+}
+
+.review-record-comment {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .ai-settings-page {
     display: grid;
     gap: 16px;
