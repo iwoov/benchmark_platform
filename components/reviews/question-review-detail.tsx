@@ -78,7 +78,19 @@ export function QuestionReviewDetail({
                     index: number;
                     status: "SUCCESS" | "FAILED";
                     sourceStepId?: string;
+                    promptInput?: unknown;
+                    requestMeta?: {
+                        modelCode: string;
+                        protocol?: string | null;
+                        reasoningLevel?: string | null;
+                        providerCode?: string | null;
+                        providerName?: string | null;
+                        endpointCode?: string | null;
+                        endpointLabel?: string | null;
+                        baseUrl?: string | null;
+                    };
                     output?: unknown;
+                    rawResponse?: unknown;
                     derived?: Record<string, unknown>;
                     error?: string;
                 }>;
@@ -89,6 +101,14 @@ export function QuestionReviewDetail({
                 decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
                 riskLevel?: string;
                 summary: string;
+            } | null;
+            reviewPersistence: {
+                status: "SAVED" | "SKIPPED" | "FAILED";
+                message: string;
+                reviewId?: string;
+                decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+                comment?: string;
+                questionStatus?: "APPROVED" | "REJECTED";
             } | null;
         } | null;
     }>;

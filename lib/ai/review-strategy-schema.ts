@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const aiReviewAiToolTypes = [
+    "COMPREHENSIVE_CHECK",
     "QUESTION_COMPLETENESS_CHECK",
     "TEXT_QUALITY_CHECK",
     "AI_SOLVE_QUESTION",
@@ -44,6 +45,7 @@ export const aiReviewRiskLevels = ["LOW", "MEDIUM", "HIGH"] as const;
 export const aiReviewDifficultyLevels = ["EASY", "MEDIUM", "HARD"] as const;
 
 export const aiReviewToolLabels: Record<AiReviewAiToolType, string> = {
+    COMPREHENSIVE_CHECK: "全面检查",
     QUESTION_COMPLETENESS_CHECK: "题目完整性检查",
     TEXT_QUALITY_CHECK: "文本质量检查",
     AI_SOLVE_QUESTION: "AI 解题任务",
@@ -74,6 +76,8 @@ export const aiReviewOutcomeLabelMap: Record<AiReviewOutcomeLabel, string> = {
 };
 
 export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
+    COMPREHENSIVE_CHECK:
+        "你现在是题目审核助手。请从审核视角对输入题目完成全面检查。重点检查：1. 题干是否完整、清晰、无歧义；2. 选项是否完整，是否存在重复、冲突或明显错误；3. 题干与选项是否匹配；4. 标准答案是否明确，是否与题目表述冲突；5. 解析是否完整，是否能支撑标准答案；6. 是否存在错别字、病句、格式问题；7. 是否存在逻辑性、学科性或常识性错误；8. 是否存在漏条件、多解、答案不唯一、无法正常作答等风险。要求：你的任务是尽量暴露潜在问题，而不是替题目辩护；不要直接输出最终人工审核结论；如果信息不足，要明确指出信息不足；必须只返回符合系统要求的 JSON 结果，不要输出额外解释，不要输出 Markdown。",
     QUESTION_COMPLETENESS_CHECK:
         "请重点检查题干、答案、解析之间是否存在缺失、断裂或明显不完整的信息。",
     TEXT_QUALITY_CHECK:
@@ -94,6 +98,10 @@ export const aiReviewMetricOptionsByToolType: Record<
     AiReviewAiToolType,
     Array<{ value: string; label: string }>
 > = {
+    COMPREHENSIVE_CHECK: [
+        { value: "passed", label: "是否通过" },
+        { value: "issueCount", label: "问题数" },
+    ],
     QUESTION_COMPLETENESS_CHECK: [{ value: "passed", label: "是否通过" }],
     TEXT_QUALITY_CHECK: [{ value: "passed", label: "是否通过" }],
     AI_SOLVE_QUESTION: [
@@ -292,6 +300,24 @@ export const completenessOutputSchema = z.object({
     warnings: z.array(z.string()).default([]),
 });
 
+export const comprehensiveCheckOutputSchema = z.object({
+    passed: z.boolean(),
+    summary: z.string().min(1),
+    issues: z
+        .array(
+            z.object({
+                category: z.string().min(1),
+                severity: z.enum(aiReviewSeverityLevels),
+                field: z.string().min(1),
+                title: z.string().min(1),
+                detail: z.string().min(1),
+            }),
+        )
+        .default([]),
+    warnings: z.array(z.string()).default([]),
+    suggestions: z.array(z.string()).default([]),
+});
+
 export const textQualityOutputSchema = z.object({
     passed: z.boolean(),
     severity: z.enum(aiReviewSeverityLevels),
@@ -344,6 +370,7 @@ export const reviewSummaryOutputSchema = z.object({
 });
 
 export const aiReviewOutputSchemas = {
+    COMPREHENSIVE_CHECK: comprehensiveCheckOutputSchema,
     QUESTION_COMPLETENESS_CHECK: completenessOutputSchema,
     TEXT_QUALITY_CHECK: textQualityOutputSchema,
     AI_SOLVE_QUESTION: aiSolveOutputSchema,
@@ -373,6 +400,7 @@ export type AiReviewStrategyPersistedInput = z.infer<
 >;
 
 export type AiReviewToolOutputMap = {
+    COMPREHENSIVE_CHECK: z.infer<typeof comprehensiveCheckOutputSchema>;
     QUESTION_COMPLETENESS_CHECK: z.infer<typeof completenessOutputSchema>;
     TEXT_QUALITY_CHECK: z.infer<typeof textQualityOutputSchema>;
     AI_SOLVE_QUESTION: z.infer<typeof aiSolveOutputSchema>;

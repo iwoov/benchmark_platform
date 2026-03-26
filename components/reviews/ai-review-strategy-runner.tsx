@@ -6,6 +6,14 @@ import { App, Button, Empty, Select, Space, Tag } from "antd";
 import { Bot, Play, RefreshCcw } from "lucide-react";
 import { runAiReviewStrategyAction } from "@/app/actions/ai-review-strategies";
 
+function formatJson(value: unknown) {
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
+
 type StrategyRunResult = {
     version: 1;
     strategy: {
@@ -33,7 +41,19 @@ type StrategyRunResult = {
             index: number;
             status: "SUCCESS" | "FAILED";
             sourceStepId?: string;
+            promptInput?: unknown;
+            requestMeta?: {
+                modelCode: string;
+                protocol?: string | null;
+                reasoningLevel?: string | null;
+                providerCode?: string | null;
+                providerName?: string | null;
+                endpointCode?: string | null;
+                endpointLabel?: string | null;
+                baseUrl?: string | null;
+            };
             output?: unknown;
+            rawResponse?: unknown;
             derived?: Record<string, unknown>;
             error?: string;
         }>;
@@ -44,6 +64,14 @@ type StrategyRunResult = {
         decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
         riskLevel?: string;
         summary: string;
+    } | null;
+    reviewPersistence: {
+        status: "SAVED" | "SKIPPED" | "FAILED";
+        message: string;
+        reviewId?: string;
+        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        comment?: string;
+        questionStatus?: "APPROVED" | "REJECTED";
     } | null;
 };
 
@@ -176,7 +204,7 @@ export function AiReviewStrategyRunner({
                                 loading={isRunning}
                                 onClick={runStrategy}
                             >
-                                执行策略
+                                启动运行
                             </Button>
                         </div>
                     </div>
@@ -294,6 +322,88 @@ export function AiReviewStrategyRunner({
                                                         .summary
                                                 }
                                             </div>
+                                        </div>
+                                    ) : null}
+
+                                    {run.parsedResult?.reviewPersistence ? (
+                                        <div className="strategy-run-summary">
+                                            <div className="strategy-run-summary-title">
+                                                自动审核回填
+                                            </div>
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    gap: 8,
+                                                    flexWrap: "wrap",
+                                                    marginTop: 8,
+                                                }}
+                                            >
+                                                <Tag
+                                                    color={
+                                                        run.parsedResult
+                                                            .reviewPersistence
+                                                            .status === "SAVED"
+                                                            ? "success"
+                                                            : run.parsedResult
+                                                                    .reviewPersistence
+                                                                    .status ===
+                                                                "FAILED"
+                                                              ? "error"
+                                                              : "default"
+                                                    }
+                                                >
+                                                    {
+                                                        run.parsedResult
+                                                            .reviewPersistence
+                                                            .status
+                                                    }
+                                                </Tag>
+                                                {run.parsedResult
+                                                    .reviewPersistence
+                                                    .decision ? (
+                                                    <Tag color="blue">
+                                                        {
+                                                            run.parsedResult
+                                                                .reviewPersistence
+                                                                .decision
+                                                        }
+                                                    </Tag>
+                                                ) : null}
+                                                {run.parsedResult
+                                                    .reviewPersistence
+                                                    .questionStatus ? (
+                                                    <Tag color="purple">
+                                                        题目状态{" "}
+                                                        {
+                                                            run.parsedResult
+                                                                .reviewPersistence
+                                                                .questionStatus
+                                                        }
+                                                    </Tag>
+                                                ) : null}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    marginTop: 10,
+                                                    lineHeight: 1.7,
+                                                }}
+                                            >
+                                                {
+                                                    run.parsedResult
+                                                        .reviewPersistence
+                                                        .message
+                                                }
+                                            </div>
+                                            {run.parsedResult.reviewPersistence
+                                                .comment ? (
+                                                <pre className="strategy-json-block">
+                                                    {
+                                                        run.parsedResult
+                                                            .reviewPersistence
+                                                            .comment
+                                                    }
+                                                </pre>
+                                            ) : null}
                                         </div>
                                     ) : null}
 
@@ -426,6 +536,242 @@ export function AiReviewStrategyRunner({
                                                                                 </div>
                                                                             ),
                                                                         )}
+                                                                </div>
+                                                            ) : null}
+
+                                                            {step.items
+                                                                .length ? (
+                                                                <div className="strategy-step-item-list">
+                                                                    {step.items.map(
+                                                                        (
+                                                                            item,
+                                                                        ) => (
+                                                                            <details
+                                                                                key={`${step.stepId}-${item.index}`}
+                                                                                className="strategy-step-item-detail"
+                                                                            >
+                                                                                <summary className="strategy-step-item-summary">
+                                                                                    <span>
+                                                                                        第{" "}
+                                                                                        {
+                                                                                            item.index
+                                                                                        }{" "}
+                                                                                        次
+                                                                                    </span>
+                                                                                    <Tag
+                                                                                        color={
+                                                                                            item.status ===
+                                                                                            "SUCCESS"
+                                                                                                ? "success"
+                                                                                                : "error"
+                                                                                        }
+                                                                                    >
+                                                                                        {
+                                                                                            item.status
+                                                                                        }
+                                                                                    </Tag>
+                                                                                </summary>
+                                                                                <div className="strategy-step-item-body">
+                                                                                    {item.requestMeta ? (
+                                                                                        <div>
+                                                                                            <div className="strategy-run-summary-title">
+                                                                                                调用信息
+                                                                                            </div>
+                                                                                            <div
+                                                                                                className="strategy-tag-wrap"
+                                                                                                style={{
+                                                                                                    marginTop: 10,
+                                                                                                }}
+                                                                                            >
+                                                                                                <Tag>
+                                                                                                    模型:{" "}
+                                                                                                    {
+                                                                                                        item
+                                                                                                            .requestMeta
+                                                                                                            .modelCode
+                                                                                                    }
+                                                                                                </Tag>
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .protocol ? (
+                                                                                                    <Tag>
+                                                                                                        协议:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .protocol
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .providerName ? (
+                                                                                                    <Tag>
+                                                                                                        提供商:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .providerName
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .providerCode ? (
+                                                                                                    <Tag>
+                                                                                                        Provider
+                                                                                                        Code:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .providerCode
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .endpointLabel ? (
+                                                                                                    <Tag>
+                                                                                                        路由:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .endpointLabel
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .endpointCode ? (
+                                                                                                    <Tag>
+                                                                                                        Endpoint
+                                                                                                        Code:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .endpointCode
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                                {item
+                                                                                                    .requestMeta
+                                                                                                    .reasoningLevel ? (
+                                                                                                    <Tag>
+                                                                                                        推理:{" "}
+                                                                                                        {
+                                                                                                            item
+                                                                                                                .requestMeta
+                                                                                                                .reasoningLevel
+                                                                                                        }
+                                                                                                    </Tag>
+                                                                                                ) : null}
+                                                                                            </div>
+                                                                                            {item
+                                                                                                .requestMeta
+                                                                                                .baseUrl ? (
+                                                                                                <pre className="strategy-json-block">
+                                                                                                    {
+                                                                                                        item
+                                                                                                            .requestMeta
+                                                                                                            .baseUrl
+                                                                                                    }
+                                                                                                </pre>
+                                                                                            ) : null}
+                                                                                        </div>
+                                                                                    ) : null}
+
+                                                                                    {item.derived &&
+                                                                                    Object.keys(
+                                                                                        item.derived,
+                                                                                    )
+                                                                                        .length ? (
+                                                                                        <div className="strategy-tag-wrap">
+                                                                                            {Object.entries(
+                                                                                                item.derived,
+                                                                                            ).map(
+                                                                                                ([
+                                                                                                    key,
+                                                                                                    value,
+                                                                                                ]) => (
+                                                                                                    <Tag
+                                                                                                        key={
+                                                                                                            key
+                                                                                                        }
+                                                                                                    >
+                                                                                                        {
+                                                                                                            key
+                                                                                                        }
+
+                                                                                                        :{" "}
+                                                                                                        {typeof value ===
+                                                                                                        "number"
+                                                                                                            ? value
+                                                                                                                  .toFixed(
+                                                                                                                      4,
+                                                                                                                  )
+                                                                                                                  .replace(
+                                                                                                                      /\.?0+$/,
+                                                                                                                      "",
+                                                                                                                  )
+                                                                                                            : String(
+                                                                                                                  value,
+                                                                                                              )}
+                                                                                                    </Tag>
+                                                                                                ),
+                                                                                            )}
+                                                                                        </div>
+                                                                                    ) : null}
+
+                                                                                    {item.promptInput ? (
+                                                                                        <div>
+                                                                                            <div className="strategy-run-summary-title">
+                                                                                                请求输入
+                                                                                            </div>
+                                                                                            <pre className="strategy-json-block">
+                                                                                                {formatJson(
+                                                                                                    item.promptInput,
+                                                                                                )}
+                                                                                            </pre>
+                                                                                        </div>
+                                                                                    ) : null}
+
+                                                                                    {item.output ? (
+                                                                                        <div>
+                                                                                            <div className="strategy-run-summary-title">
+                                                                                                结构化输出
+                                                                                            </div>
+                                                                                            <pre className="strategy-json-block">
+                                                                                                {formatJson(
+                                                                                                    item.output,
+                                                                                                )}
+                                                                                            </pre>
+                                                                                        </div>
+                                                                                    ) : null}
+
+                                                                                    {item.rawResponse ? (
+                                                                                        <div>
+                                                                                            <div className="strategy-run-summary-title">
+                                                                                                原始响应
+                                                                                            </div>
+                                                                                            <pre className="strategy-json-block">
+                                                                                                {formatJson(
+                                                                                                    item.rawResponse,
+                                                                                                )}
+                                                                                            </pre>
+                                                                                        </div>
+                                                                                    ) : null}
+
+                                                                                    {item.error ? (
+                                                                                        <div className="strategy-run-error">
+                                                                                            {
+                                                                                                item.error
+                                                                                            }
+                                                                                        </div>
+                                                                                    ) : null}
+                                                                                </div>
+                                                                            </details>
+                                                                        ),
+                                                                    )}
                                                                 </div>
                                                             ) : null}
                                                         </div>

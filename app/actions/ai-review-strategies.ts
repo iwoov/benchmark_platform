@@ -392,21 +392,31 @@ export async function runAiReviewStrategyAction(
     }
 
     try {
-        await executeAiReviewStrategy(
+        const execution = await executeAiReviewStrategy(
             parsed.data.strategyId,
             parsed.data.questionId,
             session.user.id,
         );
+
+        const reviewMessage =
+            execution.parsedResult.reviewPersistence?.status === "SAVED"
+                ? "系统已自动保存审核结论。"
+                : execution.parsedResult.reviewPersistence?.status === "FAILED"
+                  ? `自动保存审核结论失败：${execution.parsedResult.reviewPersistence.message}`
+                  : "本次运行未自动保存审核结论。";
+
+        revalidatePath("/admin/reviews");
+        revalidatePath("/admin/review-tasks");
+        revalidatePath("/workspace/reviews");
+        revalidateStrategyPaths(question.id);
+
+        return {
+            success: `题目 ${question.title} 的 AI 审核策略已执行完成。${reviewMessage}`,
+        };
     } catch (error) {
         revalidateStrategyPaths(question.id);
         return {
             error: error instanceof Error ? error.message : "策略执行失败。",
         };
     }
-
-    revalidateStrategyPaths(question.id);
-
-    return {
-        success: `题目 ${question.title} 的 AI 审核策略已执行完成。`,
-    };
 }

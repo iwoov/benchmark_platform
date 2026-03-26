@@ -23,6 +23,16 @@ type StepExecutionItem = {
     status: "SUCCESS" | "FAILED";
     sourceStepId?: string;
     promptInput?: unknown;
+    requestMeta?: {
+        modelCode: string;
+        protocol?: string | null;
+        reasoningLevel?: string | null;
+        providerCode?: string | null;
+        providerName?: string | null;
+        endpointCode?: string | null;
+        endpointLabel?: string | null;
+        baseUrl?: string | null;
+    };
     output?: unknown;
     rawResponse?: unknown;
     derived?: Record<string, unknown>;
@@ -62,6 +72,14 @@ type StrategyExecutionResult = {
         decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
         riskLevel?: string;
         summary: string;
+    } | null;
+    reviewPersistence: {
+        status: "SAVED" | "SKIPPED" | "FAILED";
+        message: string;
+        reviewId?: string;
+        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        comment?: string;
+        questionStatus?: "APPROVED" | "REJECTED";
     } | null;
 };
 
@@ -117,6 +135,36 @@ function toReviewDecision(
     return value === "PASS" || value === "NEEDS_REVISION" || value === "REJECT"
         ? value
         : undefined;
+}
+
+function toQuestionStatus(
+    decision: "PASS" | "NEEDS_REVISION" | "REJECT",
+): "APPROVED" | "REJECTED" {
+    return decision === "PASS" ? "APPROVED" : "REJECTED";
+}
+
+function buildAutoReviewComment(
+    strategy: { name: string; code: string },
+    finalRecommendation: NonNullable<
+        StrategyExecutionResult["finalRecommendation"]
+    >,
+    stepResults: StepExecutionResult[],
+) {
+    const lines = [
+        `[AI 审核策略] ${strategy.name} (${strategy.code})`,
+        finalRecommendation.summary,
+    ];
+
+    const stepSummaries = stepResults
+        .filter((step) => step.status !== "SKIPPED")
+        .slice(0, 6)
+        .map((step) => `${step.stepName}: ${step.summary}`);
+
+    if (stepSummaries.length) {
+        lines.push("", ...stepSummaries);
+    }
+
+    return lines.join("\n").slice(0, 1000);
 }
 
 function extractJson(text: string | null) {
@@ -219,6 +267,8 @@ function selectFields(
 
 function getToolContract(type: AiReviewAiToolType) {
     switch (type) {
+        case "COMPREHENSIVE_CHECK":
+            return `{"passed":boolean,"summary":string,"issues":[{"category":string,"severity":"LOW|MEDIUM|HIGH","field":string,"title":string,"detail":string}],"warnings":string[],"suggestions":string[]}`;
         case "QUESTION_COMPLETENESS_CHECK":
             return `{"passed":boolean,"summary":string,"missingFields":string[],"warnings":string[]}`;
         case "TEXT_QUALITY_CHECK":
@@ -337,6 +387,10 @@ function deriveMetrics(
         metrics.passed = output.passed;
     }
 
+    if (Array.isArray(output.issues)) {
+        metrics.issueCount = output.issues.length;
+    }
+
     if (typeof output.isConsistent === "boolean") {
         metrics.isConsistent = output.isConsistent;
     }
@@ -425,6 +479,7 @@ async function runAiToolStep(
             };
             const response = await invokeAiModel({
                 modelCode: step.modelCode,
+                stream: false,
                 messages: [
                     {
                         role: "system",
@@ -449,6 +504,13 @@ async function runAiToolStep(
                     status: "FAILED",
                     sourceStepId: step.sourceStepId,
                     promptInput,
+                    requestMeta: {
+                        modelCode: step.modelCode,
+                        protocol: response.protocol,
+                    },
+                    rawResponse: {
+                        failure: response,
+                    },
                     error: response.ok
                         ? "当前步骤不支持流式结果。"
                         : response.error,
@@ -486,6 +548,16 @@ async function runAiToolStep(
                     status: "SUCCESS",
                     sourceStepId: step.sourceStepId,
                     promptInput,
+                    requestMeta: {
+                        modelCode: response.modelCode,
+                        protocol: response.protocol,
+                        reasoningLevel: response.reasoningLevel,
+                        providerCode: response.route.providerCode,
+                        providerName: response.route.providerName,
+                        endpointCode: response.route.endpointCode,
+                        endpointLabel: response.route.endpointLabel,
+                        baseUrl: response.route.baseUrl,
+                    },
                     output: parsed.data,
                     rawResponse: {
                         route: response.route,
@@ -503,6 +575,16 @@ async function runAiToolStep(
                     status: "FAILED",
                     sourceStepId: step.sourceStepId,
                     promptInput,
+                    requestMeta: {
+                        modelCode: response.modelCode,
+                        protocol: response.protocol,
+                        reasoningLevel: response.reasoningLevel,
+                        providerCode: response.route.providerCode,
+                        providerName: response.route.providerName,
+                        endpointCode: response.route.endpointCode,
+                        endpointLabel: response.route.endpointLabel,
+                        baseUrl: response.route.baseUrl,
+                    },
                     rawResponse: {
                         route: response.route,
                         raw: response.raw,
@@ -1142,7 +1224,94 @@ export async function executeAiReviewStrategy(
                 : "SUCCESS",
             stepResults,
             finalRecommendation: resolveFinalRecommendation(stepResults),
+            reviewPersistence: null,
         };
+
+        if (parsedResult.finalRecommendation?.decision) {
+            const comment = buildAutoReviewComment(
+                {
+                    name: strategy.name,
+                    code: strategy.code,
+                },
+                parsedResult.finalRecommendation,
+                stepResults,
+            );
+
+            try {
+                const saved = await prisma.$transaction(async (tx) => {
+                    const review = await tx.review.create({
+                        data: {
+                            projectId: question.project.id,
+                            datasourceId: question.datasource.id,
+                            externalRecordId: question.externalRecordId,
+                            reviewerId: triggeredById,
+                            decision:
+                                parsedResult.finalRecommendation!.decision!,
+                            comment,
+                            suggestions: {
+                                source: "AI_STRATEGY",
+                                autoGenerated: true,
+                                runId: run.id,
+                                strategyId: strategy.id,
+                                strategyCode: strategy.code,
+                                strategyName: strategy.name,
+                                finalRecommendation:
+                                    parsedResult.finalRecommendation,
+                                stepSummaries: stepResults.map((step) => ({
+                                    stepId: step.stepId,
+                                    stepName: step.stepName,
+                                    stepType: step.stepType,
+                                    status: step.status,
+                                    summary: step.summary,
+                                })),
+                            },
+                        },
+                    });
+
+                    const questionStatus = toQuestionStatus(
+                        parsedResult.finalRecommendation!.decision!,
+                    );
+
+                    await tx.question.update({
+                        where: {
+                            id: question.id,
+                        },
+                        data: {
+                            status: questionStatus,
+                        },
+                    });
+
+                    return {
+                        reviewId: review.id,
+                        questionStatus,
+                    };
+                });
+
+                parsedResult.reviewPersistence = {
+                    status: "SAVED",
+                    message: "已根据策略粗略结论自动保存审核记录。",
+                    reviewId: saved.reviewId,
+                    decision: parsedResult.finalRecommendation.decision,
+                    comment,
+                    questionStatus: saved.questionStatus,
+                };
+            } catch (error) {
+                parsedResult.reviewPersistence = {
+                    status: "FAILED",
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "自动保存审核记录失败。",
+                    decision: parsedResult.finalRecommendation.decision,
+                    comment,
+                };
+            }
+        } else {
+            parsedResult.reviewPersistence = {
+                status: "SKIPPED",
+                message: "策略未输出可自动落库的审核结论。",
+            };
+        }
 
         await prisma.aiReviewStrategyRun.update({
             where: {
@@ -1195,6 +1364,10 @@ export async function executeAiReviewStrategy(
                     status: "FAILED",
                     stepResults,
                     finalRecommendation: null,
+                    reviewPersistence: {
+                        status: "SKIPPED",
+                        message: "策略执行失败，未自动保存审核记录。",
+                    },
                 }),
                 finishedAt: new Date(),
             },
