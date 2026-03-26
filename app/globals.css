@@ -614,6 +614,29 @@ select {
     line-height: 1.8;
 }
 
+.detail-field-json {
+    margin: 0;
+}
+
+.detail-field-json-summary {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 0;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    list-style: none;
+}
+
+.detail-field-json-summary::-webkit-details-marker {
+    display: none;
+}
+
+.detail-field-json-block {
+    margin-top: 8px;
+}
+
 .stat-value {
     font-size: 34px;
     font-weight: 600;
@@ -717,7 +740,15 @@ select {
 }
 
 .strategy-modal-wrap .ant-modal {
+    top: 20px;
     max-width: calc(100vw - 40px);
+    padding-bottom: 0;
+}
+
+.strategy-modal-wrap .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    height: min(780px, calc(100vh - 40px));
 }
 
 .strategy-modal-wrap .ant-modal-header {
@@ -726,6 +757,9 @@ select {
 
 .strategy-modal-wrap .ant-modal-body {
     padding: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .strategy-modal-wrap .field-label {

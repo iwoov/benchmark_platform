@@ -19,6 +19,89 @@ const questionStatusMeta = {
     REJECTED: { label: "已驳回", color: "error" },
 } as const;
 
+function formatJson(value: unknown) {
+    return JSON.stringify(value, null, 2);
+}
+
+function getJsonDisplayValue(value: unknown): string | null {
+    if (value == null) {
+        return null;
+    }
+
+    if (typeof value === "object") {
+        if (Array.isArray(value)) {
+            return value.length ? formatJson(value) : null;
+        }
+
+        return Object.keys(value).length ? formatJson(value) : null;
+    }
+
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+        return null;
+    }
+
+    if (
+        !(
+            (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+            (trimmed.startsWith("[") && trimmed.endsWith("]"))
+        )
+    ) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+
+        if (Array.isArray(parsed)) {
+            return parsed.length ? formatJson(parsed) : null;
+        }
+
+        if (parsed && typeof parsed === "object") {
+            return Object.keys(parsed).length ? formatJson(parsed) : null;
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function renderRawFieldValue(value: unknown) {
+    const jsonDisplayValue = getJsonDisplayValue(value);
+
+    if (jsonDisplayValue) {
+        return (
+            <details className="detail-field-json">
+                <summary className="detail-field-json-summary">
+                    JSON 内容
+                </summary>
+                <pre className="strategy-json-block detail-field-json-block">
+                    {jsonDisplayValue}
+                </pre>
+            </details>
+        );
+    }
+
+    if (
+        value == null ||
+        (typeof value === "string" && value.trim() === "")
+    ) {
+        return "—";
+    }
+
+    if (typeof value === "object") {
+        return formatJson(value);
+    }
+
+    return String(value);
+}
+
 export function QuestionReviewDetail({
     question,
     canReview,
@@ -125,7 +208,7 @@ export function QuestionReviewDetail({
         question.rawFieldOrder.length
             ? question.rawFieldOrder
             : Object.keys(question.rawRecord)
-    ).map((key) => [key, question.rawRecord[key] ?? "—"] as const);
+    ).map((key) => [key, question.rawRecord[key]] as const);
 
     function submitReview() {
         startSubmitting(async () => {
@@ -257,7 +340,7 @@ export function QuestionReviewDetail({
                             <div key={key} className="detail-field-card">
                                 <div className="detail-field-label">{key}</div>
                                 <div className="detail-field-content">
-                                    {value || "—"}
+                                    {renderRawFieldValue(value)}
                                 </div>
                             </div>
                         ))}
