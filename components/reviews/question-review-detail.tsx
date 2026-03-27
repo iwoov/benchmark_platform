@@ -148,13 +148,13 @@ export function QuestionReviewDetail({
                 projectCode: string;
                 datasourceName: string;
             };
-            status: "SUCCESS" | "FAILED";
+            status: "RUNNING" | "SUCCESS" | "FAILED";
             stepResults: Array<{
                 stepId: string;
                 stepName: string;
                 stepKind: "AI_TOOL" | "RULE";
                 stepType: string;
-                status: "SUCCESS" | "FAILED" | "SKIPPED";
+                status: "RUNNING" | "SUCCESS" | "FAILED" | "SKIPPED";
                 summary: string;
                 outcomeLabel?: string;
                 items: Array<{

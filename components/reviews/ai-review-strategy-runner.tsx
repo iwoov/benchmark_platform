@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button, Empty, Select, Space, Tag } from "antd";
 import { Bot, Play, RefreshCcw } from "lucide-react";
@@ -11,6 +11,14 @@ function formatJson(value: unknown) {
         return JSON.stringify(value, null, 2);
     } catch {
         return String(value);
+    }
+}
+
+function areRunsEqual(left: unknown, right: unknown) {
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+        return false;
     }
 }
 
@@ -28,13 +36,13 @@ type StrategyRunResult = {
         projectCode: string;
         datasourceName: string;
     };
-    status: "SUCCESS" | "FAILED";
+    status: "RUNNING" | "SUCCESS" | "FAILED";
     stepResults: Array<{
         stepId: string;
         stepName: string;
         stepKind: "AI_TOOL" | "RULE";
         stepType: string;
-        status: "SUCCESS" | "FAILED" | "SKIPPED";
+        status: "RUNNING" | "SUCCESS" | "FAILED" | "SKIPPED";
         summary: string;
         outcomeLabel?: string;
         items: Array<{
@@ -106,15 +114,158 @@ export function AiReviewStrategyRunner({
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
+    const notificationRef = useRef(notification);
     const [selectedStrategyId, setSelectedStrategyId] = useState(
         strategies[0]?.id ?? "",
     );
+    const [liveRuns, setLiveRuns] = useState(runs);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [pollingEnabled, setPollingEnabled] = useState(false);
     const [isRunning, startRunning] = useTransition();
     const effectiveSelectedStrategyId = strategies.some(
         (strategy) => strategy.id === selectedStrategyId,
     )
         ? selectedStrategyId
         : (strategies[0]?.id ?? "");
+    const hasActiveRun = liveRuns.some(
+        (run) => run.status === "RUNNING" || run.status === "PENDING",
+    );
+
+    useEffect(() => {
+        notificationRef.current = notification;
+    }, [notification]);
+
+    useEffect(() => {
+        setLiveRuns((current) => (areRunsEqual(current, runs) ? current : runs));
+    }, [runs]);
+
+    useEffect(() => {
+        if (!pollingEnabled && !hasActiveRun) {
+            return;
+        }
+
+        let disposed = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        async function loop() {
+            try {
+                const response = await fetch(
+                    `/api/ai-review-strategy-runs?questionId=${questionId}`,
+                    {
+                        cache: "no-store",
+                    },
+                );
+                const payload = (await response.json().catch(() => null)) as
+                    | {
+                          error?: string;
+                          runs?: typeof runs;
+                      }
+                    | null;
+
+                if (!response.ok) {
+                    throw new Error(payload?.error ?? "获取运行状态失败。");
+                }
+
+                if (!disposed && payload?.runs) {
+                    setLiveRuns(payload.runs);
+                }
+            } catch (error) {
+                if (!disposed) {
+                    notificationRef.current.error({
+                        message: "获取运行状态失败",
+                        description:
+                            error instanceof Error
+                                ? error.message
+                                : "请稍后再试。",
+                        placement: "topRight",
+                    });
+                }
+            } finally {
+                if (!disposed) {
+                    timer = setTimeout(loop, 1500);
+                }
+            }
+        }
+
+        timer = setTimeout(loop, 400);
+
+        return () => {
+            disposed = true;
+            if (timer) {
+                clearTimeout(timer);
+            }
+        };
+    }, [hasActiveRun, pollingEnabled, questionId]);
+
+    async function refreshRuns(manual = false) {
+        if (manual) {
+            setIsRefreshing(true);
+        }
+
+        try {
+            const response = await fetch(
+                `/api/ai-review-strategy-runs?questionId=${questionId}`,
+                {
+                    cache: "no-store",
+                },
+            );
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      error?: string;
+                      runs?: typeof runs;
+                  }
+                | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? "获取运行状态失败。");
+            }
+
+            setLiveRuns((current) =>
+                areRunsEqual(current, payload?.runs ?? [])
+                    ? current
+                    : (payload?.runs ?? []),
+            );
+        } catch (error) {
+            notification.error({
+                message: "刷新结果失败",
+                description:
+                    error instanceof Error ? error.message : "请稍后再试。",
+                placement: "topRight",
+            });
+        } finally {
+            if (manual) {
+                setIsRefreshing(false);
+            }
+        }
+    }
+
+    function getRunStatusMeta(status: string) {
+        if (status === "SUCCESS") {
+            return { color: "success" as const, label: "执行成功" };
+        }
+
+        if (status === "FAILED") {
+            return { color: "error" as const, label: "执行失败" };
+        }
+
+        return { color: "processing" as const, label: "执行中" };
+    }
+
+    function getStepStatusColor(status: string) {
+        if (status === "SUCCESS") {
+            return "success";
+        }
+
+        if (status === "FAILED") {
+            return "error";
+        }
+
+        if (status === "RUNNING") {
+            return "processing";
+        }
+
+        return "default";
+    }
 
     function runStrategy() {
         if (!effectiveSelectedStrategyId) {
@@ -127,10 +278,19 @@ export function AiReviewStrategyRunner({
         }
 
         startRunning(async () => {
+            setPollingEnabled(true);
+            notification.info({
+                message: "AI 审核已启动",
+                description: "正在持续刷新执行进度，结果会逐步展示。",
+                placement: "topRight",
+            });
             const result = await runAiReviewStrategyAction({
                 strategyId: effectiveSelectedStrategyId,
                 questionId,
             });
+
+            await refreshRuns();
+            setPollingEnabled(false);
 
             if (result.error) {
                 notification.error({
@@ -194,7 +354,8 @@ export function AiReviewStrategyRunner({
                         <div className="review-toolbar-actions">
                             <Button
                                 icon={<RefreshCcw size={16} />}
-                                onClick={() => router.refresh()}
+                                loading={isRefreshing}
+                                onClick={() => refreshRuns(true)}
                             >
                                 刷新结果
                             </Button>
@@ -232,101 +393,106 @@ export function AiReviewStrategyRunner({
                             </div>
                         ))}
 
-                    {runs.length ? (
+                    {liveRuns.length ? (
                         <div className="strategy-run-stack">
-                            {runs.map((run) => (
-                                <div key={run.id} className="strategy-run-card">
-                                    <div className="strategy-run-head">
-                                        <div>
-                                            <div className="strategy-title-row">
-                                                <h4
-                                                    style={{
-                                                        margin: 0,
-                                                        fontSize: 17,
-                                                    }}
+                            {liveRuns.map((run) => {
+                                const runStatusMeta = getRunStatusMeta(
+                                    run.status,
+                                );
+
+                                return (
+                                    <div
+                                        key={run.id}
+                                        className="strategy-run-card"
+                                    >
+                                        <div className="strategy-run-head">
+                                            <div>
+                                                <div className="strategy-title-row">
+                                                    <h4
+                                                        style={{
+                                                            margin: 0,
+                                                            fontSize: 17,
+                                                        }}
+                                                    >
+                                                        {run.strategy.name}
+                                                    </h4>
+                                                    <Tag>{run.strategy.code}</Tag>
+                                                    <Tag
+                                                        color={
+                                                            runStatusMeta.color
+                                                        }
+                                                    >
+                                                        {runStatusMeta.label}
+                                                    </Tag>
+                                                </div>
+                                                <div
+                                                    className="muted"
+                                                    style={{ marginTop: 8 }}
                                                 >
-                                                    {run.strategy.name}
-                                                </h4>
-                                                <Tag>{run.strategy.code}</Tag>
-                                                <Tag
-                                                    color={
-                                                        run.status === "SUCCESS"
-                                                            ? "success"
-                                                            : "error"
-                                                    }
-                                                >
-                                                    {run.status === "SUCCESS"
-                                                        ? "执行成功"
-                                                        : "执行失败"}
-                                                </Tag>
-                                            </div>
-                                            <div
-                                                className="muted"
-                                                style={{ marginTop: 8 }}
-                                            >
-                                                执行人：{run.triggeredByName} ·
-                                                发起时间{" "}
-                                                {new Date(
-                                                    run.createdAt,
-                                                ).toLocaleString("zh-CN")}
+                                                    执行人：
+                                                    {run.triggeredByName} ·
+                                                    发起时间{" "}
+                                                    {new Date(
+                                                        run.createdAt,
+                                                    ).toLocaleString("zh-CN")}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {run.parsedResult?.finalRecommendation ? (
-                                        <div className="strategy-run-summary">
-                                            <div className="strategy-run-summary-title">
-                                                审核建议
-                                            </div>
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    gap: 8,
-                                                    flexWrap: "wrap",
-                                                    marginTop: 8,
-                                                }}
-                                            >
-                                                {run.parsedResult
-                                                    .finalRecommendation
-                                                    .decision ? (
-                                                    <Tag color="blue">
-                                                        {
-                                                            run.parsedResult
-                                                                .finalRecommendation
-                                                                .decision
-                                                        }
-                                                    </Tag>
-                                                ) : null}
-                                                {run.parsedResult
-                                                    .finalRecommendation
-                                                    .riskLevel ? (
-                                                    <Tag color="orange">
-                                                        风险{" "}
+                                        {run.parsedResult?.finalRecommendation ? (
+                                            <div className="strategy-run-summary">
+                                                <div className="strategy-run-summary-title">
+                                                    审核建议
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        display: "flex",
+                                                        gap: 8,
+                                                        flexWrap: "wrap",
+                                                        marginTop: 8,
+                                                    }}
+                                                >
+                                                    {run.parsedResult
+                                                        .finalRecommendation
+                                                        .decision ? (
+                                                        <Tag color="blue">
+                                                            {
+                                                                run.parsedResult
+                                                                    .finalRecommendation
+                                                                    .decision
+                                                            }
+                                                        </Tag>
+                                                    ) : null}
+                                                    {run.parsedResult
+                                                        .finalRecommendation
+                                                        .riskLevel ? (
+                                                        <Tag color="orange">
+                                                            风险{" "}
                                                         {
                                                             run.parsedResult
                                                                 .finalRecommendation
                                                                 .riskLevel
                                                         }
-                                                    </Tag>
-                                                ) : null}
+                                                        </Tag>
+                                                    ) : null}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        marginTop: 10,
+                                                        lineHeight: 1.7,
+                                                    }}
+                                                >
+                                                    {
+                                                        run.parsedResult
+                                                            .finalRecommendation
+                                                            .summary
+                                                    }
+                                                </div>
                                             </div>
-                                            <div
-                                                style={{
-                                                    marginTop: 10,
-                                                    lineHeight: 1.7,
-                                                }}
-                                            >
-                                                {
-                                                    run.parsedResult
-                                                        .finalRecommendation
-                                                        .summary
-                                                }
-                                            </div>
-                                        </div>
-                                    ) : null}
+                                        ) : null}
 
-                                    {run.parsedResult?.reviewPersistence ? (
-                                        <div className="strategy-run-summary">
+                                        {run.parsedResult?.reviewPersistence ? (
+                                            <div className="strategy-run-summary">
                                             <div className="strategy-run-summary-title">
                                                 自动审核回填
                                             </div>
@@ -404,17 +570,17 @@ export function AiReviewStrategyRunner({
                                                     }
                                                 </pre>
                                             ) : null}
-                                        </div>
-                                    ) : null}
+                                            </div>
+                                        ) : null}
 
-                                    {run.errorMessage ? (
-                                        <div className="strategy-run-error">
-                                            {run.errorMessage}
-                                        </div>
-                                    ) : null}
+                                        {run.errorMessage ? (
+                                            <div className="strategy-run-error">
+                                                {run.errorMessage}
+                                            </div>
+                                        ) : null}
 
-                                    {run.parsedResult?.stepResults?.length ? (
-                                        <div className="strategy-step-stack">
+                                        {run.parsedResult?.stepResults?.length ? (
+                                            <div className="strategy-step-stack">
                                             {run.parsedResult.stepResults.map(
                                                 (step, index) => (
                                                     <div
@@ -438,15 +604,9 @@ export function AiReviewStrategyRunner({
                                                                     }
                                                                 </Tag>
                                                                 <Tag
-                                                                    color={
-                                                                        step.status ===
-                                                                        "SUCCESS"
-                                                                            ? "success"
-                                                                            : step.status ===
-                                                                                "FAILED"
-                                                                              ? "error"
-                                                                              : "default"
-                                                                    }
+                                                                    color={getStepStatusColor(
+                                                                        step.status,
+                                                                    )}
                                                                 >
                                                                     {
                                                                         step.status
@@ -778,10 +938,11 @@ export function AiReviewStrategyRunner({
                                                     </div>
                                                 ),
                                             )}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            ))}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                );
+                            })}
                         </div>
                     ) : (
                         <Empty description="当前题目还没有执行过 AI 审核策略。" />

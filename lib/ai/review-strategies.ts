@@ -44,7 +44,7 @@ type StepExecutionResult = {
     stepName: string;
     stepKind: "AI_TOOL" | "RULE";
     stepType: string;
-    status: "SUCCESS" | "FAILED" | "SKIPPED";
+    status: "RUNNING" | "SUCCESS" | "FAILED" | "SKIPPED";
     summary: string;
     outcomeLabel?: "PASS" | "NEEDS_REVISION" | "REJECT" | "FLAG";
     items: StepExecutionItem[];
@@ -66,7 +66,7 @@ type StrategyExecutionResult = {
         projectCode: string;
         datasourceName: string;
     };
-    status: "SUCCESS" | "FAILED";
+    status: "RUNNING" | "SUCCESS" | "FAILED";
     stepResults: StepExecutionResult[];
     finalRecommendation: {
         decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
@@ -165,6 +165,66 @@ function buildAutoReviewComment(
     }
 
     return lines.join("\n").slice(0, 1000);
+}
+
+function createExecutionResultShell(
+    strategy: {
+        id: string;
+        code: string;
+        name: string;
+    },
+    question: ReviewQuestionDetail,
+): StrategyExecutionResult {
+    return {
+        version: 1,
+        strategy: {
+            id: strategy.id,
+            code: strategy.code,
+            name: strategy.name,
+        },
+        question: {
+            id: question.id,
+            title: question.title,
+            projectName: question.project.name,
+            projectCode: question.project.code,
+            datasourceName: question.datasource.name,
+        },
+        status: "RUNNING",
+        stepResults: [],
+        finalRecommendation: null,
+        reviewPersistence: null,
+    };
+}
+
+function buildRunResponsePayload(stepResults: StepExecutionResult[]) {
+    return {
+        stepResults: stepResults.map((step) => ({
+            stepId: step.stepId,
+            stepName: step.stepName,
+            status: step.status,
+            rawResponses: step.items.map((item) => item.rawResponse ?? null),
+        })),
+    };
+}
+
+async function persistRunProgress(
+    runId: string,
+    parsedResult: StrategyExecutionResult,
+    errorMessage?: string,
+) {
+    await prisma.aiReviewStrategyRun.update({
+        where: {
+            id: runId,
+        },
+        data: {
+            status: parsedResult.status,
+            errorMessage,
+            parsedResult: serializeJson(parsedResult),
+            responsePayload: serializeJson(
+                buildRunResponsePayload(parsedResult.stepResults),
+            ),
+        },
+    });
 }
 
 function extractJson(text: string | null) {
@@ -441,12 +501,185 @@ function deriveMetrics(
     return metrics;
 }
 
+async function executeAiToolItem(
+    step: AiReviewAiToolStep,
+    question: ReviewQuestionDetail,
+    previousResults: StepExecutionResult[],
+    sourceItem: StepExecutionItem | undefined,
+    index: number,
+    runIndex: number,
+) {
+    const selectedFields = selectFields(question, step.fieldKeys);
+    const promptInput = {
+        selectedFields,
+        sourceOutput: sourceItem?.output ?? null,
+        runIndex,
+    };
+    const response = await invokeAiModel({
+        modelCode: step.modelCode,
+        stream: false,
+        messages: [
+            {
+                role: "system",
+                content: buildSystemPrompt(step),
+            },
+            {
+                role: "user",
+                content: buildUserPrompt(
+                    step,
+                    question,
+                    selectedFields,
+                    sourceItem?.output,
+                    previousResults,
+                ),
+            },
+        ],
+    });
+
+    if (!response.ok || response.stream) {
+        return {
+            index,
+            status: "FAILED" as const,
+            sourceStepId: step.sourceStepId,
+            promptInput,
+            requestMeta: {
+                modelCode: step.modelCode,
+                protocol: response.protocol,
+            },
+            rawResponse: {
+                failure: response,
+            },
+            error: response.ok ? "当前步骤不支持流式结果。" : response.error,
+        };
+    }
+
+    try {
+        const parsedRaw = extractJson(response.text);
+        const normalizedPayload =
+            parsedRaw &&
+            typeof parsedRaw === "object" &&
+            !Array.isArray(parsedRaw)
+                ? coerceAiOutput(
+                      step.toolType,
+                      parsedRaw as Record<string, unknown>,
+                  )
+                : (() => {
+                      throw new Error("模型返回的 JSON 不是对象");
+                  })();
+        const parsed =
+            aiReviewOutputSchemas[step.toolType].safeParse(normalizedPayload);
+
+        if (!parsed.success) {
+            throw new Error(
+                parsed.error.issues[0]?.message ?? "模型结果结构不合法",
+            );
+        }
+
+        return {
+            index,
+            status: "SUCCESS" as const,
+            sourceStepId: step.sourceStepId,
+            promptInput,
+            requestMeta: {
+                modelCode: response.modelCode,
+                protocol: response.protocol,
+                reasoningLevel: response.reasoningLevel,
+                providerCode: response.route.providerCode,
+                providerName: response.route.providerName,
+                endpointCode: response.route.endpointCode,
+                endpointLabel: response.route.endpointLabel,
+                baseUrl: response.route.baseUrl,
+            },
+            output: parsed.data,
+            rawResponse: {
+                route: response.route,
+                raw: response.raw,
+            },
+            derived: deriveMetrics(step.toolType, parsed.data, question),
+        };
+    } catch (error) {
+        return {
+            index,
+            status: "FAILED" as const,
+            sourceStepId: step.sourceStepId,
+            promptInput,
+            requestMeta: {
+                modelCode: response.modelCode,
+                protocol: response.protocol,
+                reasoningLevel: response.reasoningLevel,
+                providerCode: response.route.providerCode,
+                providerName: response.route.providerName,
+                endpointCode: response.route.endpointCode,
+                endpointLabel: response.route.endpointLabel,
+                baseUrl: response.route.baseUrl,
+            },
+            rawResponse: {
+                route: response.route,
+                raw: response.raw,
+                text: response.text,
+            },
+            error:
+                error instanceof Error ? error.message : "模型结果解析失败",
+        };
+    }
+}
+
+function buildRunningAiToolStepResult(
+    step: AiReviewAiToolStep,
+    items: StepExecutionItem[],
+    totalItems: number,
+): StepExecutionResult {
+    return {
+        stepId: step.id,
+        stepName: step.name,
+        stepKind: "AI_TOOL",
+        stepType: step.toolType,
+        status: "RUNNING",
+        summary:
+            totalItems <= 1
+                ? `正在执行 ${step.name}...`
+                : `正在执行 ${step.name}，已完成 ${items.length}/${totalItems} 项。`,
+        items,
+    };
+}
+
+function buildCompletedAiToolStepResult(
+    step: AiReviewAiToolStep,
+    items: StepExecutionItem[],
+): StepExecutionResult {
+    const successItems = items.filter((item) => item.status === "SUCCESS");
+    const firstSuccess = successItems[0];
+    const firstOutput =
+        firstSuccess?.output && typeof firstSuccess.output === "object"
+            ? (firstSuccess.output as Record<string, unknown>)
+            : null;
+    const summary =
+        typeof firstOutput?.summary === "string"
+            ? firstOutput.summary
+            : step.toolType === "AI_SOLVE_QUESTION"
+              ? `已完成 ${successItems.length} 次 AI 作答`
+              : successItems.length
+                ? `${step.name} 已完成`
+                : `${step.name} 执行失败`;
+
+    return {
+        stepId: step.id,
+        stepName: step.name,
+        stepKind: "AI_TOOL",
+        stepType: step.toolType,
+        status: successItems.length ? "SUCCESS" : "FAILED",
+        summary,
+        items,
+        error: successItems.length ? undefined : items[0]?.error,
+    };
+}
+
 async function runAiToolStep(
     step: AiReviewAiToolStep,
     question: ReviewQuestionDetail,
     previousResults: StepExecutionResult[],
+    onProgress?: (partial: StepExecutionResult) => void | Promise<void>,
 ) {
-    const items: StepExecutionItem[] = [];
     const sourceStepItems =
         step.sourceStepId &&
         previousResults.find((item) => item.stepId === step.sourceStepId)
@@ -467,167 +700,73 @@ async function runAiToolStep(
         };
     }
 
+    const tasks: Array<{
+        index: number;
+        runIndex: number;
+        sourceItem: StepExecutionItem | undefined;
+    }> = [];
     let currentIndex = 1;
 
     for (const sourceItem of sourceStepItems) {
-        for (let runIndex = 0; runIndex < step.runCount; runIndex += 1) {
-            const selectedFields = selectFields(question, step.fieldKeys);
-            const promptInput = {
-                selectedFields,
-                sourceOutput: sourceItem?.output ?? null,
-                runIndex: runIndex + 1,
-            };
-            const response = await invokeAiModel({
-                modelCode: step.modelCode,
-                stream: false,
-                messages: [
-                    {
-                        role: "system",
-                        content: buildSystemPrompt(step),
-                    },
-                    {
-                        role: "user",
-                        content: buildUserPrompt(
-                            step,
-                            question,
-                            selectedFields,
-                            sourceItem?.output,
-                            previousResults,
-                        ),
-                    },
-                ],
+        for (let runIndex = 1; runIndex <= step.runCount; runIndex += 1) {
+            tasks.push({
+                index: currentIndex,
+                runIndex,
+                sourceItem,
             });
-
-            if (!response.ok || response.stream) {
-                items.push({
-                    index: currentIndex,
-                    status: "FAILED",
-                    sourceStepId: step.sourceStepId,
-                    promptInput,
-                    requestMeta: {
-                        modelCode: step.modelCode,
-                        protocol: response.protocol,
-                    },
-                    rawResponse: {
-                        failure: response,
-                    },
-                    error: response.ok
-                        ? "当前步骤不支持流式结果。"
-                        : response.error,
-                });
-                currentIndex += 1;
-                continue;
-            }
-
-            try {
-                const parsedRaw = extractJson(response.text);
-                const normalizedPayload =
-                    parsedRaw &&
-                    typeof parsedRaw === "object" &&
-                    !Array.isArray(parsedRaw)
-                        ? coerceAiOutput(
-                              step.toolType,
-                              parsedRaw as Record<string, unknown>,
-                          )
-                        : (() => {
-                              throw new Error("模型返回的 JSON 不是对象");
-                          })();
-                const parsed =
-                    aiReviewOutputSchemas[step.toolType].safeParse(
-                        normalizedPayload,
-                    );
-
-                if (!parsed.success) {
-                    throw new Error(
-                        parsed.error.issues[0]?.message ?? "模型结果结构不合法",
-                    );
-                }
-
-                items.push({
-                    index: currentIndex,
-                    status: "SUCCESS",
-                    sourceStepId: step.sourceStepId,
-                    promptInput,
-                    requestMeta: {
-                        modelCode: response.modelCode,
-                        protocol: response.protocol,
-                        reasoningLevel: response.reasoningLevel,
-                        providerCode: response.route.providerCode,
-                        providerName: response.route.providerName,
-                        endpointCode: response.route.endpointCode,
-                        endpointLabel: response.route.endpointLabel,
-                        baseUrl: response.route.baseUrl,
-                    },
-                    output: parsed.data,
-                    rawResponse: {
-                        route: response.route,
-                        raw: response.raw,
-                    },
-                    derived: deriveMetrics(
-                        step.toolType,
-                        parsed.data,
-                        question,
-                    ),
-                });
-            } catch (error) {
-                items.push({
-                    index: currentIndex,
-                    status: "FAILED",
-                    sourceStepId: step.sourceStepId,
-                    promptInput,
-                    requestMeta: {
-                        modelCode: response.modelCode,
-                        protocol: response.protocol,
-                        reasoningLevel: response.reasoningLevel,
-                        providerCode: response.route.providerCode,
-                        providerName: response.route.providerName,
-                        endpointCode: response.route.endpointCode,
-                        endpointLabel: response.route.endpointLabel,
-                        baseUrl: response.route.baseUrl,
-                    },
-                    rawResponse: {
-                        route: response.route,
-                        raw: response.raw,
-                        text: response.text,
-                    },
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : "模型结果解析失败",
-                });
-            }
-
             currentIndex += 1;
         }
     }
 
-    const successItems = items.filter((item) => item.status === "SUCCESS");
-    const firstSuccess = successItems[0];
-    const firstOutput =
-        firstSuccess?.output && typeof firstSuccess.output === "object"
-            ? (firstSuccess.output as Record<string, unknown>)
-            : null;
-    const summary =
-        typeof firstOutput?.summary === "string"
-            ? firstOutput.summary
-            : step.toolType === "AI_SOLVE_QUESTION"
-              ? `已完成 ${successItems.length} 次 AI 作答`
-              : successItems.length
-                ? `${step.name} 已完成`
-                : `${step.name} 执行失败`;
+    if (onProgress) {
+        await onProgress(buildRunningAiToolStepResult(step, [], tasks.length));
+    }
 
-    return {
-        stepId: step.id,
-        stepName: step.name,
-        stepKind: "AI_TOOL" as const,
-        stepType: step.toolType,
-        status: successItems.length
-            ? ("SUCCESS" as const)
-            : ("FAILED" as const),
-        summary,
-        items,
-        error: successItems.length ? undefined : items[0]?.error,
-    };
+    const items: Array<StepExecutionItem | undefined> = new Array(tasks.length);
+    let progressChain = Promise.resolve();
+
+    await Promise.all(
+        tasks.map(async (task, position) => {
+            const item = await executeAiToolItem(
+                step,
+                question,
+                previousResults,
+                task.sourceItem,
+                task.index,
+                task.runIndex,
+            );
+
+            items[position] = item;
+
+            if (!onProgress) {
+                return;
+            }
+
+            const completedItems = items.filter(
+                (current): current is StepExecutionItem => Boolean(current),
+            );
+
+            progressChain = progressChain.then(() =>
+                onProgress(
+                    buildRunningAiToolStepResult(
+                        step,
+                        completedItems,
+                        tasks.length,
+                    ),
+                ),
+            );
+            await progressChain;
+        }),
+    );
+
+    await progressChain;
+
+    return buildCompletedAiToolStepResult(
+        step,
+        items.filter(
+            (item): item is StepExecutionItem => Boolean(item),
+        ),
+    );
 }
 
 function readMetricValue(item: StepExecutionItem, metric: string) {
@@ -1178,7 +1317,10 @@ export async function executeAiReviewStrategy(
         },
     });
 
-    const stepResults: StepExecutionResult[] = [];
+    const parsedResult = createExecutionResultShell(strategy, question);
+    const stepResults = parsedResult.stepResults;
+
+    await persistRunProgress(run.id, parsedResult);
 
     try {
         for (const step of strategy.definition.steps) {
@@ -1193,39 +1335,56 @@ export async function executeAiReviewStrategy(
                     summary: "步骤已停用。",
                     items: [],
                 });
+                await persistRunProgress(run.id, parsedResult);
                 continue;
             }
 
             if (step.kind === "AI_TOOL") {
-                stepResults.push(
-                    await runAiToolStep(step, question, stepResults),
+                const stepIndex = stepResults.push({
+                    stepId: step.id,
+                    stepName: step.name,
+                    stepKind: "AI_TOOL",
+                    stepType: step.toolType,
+                    status: "RUNNING",
+                    summary: `正在执行 ${step.name}...`,
+                    items: [],
+                });
+                await persistRunProgress(run.id, parsedResult);
+
+                stepResults[stepIndex - 1] = await runAiToolStep(
+                    step,
+                    question,
+                    stepResults.slice(0, -1),
+                    async (partial) => {
+                        stepResults[stepIndex - 1] = partial;
+                        await persistRunProgress(run.id, parsedResult);
+                    },
                 );
             } else {
-                stepResults.push(runRuleStep(step, stepResults));
+                const stepIndex = stepResults.push({
+                    stepId: step.id,
+                    stepName: step.name,
+                    stepKind: "RULE",
+                    stepType: step.ruleType,
+                    status: "RUNNING",
+                    summary: `正在执行 ${step.name}...`,
+                    items: [],
+                });
+                await persistRunProgress(run.id, parsedResult);
+                stepResults[stepIndex - 1] = runRuleStep(
+                    step,
+                    stepResults.slice(0, -1),
+                );
             }
+
+            await persistRunProgress(run.id, parsedResult);
         }
 
-        const parsedResult: StrategyExecutionResult = {
-            version: 1,
-            strategy: {
-                id: strategy.id,
-                code: strategy.code,
-                name: strategy.name,
-            },
-            question: {
-                id: question.id,
-                title: question.title,
-                projectName: question.project.name,
-                projectCode: question.project.code,
-                datasourceName: question.datasource.name,
-            },
-            status: stepResults.some((step) => step.status === "FAILED")
-                ? "FAILED"
-                : "SUCCESS",
-            stepResults,
-            finalRecommendation: resolveFinalRecommendation(stepResults),
-            reviewPersistence: null,
-        };
+        parsedResult.status = stepResults.some((step) => step.status === "FAILED")
+            ? "FAILED"
+            : "SUCCESS";
+        parsedResult.finalRecommendation = resolveFinalRecommendation(stepResults);
+        parsedResult.reviewPersistence = null;
 
         if (parsedResult.finalRecommendation?.decision) {
             const comment = buildAutoReviewComment(
@@ -1320,16 +1479,7 @@ export async function executeAiReviewStrategy(
             data: {
                 status: parsedResult.status,
                 parsedResult: serializeJson(parsedResult),
-                responsePayload: serializeJson({
-                    stepResults: stepResults.map((step) => ({
-                        stepId: step.stepId,
-                        stepName: step.stepName,
-                        status: step.status,
-                        rawResponses: step.items.map(
-                            (item) => item.rawResponse ?? null,
-                        ),
-                    })),
-                }),
+                responsePayload: serializeJson(buildRunResponsePayload(stepResults)),
                 finishedAt: new Date(),
             },
         });
@@ -1348,27 +1498,15 @@ export async function executeAiReviewStrategy(
                 errorMessage:
                     error instanceof Error ? error.message : "策略执行失败",
                 parsedResult: serializeJson({
-                    version: 1,
-                    strategy: {
-                        id: strategy.id,
-                        code: strategy.code,
-                        name: strategy.name,
-                    },
-                    question: {
-                        id: question.id,
-                        title: question.title,
-                        projectName: question.project.name,
-                        projectCode: question.project.code,
-                        datasourceName: question.datasource.name,
-                    },
+                    ...parsedResult,
                     status: "FAILED",
-                    stepResults,
                     finalRecommendation: null,
                     reviewPersistence: {
                         status: "SKIPPED",
                         message: "策略执行失败，未自动保存审核记录。",
                     },
                 }),
+                responsePayload: serializeJson(buildRunResponsePayload(stepResults)),
                 finishedAt: new Date(),
             },
         });
