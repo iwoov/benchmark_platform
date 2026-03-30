@@ -18,7 +18,7 @@ import {
     type ReviewQuestionDetail,
 } from "@/lib/reviews/question-list-data";
 
-type StepExecutionItem = {
+export type StepExecutionItem = {
     index: number;
     status: "SUCCESS" | "FAILED";
     sourceStepId?: string;
@@ -39,7 +39,7 @@ type StepExecutionItem = {
     error?: string;
 };
 
-type StepExecutionResult = {
+export type StepExecutionResult = {
     stepId: string;
     stepName: string;
     stepKind: "AI_TOOL" | "RULE";
@@ -52,7 +52,7 @@ type StepExecutionResult = {
     error?: string;
 };
 
-type StrategyExecutionResult = {
+export type StrategyExecutionResult = {
     version: 1;
     strategy: {
         id: string;
@@ -81,6 +81,21 @@ type StrategyExecutionResult = {
         comment?: string;
         questionStatus?: "APPROVED" | "REJECTED";
     } | null;
+};
+
+export type AiReviewStrategyRunView = {
+    id: string;
+    status: string;
+    errorMessage: string | null;
+    createdAt: string;
+    finishedAt: string | null;
+    strategy: {
+        id: string;
+        name: string;
+        code: string;
+    };
+    triggeredByName: string;
+    parsedResult: StrategyExecutionResult | null;
 };
 
 function parseStringArray(input: unknown) {
@@ -127,6 +142,10 @@ function normalizeAnswer(value: string | null | undefined) {
 
 function serializeJson(value: unknown) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function toReviewDecision(
@@ -204,6 +223,34 @@ function buildRunResponsePayload(stepResults: StepExecutionResult[]) {
             status: step.status,
             rawResponses: step.items.map((item) => item.rawResponse ?? null),
         })),
+    };
+}
+
+function buildRunView(run: {
+    id: string;
+    status: string;
+    errorMessage: string | null;
+    createdAt: Date;
+    finishedAt: Date | null;
+    strategy: {
+        id: string;
+        name: string;
+        code: string;
+    };
+    triggeredBy: {
+        name: string | null;
+    };
+    parsedResult: Prisma.JsonValue | null;
+}): AiReviewStrategyRunView {
+    return {
+        id: run.id,
+        status: run.status,
+        errorMessage: run.errorMessage,
+        createdAt: run.createdAt.toISOString(),
+        finishedAt: run.finishedAt?.toISOString() ?? null,
+        strategy: run.strategy,
+        triggeredByName: run.triggeredBy.name ?? "未知用户",
+        parsedResult: run.parsedResult as StrategyExecutionResult | null,
     };
 }
 
@@ -644,6 +691,53 @@ function buildRunningAiToolStepResult(
     };
 }
 
+function buildAiToolTasks(
+    step: AiReviewAiToolStep,
+    previousResults: StepExecutionResult[],
+) {
+    const sourceStepItems =
+        step.sourceStepId &&
+        previousResults.find((item) => item.stepId === step.sourceStepId)
+            ? previousResults
+                  .find((item) => item.stepId === step.sourceStepId)!
+                  .items.filter((item) => item.status === "SUCCESS")
+            : [undefined];
+
+    if (step.sourceStepId && !sourceStepItems.length) {
+        return {
+            sourceStepItems,
+            tasks: [] as Array<{
+                index: number;
+                runIndex: number;
+                sourceItem: StepExecutionItem | undefined;
+            }>,
+        };
+    }
+
+    const tasks: Array<{
+        index: number;
+        runIndex: number;
+        sourceItem: StepExecutionItem | undefined;
+    }> = [];
+    let currentIndex = 1;
+
+    for (const sourceItem of sourceStepItems) {
+        for (let runIndex = 1; runIndex <= step.runCount; runIndex += 1) {
+            tasks.push({
+                index: currentIndex,
+                runIndex,
+                sourceItem,
+            });
+            currentIndex += 1;
+        }
+    }
+
+    return {
+        sourceStepItems,
+        tasks,
+    };
+}
+
 function buildCompletedAiToolStepResult(
     step: AiReviewAiToolStep,
     items: StepExecutionItem[],
@@ -681,13 +775,7 @@ async function runAiToolStep(
     previousResults: StepExecutionResult[],
     onProgress?: (partial: StepExecutionResult) => void | Promise<void>,
 ) {
-    const sourceStepItems =
-        step.sourceStepId &&
-        previousResults.find((item) => item.stepId === step.sourceStepId)
-            ? previousResults
-                  .find((item) => item.stepId === step.sourceStepId)!
-                  .items.filter((item) => item.status === "SUCCESS")
-            : [undefined];
+    const { sourceStepItems, tasks } = buildAiToolTasks(step, previousResults);
 
     if (step.sourceStepId && !sourceStepItems.length) {
         return {
@@ -699,24 +787,6 @@ async function runAiToolStep(
             summary: "来源步骤没有可用结果，当前步骤已跳过。",
             items: [],
         };
-    }
-
-    const tasks: Array<{
-        index: number;
-        runIndex: number;
-        sourceItem: StepExecutionItem | undefined;
-    }> = [];
-    let currentIndex = 1;
-
-    for (const sourceItem of sourceStepItems) {
-        for (let runIndex = 1; runIndex <= step.runCount; runIndex += 1) {
-            tasks.push({
-                index: currentIndex,
-                runIndex,
-                sourceItem,
-            });
-            currentIndex += 1;
-        }
     }
 
     if (onProgress) {
@@ -1215,6 +1285,54 @@ export async function getApplicableAiReviewStrategies(
         );
 }
 
+export async function getReviewQuestionListAiStrategies(projectIds?: string[]) {
+    if (!process.env.DATABASE_URL) {
+        return [];
+    }
+
+    const allowedProjectIds = projectIds ? new Set(projectIds) : null;
+    const strategies = await prisma.aiReviewStrategy.findMany({
+        where: {
+            enabled: true,
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    return strategies
+        .map((strategy) => {
+            const definition = parseDefinition(strategy.definition);
+
+            if (!definition || !isRunnableReviewStrategy(definition)) {
+                return null;
+            }
+
+            const strategyProjectIds = parseStringArray(strategy.projectIds);
+
+            if (
+                allowedProjectIds &&
+                strategyProjectIds.length &&
+                !strategyProjectIds.some((projectId) =>
+                    allowedProjectIds.has(projectId),
+                )
+            ) {
+                return null;
+            }
+
+            return {
+                id: strategy.id,
+                name: strategy.name,
+                code: strategy.code,
+                description: strategy.description,
+                stepCount: definition.steps.length,
+                projectIds: strategyProjectIds,
+                datasourceIds: parseStringArray(strategy.datasourceIds),
+            };
+        })
+        .filter((strategy): strategy is NonNullable<typeof strategy> =>
+            Boolean(strategy),
+        );
+}
+
 export async function getAiReviewStrategyRunsForQuestion(questionId: string) {
     if (!process.env.DATABASE_URL) {
         return [];
@@ -1242,16 +1360,7 @@ export async function getAiReviewStrategyRunsForQuestion(questionId: string) {
         },
     });
 
-    return runs.map((run) => ({
-        id: run.id,
-        status: run.status,
-        errorMessage: run.errorMessage,
-        createdAt: run.createdAt.toISOString(),
-        finishedAt: run.finishedAt?.toISOString() ?? null,
-        strategy: run.strategy,
-        triggeredByName: run.triggeredBy.name,
-        parsedResult: run.parsedResult as StrategyExecutionResult | null,
-    }));
+    return runs.map(buildRunView);
 }
 
 async function loadStrategyForExecution(strategyId: string) {
@@ -1285,6 +1394,269 @@ async function loadStrategyForExecution(strategyId: string) {
         ...strategy,
         definition,
     };
+}
+
+function extractRunDefinition(requestPayload: unknown) {
+    if (!requestPayload || typeof requestPayload !== "object") {
+        return null;
+    }
+
+    const strategy =
+        "strategy" in requestPayload
+            ? (requestPayload as Record<string, unknown>).strategy
+            : null;
+
+    if (!strategy || typeof strategy !== "object") {
+        return null;
+    }
+
+    const definition =
+        "definition" in strategy
+            ? (strategy as Record<string, unknown>).definition
+            : null;
+
+    return parseDefinition(definition);
+}
+
+function getImpactedRetryState(
+    definition: AiReviewStrategyDefinition,
+    stepResults: StepExecutionResult[],
+    retriedStepId: string,
+) {
+    const impactedStepIds = new Set([retriedStepId]);
+    let hasStaleAiStep = false;
+    let reachedRetriedStep = false;
+
+    for (const step of definition.steps) {
+        if (step.id === retriedStepId) {
+            reachedRetriedStep = true;
+            continue;
+        }
+
+        if (!reachedRetriedStep) {
+            continue;
+        }
+
+        if (
+            !step.enabled ||
+            !stepResults.some((result) => result.stepId === step.id)
+        ) {
+            continue;
+        }
+
+        if (step.kind === "RULE") {
+            if (impactedStepIds.has(step.sourceStepId)) {
+                impactedStepIds.add(step.id);
+            }
+            continue;
+        }
+
+        if (step.toolType === "REVIEW_SUMMARY") {
+            if (
+                stepResults.some((result) => impactedStepIds.has(result.stepId))
+            ) {
+                hasStaleAiStep = true;
+            }
+            continue;
+        }
+
+        if (step.sourceStepId && impactedStepIds.has(step.sourceStepId)) {
+            hasStaleAiStep = true;
+        }
+    }
+
+    return {
+        hasStaleAiStep,
+    };
+}
+
+export async function retryAiReviewStrategyRunItem(
+    runId: string,
+    stepId: string,
+    itemIndex: number,
+) {
+    const run = await prisma.aiReviewStrategyRun.findUnique({
+        where: {
+            id: runId,
+        },
+        include: {
+            strategy: {
+                select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    definition: true,
+                },
+            },
+            triggeredBy: {
+                select: {
+                    name: true,
+                },
+            },
+        },
+    });
+
+    if (!run) {
+        throw new Error("运行记录不存在。");
+    }
+
+    if (run.status === "RUNNING" || run.status === "PENDING") {
+        throw new Error("当前运行尚未结束，暂不支持重试单条请求。");
+    }
+
+    if (!run.parsedResult) {
+        throw new Error("当前运行没有可重试的执行结果。");
+    }
+
+    const parsedResult = cloneJson(run.parsedResult as StrategyExecutionResult);
+    const definition =
+        extractRunDefinition(run.requestPayload) ??
+        parseDefinition(run.strategy.definition);
+
+    if (!definition) {
+        throw new Error("运行记录中的策略定义已损坏，无法重试。");
+    }
+
+    const stepIndex = parsedResult.stepResults.findIndex(
+        (step) => step.stepId === stepId,
+    );
+
+    if (stepIndex < 0) {
+        throw new Error("未找到要重试的步骤。");
+    }
+
+    const currentStep = parsedResult.stepResults[stepIndex];
+    const stepDefinition = definition.steps.find((step) => step.id === stepId);
+
+    if (!stepDefinition || stepDefinition.kind !== "AI_TOOL") {
+        throw new Error("只有 AI 步骤的失败请求支持单条重试。");
+    }
+
+    const currentItem = currentStep.items.find(
+        (item) => item.index === itemIndex,
+    );
+
+    if (!currentItem) {
+        throw new Error("未找到要重试的失败记录。");
+    }
+
+    if (currentItem.status !== "FAILED") {
+        throw new Error("当前请求不是失败状态，无需重试。");
+    }
+
+    const previousResults = parsedResult.stepResults.slice(0, stepIndex);
+    const question = await getReviewQuestionDetail(run.questionId);
+
+    if (!question) {
+        throw new Error("题目不存在或已被删除。");
+    }
+
+    const { sourceStepItems, tasks } = buildAiToolTasks(
+        stepDefinition,
+        previousResults,
+    );
+
+    if (stepDefinition.sourceStepId && !sourceStepItems.length) {
+        throw new Error("来源步骤当前没有可用成功结果，无法重试这一项。");
+    }
+
+    const targetTask = tasks.find((task) => task.index === itemIndex);
+
+    if (!targetTask) {
+        throw new Error("当前步骤任务索引已变化，无法定位这条失败请求。");
+    }
+
+    const retriedItem = await executeAiToolItem(
+        stepDefinition,
+        question,
+        previousResults,
+        targetTask.sourceItem,
+        targetTask.index,
+        targetTask.runIndex,
+    );
+    const nextItems = currentStep.items
+        .filter((item) => item.index !== itemIndex)
+        .concat(retriedItem)
+        .sort((left, right) => left.index - right.index);
+
+    parsedResult.stepResults[stepIndex] = buildCompletedAiToolStepResult(
+        stepDefinition,
+        nextItems,
+    );
+
+    for (
+        let downstreamIndex = stepIndex + 1;
+        downstreamIndex < parsedResult.stepResults.length;
+        downstreamIndex += 1
+    ) {
+        const downstreamResult = parsedResult.stepResults[downstreamIndex];
+        const downstreamDefinition = definition.steps.find(
+            (step) => step.id === downstreamResult.stepId,
+        );
+
+        if (!downstreamDefinition || downstreamDefinition.kind !== "RULE") {
+            continue;
+        }
+
+        parsedResult.stepResults[downstreamIndex] = runRuleStep(
+            downstreamDefinition,
+            parsedResult.stepResults.slice(0, downstreamIndex),
+        );
+    }
+
+    parsedResult.status = parsedResult.stepResults.some(
+        (step) => step.status === "FAILED",
+    )
+        ? "FAILED"
+        : "SUCCESS";
+
+    const { hasStaleAiStep } = getImpactedRetryState(
+        definition,
+        parsedResult.stepResults,
+        stepId,
+    );
+
+    parsedResult.finalRecommendation = hasStaleAiStep
+        ? null
+        : resolveFinalRecommendation(parsedResult.stepResults);
+    parsedResult.reviewPersistence = {
+        status: "SKIPPED",
+        message: hasStaleAiStep
+            ? "已重试并更新当前失败请求，但下游 AI 步骤未重跑，自动审核回填已失效，请人工确认。"
+            : "已重试并更新当前失败请求，本次未自动回填审核结论。",
+    };
+
+    const updatedRun = await prisma.aiReviewStrategyRun.update({
+        where: {
+            id: run.id,
+        },
+        data: {
+            status: parsedResult.status,
+            errorMessage:
+                parsedResult.status === "SUCCESS" ? null : run.errorMessage,
+            parsedResult: serializeJson(parsedResult),
+            responsePayload: serializeJson(
+                buildRunResponsePayload(parsedResult.stepResults),
+            ),
+            finishedAt: new Date(),
+        },
+        include: {
+            strategy: {
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                },
+            },
+            triggeredBy: {
+                select: {
+                    name: true,
+                },
+            },
+        },
+    });
+
+    return buildRunView(updatedRun);
 }
 
 export async function executeAiReviewStrategy(

@@ -1,26 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button, Empty, Select, Space, Tag } from "antd";
 import { Bot, Play, RefreshCcw } from "lucide-react";
-import { runAiReviewStrategyAction } from "@/app/actions/ai-review-strategies";
-
-function formatJson(value: unknown) {
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch {
-        return String(value);
-    }
-}
-
-function areRunsEqual(left: unknown, right: unknown) {
-    try {
-        return JSON.stringify(left) === JSON.stringify(right);
-    } catch {
-        return false;
-    }
-}
+import {
+    runAiReviewStrategyAction,
+    retryAiReviewStrategyRunItemAction,
+} from "@/app/actions/ai-review-strategies";
 
 type StrategyRunResult = {
     version: 1;
@@ -83,6 +70,37 @@ type StrategyRunResult = {
     } | null;
 };
 
+type RunnerRun = {
+    id: string;
+    status: string;
+    errorMessage: string | null;
+    createdAt: string;
+    finishedAt: string | null;
+    strategy: {
+        id: string;
+        name: string;
+        code: string;
+    };
+    triggeredByName: string;
+    parsedResult: StrategyRunResult | null;
+};
+
+function formatJson(value: unknown) {
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
+
+function areRunsEqual(left: unknown, right: unknown) {
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+        return false;
+    }
+}
+
 export function AiReviewStrategyRunner({
     questionId,
     strategies,
@@ -97,20 +115,7 @@ export function AiReviewStrategyRunner({
         stepCount: number;
         datasourceIds: string[];
     }>;
-    runs: Array<{
-        id: string;
-        status: string;
-        errorMessage: string | null;
-        createdAt: string;
-        finishedAt: string | null;
-        strategy: {
-            id: string;
-            name: string;
-            code: string;
-        };
-        triggeredByName: string;
-        parsedResult: StrategyRunResult | null;
-    }>;
+    runs: RunnerRun[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
@@ -122,6 +127,10 @@ export function AiReviewStrategyRunner({
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pollingEnabled, setPollingEnabled] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
+    const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>(
+        {},
+    );
+    const [, startRetryTransition] = useTransition();
     const effectiveSelectedStrategyId = strategies.some(
         (strategy) => strategy.id === selectedStrategyId,
     )
@@ -265,6 +274,16 @@ export function AiReviewStrategyRunner({
         return "default";
     }
 
+    function buildRetryKey(runId: string, stepId: string, itemIndex: number) {
+        return `${runId}:${stepId}:${itemIndex}`;
+    }
+
+    function replaceRun(run: RunnerRun) {
+        setLiveRuns((current) =>
+            current.map((item) => (item.id === run.id ? run : item)),
+        );
+    }
+
     async function runStrategy() {
         if (!effectiveSelectedStrategyId) {
             notification.warning({
@@ -314,6 +333,56 @@ export function AiReviewStrategyRunner({
             setPollingEnabled(false);
             setIsRunning(false);
         }
+    }
+
+    function retryRunItem(runId: string, stepId: string, itemIndex: number) {
+        const retryKey = buildRetryKey(runId, stepId, itemIndex);
+
+        if (retryingKeys[retryKey]) {
+            return;
+        }
+
+        setRetryingKeys((current) => ({
+            ...current,
+            [retryKey]: true,
+        }));
+
+        startRetryTransition(async () => {
+            try {
+                const result = await retryAiReviewStrategyRunItemAction({
+                    runId,
+                    stepId,
+                    itemIndex,
+                });
+
+                if (result.error) {
+                    notification.error({
+                        message: "重试失败",
+                        description: result.error,
+                        placement: "topRight",
+                    });
+                    return;
+                }
+
+                if (result.run) {
+                    replaceRun(result.run);
+                } else {
+                    await refreshRuns();
+                }
+
+                notification.success({
+                    message: "重试成功",
+                    description: result.success ?? "失败请求已重新执行。",
+                    placement: "topRight",
+                });
+            } finally {
+                setRetryingKeys((current) => {
+                    const next = { ...current };
+                    delete next[retryKey];
+                    return next;
+                });
+            }
+        });
     }
 
     return (
@@ -734,18 +803,64 @@ export function AiReviewStrategyRunner({
                                                                                             }{" "}
                                                                                             次
                                                                                         </span>
-                                                                                        <Tag
-                                                                                            color={
-                                                                                                item.status ===
-                                                                                                "SUCCESS"
-                                                                                                    ? "success"
-                                                                                                    : "error"
+                                                                                        <Space
+                                                                                            size={
+                                                                                                8
                                                                                             }
                                                                                         >
-                                                                                            {
-                                                                                                item.status
-                                                                                            }
-                                                                                        </Tag>
+                                                                                            <Tag
+                                                                                                color={
+                                                                                                    item.status ===
+                                                                                                    "SUCCESS"
+                                                                                                        ? "success"
+                                                                                                        : "error"
+                                                                                                }
+                                                                                            >
+                                                                                                {
+                                                                                                    item.status
+                                                                                                }
+                                                                                            </Tag>
+                                                                                            {item.status ===
+                                                                                                "FAILED" &&
+                                                                                            run.status !==
+                                                                                                "RUNNING" &&
+                                                                                            run.status !==
+                                                                                                "PENDING" ? (
+                                                                                                <Button
+                                                                                                    size="small"
+                                                                                                    type="link"
+                                                                                                    icon={
+                                                                                                        <RefreshCcw
+                                                                                                            size={
+                                                                                                                14
+                                                                                                            }
+                                                                                                        />
+                                                                                                    }
+                                                                                                    loading={
+                                                                                                        retryingKeys[
+                                                                                                            buildRetryKey(
+                                                                                                                run.id,
+                                                                                                                step.stepId,
+                                                                                                                item.index,
+                                                                                                            )
+                                                                                                        ]
+                                                                                                    }
+                                                                                                    onClick={(
+                                                                                                        event,
+                                                                                                    ) => {
+                                                                                                        event.preventDefault();
+                                                                                                        event.stopPropagation();
+                                                                                                        retryRunItem(
+                                                                                                            run.id,
+                                                                                                            step.stepId,
+                                                                                                            item.index,
+                                                                                                        );
+                                                                                                    }}
+                                                                                                >
+                                                                                                    重试这次
+                                                                                                </Button>
+                                                                                            ) : null}
+                                                                                        </Space>
                                                                                     </summary>
                                                                                     <div className="strategy-step-item-body">
                                                                                         {item.requestMeta ? (

@@ -10,11 +10,16 @@ import {
     aiReviewStrategyPersistedSchema,
     type AiReviewStrategyPersistedInput,
 } from "@/lib/ai/review-strategy-schema";
-import { executeAiReviewStrategy } from "@/lib/ai/review-strategies";
+import {
+    executeAiReviewStrategy,
+    retryAiReviewStrategyRunItem,
+    type AiReviewStrategyRunView,
+} from "@/lib/ai/review-strategies";
 
 export type AiReviewStrategyActionState = {
     error?: string;
     success?: string;
+    run?: AiReviewStrategyRunView;
 };
 
 const saveStrategySchema = z.object({
@@ -33,6 +38,12 @@ const deleteStrategySchema = z.object({
 const runStrategySchema = z.object({
     strategyId: z.string().trim().min(1, "请选择要执行的策略"),
     questionId: z.string().trim().min(1, "缺少题目 ID"),
+});
+
+const retryRunItemSchema = z.object({
+    runId: z.string().trim().min(1, "缺少运行记录 ID"),
+    stepId: z.string().trim().min(1, "缺少步骤 ID"),
+    itemIndex: z.number().int("重试项索引无效").min(1, "重试项索引无效"),
 });
 
 async function requireStrategyAdminAccess() {
@@ -432,6 +443,85 @@ export async function runAiReviewStrategyAction(
         revalidateStrategyPaths(question.id);
         return {
             error: error instanceof Error ? error.message : "策略执行失败。",
+        };
+    }
+}
+
+export async function retryAiReviewStrategyRunItemAction(
+    input: z.input<typeof retryRunItemSchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再重试失败请求。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法重试失败请求。",
+        };
+    }
+
+    const parsed = retryRunItemSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "重试参数不完整。",
+        };
+    }
+
+    const run = await prisma.aiReviewStrategyRun.findUnique({
+        where: {
+            id: parsed.data.runId,
+        },
+        select: {
+            id: true,
+            questionId: true,
+            question: {
+                select: {
+                    projectId: true,
+                },
+            },
+        },
+    });
+
+    if (!run) {
+        return {
+            error: "运行记录不存在。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        run.question.projectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    try {
+        const updatedRun = await retryAiReviewStrategyRunItem(
+            parsed.data.runId,
+            parsed.data.stepId,
+            parsed.data.itemIndex,
+        );
+
+        revalidateStrategyPaths(run.questionId);
+
+        return {
+            success: "失败请求已重试，结果已更新。",
+            run: updatedRun,
+        };
+    } catch (error) {
+        revalidateStrategyPaths(run.questionId);
+        return {
+            error: error instanceof Error ? error.message : "重试失败。",
         };
     }
 }

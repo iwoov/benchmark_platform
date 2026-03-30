@@ -28,18 +28,81 @@ function extractJson(text: string | null) {
     const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
     const candidate = fencedMatch?.[1]?.trim() ?? text.trim();
 
-    try {
-        return JSON.parse(candidate);
-    } catch {
-        const start = candidate.indexOf("{");
-        const end = candidate.lastIndexOf("}");
+    function sanitizeJsonString(input: string) {
+        let result = "";
 
-        if (start >= 0 && end > start) {
-            return JSON.parse(candidate.slice(start, end + 1));
+        for (let index = 0; index < input.length; index += 1) {
+            const current = input[index];
+            const next = input[index + 1];
+
+            if (current === "\\") {
+                if (next && !`"\\/bfnrtu`.includes(next)) {
+                    result += "\\\\";
+                    continue;
+                }
+            }
+
+            result += current;
         }
 
-        throw new Error("模型返回内容不是合法 JSON");
+        return result;
     }
+
+    function tryParse(input: string) {
+        try {
+            return JSON.parse(input);
+        } catch {
+            return null;
+        }
+    }
+
+    const directParsed = tryParse(candidate);
+    if (directParsed !== null) {
+        return directParsed;
+    }
+
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+
+    if (start >= 0 && end > start) {
+        const objectCandidate = candidate.slice(start, end + 1);
+        const objectParsed = tryParse(objectCandidate);
+
+        if (objectParsed !== null) {
+            return objectParsed;
+        }
+
+        const sanitizedParsed = tryParse(sanitizeJsonString(objectCandidate));
+        if (sanitizedParsed !== null) {
+            return sanitizedParsed;
+        }
+    }
+
+    throw new Error("模型返回内容不是合法 JSON");
+}
+
+function extractTranslatedTextFallback(text: string | null) {
+    if (!text) {
+        return null;
+    }
+
+    const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fencedMatch?.[1]?.trim() ?? text.trim();
+    const translatedTextMatch = candidate.match(
+        /"translatedText"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"summary"|\})/,
+    );
+
+    if (!translatedTextMatch) {
+        return null;
+    }
+
+    return translatedTextMatch[1]
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .trim();
 }
 
 function normalizeTranslatedText(value: string) {
@@ -233,6 +296,18 @@ export async function translateReviewFieldAction(
             modelCode,
         };
     } catch (error) {
+        const fallbackTranslatedText = extractTranslatedTextFallback(
+            response.text,
+        );
+
+        if (fallbackTranslatedText) {
+            return {
+                translatedText: normalizeTranslatedText(fallbackTranslatedText),
+                sourceLanguage: null,
+                modelCode,
+            };
+        }
+
         return {
             error:
                 error instanceof Error ? error.message : "翻译结果解析失败。",

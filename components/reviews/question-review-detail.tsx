@@ -238,8 +238,10 @@ export function QuestionReviewDetail({
     ).map((key) => [key, question.rawRecord[key]] as const);
 
     useEffect(() => {
+        const timers = translationTimersRef.current;
+
         return () => {
-            Object.values(translationTimersRef.current).forEach((timerId) => {
+            Object.values(timers).forEach((timerId) => {
                 window.clearTimeout(timerId);
             });
         };

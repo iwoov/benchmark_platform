@@ -1,9 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
-import { SlidersHorizontal, X } from "lucide-react";
+import {
+    App,
+    Button,
+    Checkbox,
+    Empty,
+    Input,
+    InputNumber,
+    Modal,
+    Select,
+    Space,
+    Tag,
+} from "antd";
+import { Bot, SlidersHorizontal, X } from "lucide-react";
+import { runAiReviewStrategyAction } from "@/app/actions/ai-review-strategies";
 
 type QuestionStatus =
     | "DRAFT"
@@ -18,6 +30,16 @@ type ProjectOption = {
     code: string;
 };
 
+type ReviewStrategyOption = {
+    id: string;
+    name: string;
+    code: string;
+    description: string | null;
+    stepCount: number;
+    projectIds: string[];
+    datasourceIds: string[];
+};
+
 type ReviewQuestionItem = {
     id: string;
     projectId: string;
@@ -26,6 +48,7 @@ type ReviewQuestionItem = {
     datasourceId: string;
     datasourceName: string;
     externalRecordId: string;
+    title: string;
     status: QuestionStatus;
     updatedAt: string;
     sourceRowNumber: number | null;
@@ -229,13 +252,16 @@ export function ReviewQuestionList({
     scopeLabel,
     projects,
     questions,
+    reviewStrategies,
 }: {
     canReview: boolean;
     scopeLabel?: string;
     projects: ProjectOption[];
     questions: ReviewQuestionItem[];
+    reviewStrategies: ReviewStrategyOption[];
 }) {
     const router = useRouter();
+    const { notification } = App.useApp();
     const [selectedProjectId, setSelectedProjectId] = useState(
         projects[0]?.id ?? "",
     );
@@ -244,6 +270,21 @@ export function ReviewQuestionList({
     const [draftConditions, setDraftConditions] = useState<FilterCondition[]>(
         [],
     );
+    const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>(
+        [],
+    );
+    const [batchModalOpen, setBatchModalOpen] = useState(false);
+    const [selectedStrategyId, setSelectedStrategyId] = useState("");
+    const [batchConcurrency, setBatchConcurrency] = useState(1);
+    const [isBatchRunning, setIsBatchRunning] = useState(false);
+    const [batchProgress, setBatchProgress] = useState<{
+        total: number;
+        completed: number;
+        succeeded: number;
+        failed: number;
+        skipped: number;
+        currentQuestionTitle?: string;
+    } | null>(null);
 
     const projectQuestions = useMemo(
         () =>
@@ -327,22 +368,226 @@ export function ReviewQuestionList({
             ),
         );
     }, [conditions, fieldDefinitionMap, projectQuestions]);
+    const visibleQuestionIds = useMemo(
+        () => visibleQuestions.map((question) => question.id),
+        [visibleQuestions],
+    );
+    const selectedQuestionIdSet = useMemo(
+        () => new Set(selectedQuestionIds),
+        [selectedQuestionIds],
+    );
+    const selectedQuestions = useMemo(
+        () =>
+            visibleQuestions.filter((question) =>
+                selectedQuestionIdSet.has(question.id),
+            ),
+        [selectedQuestionIdSet, visibleQuestions],
+    );
+    const projectReviewStrategies = useMemo(
+        () =>
+            reviewStrategies.filter(
+                (strategy) =>
+                    !strategy.projectIds.length ||
+                    strategy.projectIds.includes(selectedProjectId),
+            ),
+        [reviewStrategies, selectedProjectId],
+    );
+    const effectiveSelectedStrategyId = projectReviewStrategies.some(
+        (strategy) => strategy.id === selectedStrategyId,
+    )
+        ? selectedStrategyId
+        : (projectReviewStrategies[0]?.id ?? "");
+    const selectedStrategy = projectReviewStrategies.find(
+        (strategy) => strategy.id === effectiveSelectedStrategyId,
+    );
+    const allVisibleSelected =
+        visibleQuestionIds.length > 0 &&
+        visibleQuestionIds.every((questionId) =>
+            selectedQuestionIdSet.has(questionId),
+        );
+    const partiallyVisibleSelected =
+        selectedQuestionIds.length > 0 && !allVisibleSelected;
 
     const selectedProject = projects.find(
         (project) => project.id === selectedProjectId,
     );
     const gridTemplateColumns = [
+        "52px",
         "160px",
         "120px",
         "180px",
         ...rawColumns.map(() => "220px"),
     ].join(" ");
-    const tableWidth = 160 + 120 + 180 + rawColumns.length * 220;
+    const tableWidth = 52 + 160 + 120 + 180 + rawColumns.length * 220;
+
+    useEffect(() => {
+        setSelectedQuestionIds((current) =>
+            current.filter((questionId) =>
+                visibleQuestionIds.includes(questionId),
+            ),
+        );
+    }, [visibleQuestionIds]);
+
+    useEffect(() => {
+        setSelectedStrategyId((current) =>
+            projectReviewStrategies.some((strategy) => strategy.id === current)
+                ? current
+                : (projectReviewStrategies[0]?.id ?? ""),
+        );
+    }, [projectReviewStrategies]);
 
     function buildQuestionDetailPath(questionId: string) {
         return scopeLabel === "全部项目"
             ? `/admin/review-tasks/${questionId}`
             : `/workspace/reviews/${questionId}`;
+    }
+
+    function toggleQuestionSelection(questionId: string, checked: boolean) {
+        setSelectedQuestionIds((current) => {
+            if (checked) {
+                return current.includes(questionId)
+                    ? current
+                    : [...current, questionId];
+            }
+
+            return current.filter((item) => item !== questionId);
+        });
+    }
+
+    async function runBatchStrategy() {
+        if (!selectedQuestions.length) {
+            notification.warning({
+                message: "请先勾选题目",
+                description: "至少选择 1 道题目后才能批量运行 AI 审核策略。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        if (!effectiveSelectedStrategyId || !selectedStrategy) {
+            notification.warning({
+                message: "请选择策略",
+                description: "当前项目没有可批量执行的 AI 审核策略。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        const strategy = selectedStrategy;
+
+        const concurrency = Math.min(
+            2,
+            Math.max(1, Math.floor(batchConcurrency || 1)),
+        );
+        const applicableQuestions = selectedQuestions.filter(
+            (question) =>
+                (!strategy.projectIds.length ||
+                    strategy.projectIds.includes(question.projectId)) &&
+                (!strategy.datasourceIds.length ||
+                    strategy.datasourceIds.includes(question.datasourceId)),
+        );
+        const skippedQuestions = selectedQuestions.filter(
+            (question) =>
+                !applicableQuestions.some((item) => item.id === question.id),
+        );
+
+        if (!applicableQuestions.length) {
+            notification.warning({
+                message: "没有可执行的题目",
+                description:
+                    "当前选中题目与所选策略的数据源范围不匹配，未发起批量运行。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        setIsBatchRunning(true);
+        setBatchProgress({
+            total: selectedQuestions.length,
+            completed: skippedQuestions.length,
+            succeeded: 0,
+            failed: 0,
+            skipped: skippedQuestions.length,
+        });
+
+        const failures: Array<{ title: string; error: string }> = [];
+        let cursor = 0;
+
+        async function worker() {
+            while (cursor < applicableQuestions.length) {
+                const currentIndex = cursor;
+                cursor += 1;
+                const question = applicableQuestions[currentIndex];
+
+                setBatchProgress((current) =>
+                    current
+                        ? {
+                              ...current,
+                              currentQuestionTitle: question.title,
+                          }
+                        : current,
+                );
+
+                const result = await runAiReviewStrategyAction({
+                    strategyId: strategy.id,
+                    questionId: question.id,
+                });
+
+                if (result.error) {
+                    failures.push({
+                        title: question.title,
+                        error: result.error,
+                    });
+                }
+
+                setBatchProgress((current) =>
+                    current
+                        ? {
+                              ...current,
+                              completed: current.completed + 1,
+                              succeeded:
+                                  current.succeeded + (result.error ? 0 : 1),
+                              failed: current.failed + (result.error ? 1 : 0),
+                          }
+                        : current,
+                );
+            }
+        }
+
+        try {
+            await Promise.all(
+                Array.from({
+                    length: Math.min(concurrency, applicableQuestions.length),
+                }).map(() => worker()),
+            );
+
+            const successCount = applicableQuestions.length - failures.length;
+            const failurePreview = failures
+                .slice(0, 3)
+                .map((item) => `${item.title}: ${item.error}`)
+                .join("；");
+
+            notification[failures.length ? "warning" : "success"]({
+                message: "批量 AI 审核已完成",
+                description: [
+                    `成功 ${successCount} 题`,
+                    `失败 ${failures.length} 题`,
+                    `跳过 ${skippedQuestions.length} 题`,
+                    failurePreview,
+                ]
+                    .filter(Boolean)
+                    .join("。"),
+                placement: "topRight",
+                duration: failures.length ? 8 : 5,
+            });
+
+            setBatchModalOpen(false);
+            setSelectedQuestionIds([]);
+            router.refresh();
+        } finally {
+            setIsBatchRunning(false);
+            setBatchProgress(null);
+        }
     }
 
     return (
@@ -399,6 +644,11 @@ export function ReviewQuestionList({
                             {selectedProject ? (
                                 <Tag color="gold">{selectedProject.code}</Tag>
                             ) : null}
+                            {selectedQuestionIds.length ? (
+                                <Tag color="blue">
+                                    已选 {selectedQuestionIds.length} 题
+                                </Tag>
+                            ) : null}
                             <Button
                                 icon={<SlidersHorizontal size={16} />}
                                 onClick={() => {
@@ -415,6 +665,24 @@ export function ReviewQuestionList({
                             {conditions.length ? (
                                 <Button onClick={() => setConditions([])}>
                                     清空筛选
+                                </Button>
+                            ) : null}
+                            <Button
+                                type="primary"
+                                icon={<Bot size={16} />}
+                                disabled={
+                                    !selectedQuestionIds.length ||
+                                    !projectReviewStrategies.length
+                                }
+                                onClick={() => setBatchModalOpen(true)}
+                            >
+                                批量运行 AI 审核
+                            </Button>
+                            {selectedQuestionIds.length ? (
+                                <Button
+                                    onClick={() => setSelectedQuestionIds([])}
+                                >
+                                    清空勾选
                                 </Button>
                             ) : null}
                         </div>
@@ -499,6 +767,24 @@ export function ReviewQuestionList({
                                         alignItems: "center",
                                     }}
                                 >
+                                    <div>
+                                        <Checkbox
+                                            checked={allVisibleSelected}
+                                            indeterminate={
+                                                partiallyVisibleSelected
+                                            }
+                                            onChange={(event) =>
+                                                setSelectedQuestionIds(
+                                                    event.target.checked
+                                                        ? visibleQuestionIds
+                                                        : [],
+                                                )
+                                            }
+                                            onClick={(event) =>
+                                                event.stopPropagation()
+                                            }
+                                        />
+                                    </div>
                                     <div style={cellStyle}>外部记录 ID</div>
                                     <div style={cellStyle}>状态</div>
                                     <div style={cellStyle}>更新时间</div>
@@ -528,7 +814,11 @@ export function ReviewQuestionList({
                                                 "1px solid rgba(217, 224, 234, 0.85)",
                                             alignItems: "center",
                                             background:
-                                                "rgba(255, 255, 255, 0.82)",
+                                                selectedQuestionIdSet.has(
+                                                    question.id,
+                                                )
+                                                    ? "rgba(230, 244, 255, 0.96)"
+                                                    : "rgba(255, 255, 255, 0.82)",
                                             cursor: "pointer",
                                         }}
                                         onClick={() =>
@@ -552,6 +842,26 @@ export function ReviewQuestionList({
                                             }
                                         }}
                                     >
+                                        <div
+                                            onClick={(event) =>
+                                                event.stopPropagation()
+                                            }
+                                            onKeyDown={(event) =>
+                                                event.stopPropagation()
+                                            }
+                                        >
+                                            <Checkbox
+                                                checked={selectedQuestionIdSet.has(
+                                                    question.id,
+                                                )}
+                                                onChange={(event) =>
+                                                    toggleQuestionSelection(
+                                                        question.id,
+                                                        event.target.checked,
+                                                    )
+                                                }
+                                            />
+                                        </div>
                                         <div
                                             className="muted"
                                             style={cellStyle}
@@ -817,6 +1127,118 @@ export function ReviewQuestionList({
                                     );
                                 })}
                             </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={batchModalOpen}
+                        title="批量运行 AI 审核"
+                        okText={isBatchRunning ? "执行中" : "开始运行"}
+                        cancelText="取消"
+                        onOk={runBatchStrategy}
+                        onCancel={() => {
+                            if (!isBatchRunning) {
+                                setBatchModalOpen(false);
+                            }
+                        }}
+                        confirmLoading={isBatchRunning}
+                        cancelButtonProps={{ disabled: isBatchRunning }}
+                        closable={!isBatchRunning}
+                        maskClosable={!isBatchRunning}
+                        destroyOnHidden
+                    >
+                        <div
+                            style={{ display: "grid", gap: 16, marginTop: 16 }}
+                        >
+                            <div className="workspace-tip">
+                                <Tag color="blue">
+                                    已选 {selectedQuestions.length} 题
+                                </Tag>
+                                <span>
+                                    建议并发不要超过
+                                    2。单题策略内部可能已经有多次模型调用，题目级并发过高容易触发
+                                    API 限流。
+                                </span>
+                            </div>
+
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gap: 8,
+                                }}
+                            >
+                                <div className="review-toolbar-label">
+                                    批量策略
+                                </div>
+                                <Select
+                                    value={effectiveSelectedStrategyId}
+                                    onChange={(value) =>
+                                        setSelectedStrategyId(value)
+                                    }
+                                    options={projectReviewStrategies.map(
+                                        (strategy) => ({
+                                            value: strategy.id,
+                                            label: `${strategy.name} · ${strategy.stepCount} 步`,
+                                        }),
+                                    )}
+                                    placeholder="请选择批量运行策略"
+                                    disabled={
+                                        isBatchRunning ||
+                                        !projectReviewStrategies.length
+                                    }
+                                    size="large"
+                                />
+                                {selectedStrategy?.description ? (
+                                    <div className="muted">
+                                        {selectedStrategy.description}
+                                    </div>
+                                ) : null}
+                                {selectedStrategy?.datasourceIds.length ? (
+                                    <div className="muted">
+                                        当前策略限制了部分数据源，不匹配的题目会自动跳过。
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gap: 8,
+                                }}
+                            >
+                                <div className="review-toolbar-label">
+                                    题目级并发
+                                </div>
+                                <InputNumber
+                                    min={1}
+                                    max={2}
+                                    precision={0}
+                                    value={batchConcurrency}
+                                    onChange={(value) =>
+                                        setBatchConcurrency(value ?? 1)
+                                    }
+                                    disabled={isBatchRunning}
+                                    size="large"
+                                    style={{ width: 160 }}
+                                />
+                            </div>
+
+                            {batchProgress ? (
+                                <div className="workspace-tip">
+                                    <Tag color="processing">
+                                        {batchProgress.completed}/
+                                        {batchProgress.total}
+                                    </Tag>
+                                    <span>
+                                        成功 {batchProgress.succeeded} 题，失败{" "}
+                                        {batchProgress.failed} 题，跳过{" "}
+                                        {batchProgress.skipped} 题。
+                                        {batchProgress.currentQuestionTitle
+                                            ? ` 当前处理：${batchProgress.currentQuestionTitle}`
+                                            : ""}
+                                    </span>
+                                </div>
+                            ) : null}
                         </div>
                     </Modal>
                 </>

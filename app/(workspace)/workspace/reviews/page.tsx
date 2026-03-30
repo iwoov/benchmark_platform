@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { ReviewQuestionList } from "@/components/workspace/review-question-list";
 import { getReviewQuestionListData } from "@/lib/reviews/question-list-data";
+import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 
 export default async function WorkspaceReviewsPage() {
@@ -14,9 +15,12 @@ export default async function WorkspaceReviewsPage() {
             (membership) => membership.project.id,
         ) ?? [];
 
-    const questionRows = reviewerProjectIds.length
-        ? await getReviewQuestionListData(reviewerProjectIds)
-        : [];
+    const [questionRows, reviewStrategies] = reviewerProjectIds.length
+        ? await Promise.all([
+              getReviewQuestionListData(reviewerProjectIds),
+              getReviewQuestionListAiStrategies(reviewerProjectIds),
+          ])
+        : [[], []];
 
     return (
         <ReviewQuestionList
@@ -30,6 +34,7 @@ export default async function WorkspaceReviewsPage() {
                 }),
             )}
             questions={questionRows}
+            reviewStrategies={reviewStrategies}
         />
     );
 }
