@@ -15,8 +15,10 @@ export const dynamic = "force-dynamic";
 
 export default async function WorkspaceReviewDetailPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ questionId: string }>;
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const session = await auth();
 
@@ -42,6 +44,18 @@ export default async function WorkspaceReviewDetailPage({
         redirect("/workspace/reviews");
     }
 
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const listSearch = new URLSearchParams();
+
+    for (const key of ["projectId", "page", "pageSize"]) {
+        const value = resolvedSearchParams[key];
+        const normalized = Array.isArray(value) ? value[0] : value;
+
+        if (normalized) {
+            listSearch.set(key, normalized);
+        }
+    }
+
     const [reviewStrategies, strategyRuns] = await Promise.all([
         getApplicableAiReviewStrategies(question),
         getAiReviewStrategyRunsForQuestion(question.id),
@@ -51,7 +65,11 @@ export default async function WorkspaceReviewDetailPage({
         <QuestionReviewDetail
             question={question}
             canReview
-            listPath="/workspace/reviews"
+            listPath={
+                listSearch.size
+                    ? `/workspace/reviews?${listSearch.toString()}`
+                    : "/workspace/reviews"
+            }
             navigation={navigation}
             reviewStrategies={reviewStrategies}
             strategyRuns={strategyRuns}

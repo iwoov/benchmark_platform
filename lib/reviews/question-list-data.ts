@@ -140,6 +140,13 @@ export type ReviewQuestionNavigation = {
     nextQuestionId: string | null;
 };
 
+export type ReviewQuestionListPageData = {
+    items: ReviewQuestionListItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+};
+
 export async function getReviewQuestionListData(projectIds?: string[]) {
     if (!process.env.DATABASE_URL) {
         return [];
@@ -206,6 +213,130 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
             rawRecord: extractRawRecord(question.metadata),
             rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
         }));
+}
+
+export async function getReviewQuestionListPageData({
+    projectId,
+    page = 1,
+    pageSize = 50,
+}: {
+    projectId: string;
+    page?: number;
+    pageSize?: number;
+}): Promise<ReviewQuestionListPageData> {
+    if (!process.env.DATABASE_URL || !projectId) {
+        return {
+            items: [],
+            total: 0,
+            page: 1,
+            pageSize,
+        };
+    }
+
+    const normalizedPageSize = [20, 50, 100].includes(pageSize) ? pageSize : 50;
+    const orderedIds = await prisma.question.findMany({
+        where: {
+            projectId,
+        },
+        select: {
+            id: true,
+            externalRecordId: true,
+        },
+    });
+
+    const sortedIds = orderedIds
+        .sort((left, right) => {
+            const externalOrderDiff =
+                parseExternalRecordOrder(left.externalRecordId) -
+                parseExternalRecordOrder(right.externalRecordId);
+
+            if (externalOrderDiff !== 0) {
+                return externalOrderDiff;
+            }
+
+            return left.externalRecordId.localeCompare(right.externalRecordId);
+        })
+        .map((question) => question.id);
+    const total = sortedIds.length;
+    const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
+    const normalizedPage = Math.min(Math.max(1, page), totalPages);
+    const pageIds = sortedIds.slice(
+        (normalizedPage - 1) * normalizedPageSize,
+        normalizedPage * normalizedPageSize,
+    );
+
+    if (!pageIds.length) {
+        return {
+            items: [],
+            total,
+            page: normalizedPage,
+            pageSize: normalizedPageSize,
+        };
+    }
+
+    const rows = await prisma.question.findMany({
+        where: {
+            id: {
+                in: pageIds,
+            },
+        },
+        select: {
+            id: true,
+            title: true,
+            status: true,
+            updatedAt: true,
+            metadata: true,
+            externalRecordId: true,
+            project: {
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                },
+            },
+            datasource: {
+                select: {
+                    id: true,
+                    name: true,
+                    syncConfig: true,
+                },
+            },
+        },
+    });
+
+    const rowMap = new Map(
+        rows.map((question) => [
+            question.id,
+            {
+                id: question.id,
+                projectId: question.project.id,
+                projectName: question.project.name,
+                projectCode: question.project.code,
+                datasourceId: question.datasource.id,
+                datasourceName: question.datasource.name,
+                externalRecordId: question.externalRecordId,
+                title: question.title,
+                status: question.status,
+                updatedAt: question.updatedAt.toISOString(),
+                sourceRowNumber: extractSourceRowNumber(question.metadata),
+                rawRecord: extractRawRecord(question.metadata),
+                rawFieldOrder: extractRawFieldOrder(
+                    question.datasource.syncConfig,
+                ),
+            } satisfies ReviewQuestionListItem,
+        ]),
+    );
+
+    return {
+        items: pageIds
+            .map((questionId) => rowMap.get(questionId))
+            .filter((question): question is ReviewQuestionListItem =>
+                Boolean(question),
+            ),
+        total,
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+    };
 }
 
 export async function getReviewQuestionDetail(questionId: string) {

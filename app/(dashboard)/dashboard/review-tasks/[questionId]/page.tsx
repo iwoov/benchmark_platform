@@ -16,8 +16,10 @@ export const dynamic = "force-dynamic";
 
 export default async function ReviewTaskDetailPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ questionId: string }>;
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const session = await auth();
 
@@ -37,6 +39,18 @@ export default async function ReviewTaskDetailPage({
         notFound();
     }
 
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const listSearch = new URLSearchParams();
+
+    for (const key of ["projectId", "page", "pageSize"]) {
+        const value = resolvedSearchParams[key];
+        const normalized = Array.isArray(value) ? value[0] : value;
+
+        if (normalized) {
+            listSearch.set(key, normalized);
+        }
+    }
+
     const [reviewStrategies, strategyRuns] = await Promise.all([
         getApplicableAiReviewStrategies(question),
         getAiReviewStrategyRunsForQuestion(question.id),
@@ -46,7 +60,11 @@ export default async function ReviewTaskDetailPage({
         <QuestionReviewDetail
             question={question}
             canReview
-            listPath="/admin/review-tasks"
+            listPath={
+                listSearch.size
+                    ? `/admin/review-tasks?${listSearch.toString()}`
+                    : "/admin/review-tasks"
+            }
             navigation={navigation}
             reviewStrategies={reviewStrategies}
             strategyRuns={strategyRuns}

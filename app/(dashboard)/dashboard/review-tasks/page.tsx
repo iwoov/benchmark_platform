@@ -1,11 +1,29 @@
 import { prisma } from "@/lib/db/prisma";
 import { ReviewQuestionList } from "@/components/workspace/review-question-list";
-import { getReviewQuestionListData } from "@/lib/reviews/question-list-data";
+import { getReviewQuestionListPageData } from "@/lib/reviews/question-list-data";
 import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewTasksPage() {
+function parsePositiveInt(
+    value: string | string[] | undefined,
+    fallback: number,
+) {
+    const normalized = Array.isArray(value) ? value[0] : value;
+    const parsed = Number(normalized);
+
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        return fallback;
+    }
+
+    return parsed;
+}
+
+export default async function ReviewTasksPage({
+    searchParams,
+}: {
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
     const projects = process.env.DATABASE_URL
         ? await prisma.project.findMany({
               where: {
@@ -21,22 +39,50 @@ export default async function ReviewTasksPage() {
               },
           })
         : [];
+    const projectIds = projects.map((project) => project.id);
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const requestedProjectId = Array.isArray(resolvedSearchParams.projectId)
+        ? resolvedSearchParams.projectId[0]
+        : resolvedSearchParams.projectId;
+    const selectedProjectId = projectIds.includes(requestedProjectId ?? "")
+        ? (requestedProjectId as string)
+        : (projectIds[0] ?? "");
+    const requestedPage = parsePositiveInt(resolvedSearchParams.page, 1);
+    const requestedPageSize = parsePositiveInt(
+        resolvedSearchParams.pageSize,
+        50,
+    );
 
-    const [questions, reviewStrategies] = projects.length
+    const [questionPage, reviewStrategies] = selectedProjectId
         ? await Promise.all([
-              getReviewQuestionListData(),
-              getReviewQuestionListAiStrategies(
-                  projects.map((project) => project.id),
-              ),
+              getReviewQuestionListPageData({
+                  projectId: selectedProjectId,
+                  page: requestedPage,
+                  pageSize: requestedPageSize,
+              }),
+              getReviewQuestionListAiStrategies([selectedProjectId]),
           ])
-        : [[], []];
+        : [
+              {
+                  items: [],
+                  total: 0,
+                  page: 1,
+                  pageSize: 50,
+              },
+              [],
+          ];
 
     return (
         <ReviewQuestionList
             canReview
             scopeLabel="全部项目"
+            listPath="/admin/review-tasks"
             projects={projects}
-            questions={questions}
+            questions={questionPage.items}
+            selectedProjectId={selectedProjectId}
+            currentPage={questionPage.page}
+            pageSize={questionPage.pageSize}
+            totalQuestions={questionPage.total}
             reviewStrategies={reviewStrategies}
         />
     );

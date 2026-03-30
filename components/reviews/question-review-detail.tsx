@@ -230,6 +230,7 @@ export function QuestionReviewDetail({
     >({});
     const [isSubmitting, startSubmitting] = useTransition();
     const translationTimersRef = useRef<Record<string, number>>({});
+    const detailBasePath = listPath.split("?")[0];
 
     const orderedRawEntries = (
         question.rawFieldOrder.length
@@ -278,7 +279,16 @@ export function QuestionReviewDetail({
             return;
         }
 
-        router.push(`${listPath}/${questionId}`);
+        router.push(`${detailBasePath}/${questionId}`);
+    }
+
+    function goBackToList() {
+        if (window.history.length > 1) {
+            router.back();
+            return;
+        }
+
+        router.push(listPath);
     }
 
     function streamTranslatedText(
@@ -379,7 +389,7 @@ export function QuestionReviewDetail({
                         <Space size={8} style={{ marginBottom: 14 }} wrap>
                             <Button
                                 icon={<ArrowLeft size={16} />}
-                                onClick={() => router.push(listPath)}
+                                onClick={goBackToList}
                             >
                                 返回列表
                             </Button>

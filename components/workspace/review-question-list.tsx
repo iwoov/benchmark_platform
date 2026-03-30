@@ -10,6 +10,7 @@ import {
     Input,
     InputNumber,
     Modal,
+    Pagination,
     Select,
     Space,
     Tag,
@@ -250,21 +251,28 @@ function sanitizeConditions(conditions: FilterCondition[]) {
 export function ReviewQuestionList({
     canReview,
     scopeLabel,
+    listPath,
     projects,
     questions,
+    selectedProjectId,
+    currentPage,
+    pageSize,
+    totalQuestions,
     reviewStrategies,
 }: {
     canReview: boolean;
     scopeLabel?: string;
+    listPath: string;
     projects: ProjectOption[];
     questions: ReviewQuestionItem[];
+    selectedProjectId: string;
+    currentPage: number;
+    pageSize: number;
+    totalQuestions: number;
     reviewStrategies: ReviewStrategyOption[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
-    const [selectedProjectId, setSelectedProjectId] = useState(
-        projects[0]?.id ?? "",
-    );
     const [modalOpen, setModalOpen] = useState(false);
     const [conditions, setConditions] = useState<FilterCondition[]>([]);
     const [draftConditions, setDraftConditions] = useState<FilterCondition[]>(
@@ -437,9 +445,27 @@ export function ReviewQuestionList({
     }, [projectReviewStrategies]);
 
     function buildQuestionDetailPath(questionId: string) {
-        return scopeLabel === "全部项目"
-            ? `/admin/review-tasks/${questionId}`
-            : `/workspace/reviews/${questionId}`;
+        const search = new URLSearchParams({
+            projectId: selectedProjectId,
+            page: String(currentPage),
+            pageSize: String(pageSize),
+        });
+
+        return `${listPath}/${questionId}?${search.toString()}`;
+    }
+
+    function pushListState(next: {
+        projectId?: string;
+        page?: number;
+        pageSize?: number;
+    }) {
+        const search = new URLSearchParams({
+            projectId: next.projectId ?? selectedProjectId,
+            page: String(next.page ?? currentPage),
+            pageSize: String(next.pageSize ?? pageSize),
+        });
+
+        router.push(`${listPath}?${search.toString()}`);
     }
 
     function toggleQuestionSelection(questionId: string, checked: boolean) {
@@ -628,8 +654,12 @@ export function ReviewQuestionList({
                             <Select
                                 value={selectedProjectId}
                                 onChange={(value) => {
-                                    setSelectedProjectId(value);
                                     setConditions([]);
+                                    setSelectedQuestionIds([]);
+                                    pushListState({
+                                        projectId: value,
+                                        page: 1,
+                                    });
                                 }}
                                 options={projects.map((project) => ({
                                     value: project.id,
@@ -740,175 +770,220 @@ export function ReviewQuestionList({
                             style={{ marginTop: 24 }}
                         />
                     ) : (
-                        <div
-                            className="review-list-scroll"
-                            style={{
-                                overflowX: "auto",
-                                overflowY: "hidden",
-                                marginTop: 20,
-                            }}
-                        >
+                        <>
                             <div
-                                className="table-surface"
+                                className="review-list-scroll"
                                 style={{
-                                    minWidth: tableWidth,
-                                    width: "max-content",
+                                    overflowX: "auto",
+                                    overflowY: "hidden",
+                                    marginTop: 20,
                                 }}
                             >
                                 <div
+                                    className="table-surface"
                                     style={{
-                                        display: "grid",
-                                        gridTemplateColumns:
-                                            gridTemplateColumns,
-                                        gap: 16,
-                                        padding: "14px 16px",
-                                        background: "rgba(248, 250, 252, 0.9)",
-                                        fontWeight: 700,
-                                        alignItems: "center",
+                                        minWidth: tableWidth,
+                                        width: "max-content",
                                     }}
                                 >
-                                    <div>
-                                        <Checkbox
-                                            checked={allVisibleSelected}
-                                            indeterminate={
-                                                partiallyVisibleSelected
-                                            }
-                                            onChange={(event) =>
-                                                setSelectedQuestionIds(
-                                                    event.target.checked
-                                                        ? visibleQuestionIds
-                                                        : [],
-                                                )
-                                            }
-                                            onClick={(event) =>
-                                                event.stopPropagation()
-                                            }
-                                        />
-                                    </div>
-                                    <div style={cellStyle}>外部记录 ID</div>
-                                    <div style={cellStyle}>状态</div>
-                                    <div style={cellStyle}>更新时间</div>
-                                    {rawColumns.map((column) => (
-                                        <div
-                                            key={column.key}
-                                            style={cellStyle}
-                                            title={column.label}
-                                        >
-                                            {column.label}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {visibleQuestions.map((question) => (
                                     <div
-                                        key={question.id}
-                                        role="button"
-                                        tabIndex={0}
                                         style={{
                                             display: "grid",
                                             gridTemplateColumns:
                                                 gridTemplateColumns,
                                             gap: 16,
-                                            padding: "16px",
-                                            borderTop:
-                                                "1px solid rgba(217, 224, 234, 0.85)",
-                                            alignItems: "center",
+                                            padding: "14px 16px",
                                             background:
-                                                selectedQuestionIdSet.has(
-                                                    question.id,
-                                                )
-                                                    ? "rgba(230, 244, 255, 0.96)"
-                                                    : "rgba(255, 255, 255, 0.82)",
-                                            cursor: "pointer",
+                                                "rgba(248, 250, 252, 0.9)",
+                                            fontWeight: 700,
+                                            alignItems: "center",
                                         }}
-                                        onClick={() =>
-                                            router.push(
-                                                buildQuestionDetailPath(
-                                                    question.id,
-                                                ),
-                                            )
-                                        }
-                                        onKeyDown={(event) => {
-                                            if (
-                                                event.key === "Enter" ||
-                                                event.key === " "
-                                            ) {
-                                                event.preventDefault();
+                                    >
+                                        <div>
+                                            <Checkbox
+                                                checked={allVisibleSelected}
+                                                indeterminate={
+                                                    partiallyVisibleSelected
+                                                }
+                                                onChange={(event) =>
+                                                    setSelectedQuestionIds(
+                                                        event.target.checked
+                                                            ? visibleQuestionIds
+                                                            : [],
+                                                    )
+                                                }
+                                                onClick={(event) =>
+                                                    event.stopPropagation()
+                                                }
+                                            />
+                                        </div>
+                                        <div style={cellStyle}>外部记录 ID</div>
+                                        <div style={cellStyle}>状态</div>
+                                        <div style={cellStyle}>更新时间</div>
+                                        {rawColumns.map((column) => (
+                                            <div
+                                                key={column.key}
+                                                style={cellStyle}
+                                                title={column.label}
+                                            >
+                                                {column.label}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {visibleQuestions.map((question) => (
+                                        <div
+                                            key={question.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns:
+                                                    gridTemplateColumns,
+                                                gap: 16,
+                                                padding: "16px",
+                                                borderTop:
+                                                    "1px solid rgba(217, 224, 234, 0.85)",
+                                                alignItems: "center",
+                                                background:
+                                                    selectedQuestionIdSet.has(
+                                                        question.id,
+                                                    )
+                                                        ? "rgba(230, 244, 255, 0.96)"
+                                                        : "rgba(255, 255, 255, 0.82)",
+                                                cursor: "pointer",
+                                            }}
+                                            onClick={() =>
                                                 router.push(
                                                     buildQuestionDetailPath(
                                                         question.id,
                                                     ),
-                                                );
+                                                )
                                             }
-                                        }}
-                                    >
-                                        <div
-                                            onClick={(event) =>
-                                                event.stopPropagation()
-                                            }
-                                            onKeyDown={(event) =>
-                                                event.stopPropagation()
-                                            }
-                                        >
-                                            <Checkbox
-                                                checked={selectedQuestionIdSet.has(
-                                                    question.id,
-                                                )}
-                                                onChange={(event) =>
-                                                    toggleQuestionSelection(
-                                                        question.id,
-                                                        event.target.checked,
-                                                    )
+                                            onKeyDown={(event) => {
+                                                if (
+                                                    event.key === "Enter" ||
+                                                    event.key === " "
+                                                ) {
+                                                    event.preventDefault();
+                                                    router.push(
+                                                        buildQuestionDetailPath(
+                                                            question.id,
+                                                        ),
+                                                    );
                                                 }
-                                            />
-                                        </div>
-                                        <div
-                                            className="muted"
-                                            style={cellStyle}
-                                            title={question.externalRecordId}
+                                            }}
                                         >
-                                            {question.externalRecordId}
-                                        </div>
-                                        <div>
-                                            <Tag
-                                                color={
-                                                    questionStatusMeta[
-                                                        question.status
-                                                    ].color
+                                            <div
+                                                onClick={(event) =>
+                                                    event.stopPropagation()
+                                                }
+                                                onKeyDown={(event) =>
+                                                    event.stopPropagation()
                                                 }
                                             >
-                                                {
-                                                    questionStatusMeta[
-                                                        question.status
-                                                    ].label
+                                                <Checkbox
+                                                    checked={selectedQuestionIdSet.has(
+                                                        question.id,
+                                                    )}
+                                                    onChange={(event) =>
+                                                        toggleQuestionSelection(
+                                                            question.id,
+                                                            event.target
+                                                                .checked,
+                                                        )
+                                                    }
+                                                />
+                                            </div>
+                                            <div
+                                                className="muted"
+                                                style={cellStyle}
+                                                title={
+                                                    question.externalRecordId
                                                 }
-                                            </Tag>
-                                        </div>
-                                        <div className="muted">
-                                            {new Date(
-                                                question.updatedAt,
-                                            ).toLocaleString("zh-CN")}
-                                        </div>
-                                        {rawColumns.map((column) => {
-                                            const value =
-                                                question.rawRecord[
-                                                    column.key
-                                                ] || "—";
-
-                                            return (
-                                                <div
-                                                    key={`${question.id}-${column.key}`}
-                                                    style={cellStyle}
-                                                    title={value}
+                                            >
+                                                {question.externalRecordId}
+                                            </div>
+                                            <div>
+                                                <Tag
+                                                    color={
+                                                        questionStatusMeta[
+                                                            question.status
+                                                        ].color
+                                                    }
                                                 >
-                                                    {value}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
+                                                    {
+                                                        questionStatusMeta[
+                                                            question.status
+                                                        ].label
+                                                    }
+                                                </Tag>
+                                            </div>
+                                            <div className="muted">
+                                                {new Date(
+                                                    question.updatedAt,
+                                                ).toLocaleString("zh-CN")}
+                                            </div>
+                                            {rawColumns.map((column) => {
+                                                const value =
+                                                    question.rawRecord[
+                                                        column.key
+                                                    ] || "—";
+
+                                                return (
+                                                    <div
+                                                        key={`${question.id}-${column.key}`}
+                                                        style={cellStyle}
+                                                        title={value}
+                                                    >
+                                                        {value}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    marginTop: 16,
+                                    flexWrap: "wrap",
+                                }}
+                            >
+                                <div className="muted">
+                                    当前第 {currentPage} 页，共{" "}
+                                    {Math.max(
+                                        1,
+                                        Math.ceil(totalQuestions / pageSize),
+                                    )}{" "}
+                                    页，总计 {totalQuestions} 条。
+                                </div>
+                                <Pagination
+                                    current={currentPage}
+                                    pageSize={pageSize}
+                                    total={totalQuestions}
+                                    showSizeChanger
+                                    pageSizeOptions={["20", "50", "100"]}
+                                    onChange={(page, nextPageSize) => {
+                                        const normalizedPageSize =
+                                            nextPageSize ?? pageSize;
+
+                                        setSelectedQuestionIds([]);
+                                        pushListState({
+                                            page:
+                                                normalizedPageSize === pageSize
+                                                    ? page
+                                                    : 1,
+                                            pageSize: normalizedPageSize,
+                                        });
+                                    }}
+                                />
+                            </div>
+                        </>
                     )}
 
                     <Modal
