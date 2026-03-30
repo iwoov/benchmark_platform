@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { AiReasoningLevel } from "@/lib/ai/provider-catalog";
 import {
     getAiModelRoutingConfig,

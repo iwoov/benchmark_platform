@@ -286,11 +286,6 @@ export function QuestionReviewDetail({
     }
 
     function goBackToList() {
-        if (window.history.length > 1) {
-            router.back();
-            return;
-        }
-
         router.push(listPath);
     }
 

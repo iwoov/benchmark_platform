@@ -15,11 +15,16 @@ import {
     retryAiReviewStrategyRunItem,
     type AiReviewStrategyRunView,
 } from "@/lib/ai/review-strategies";
+import {
+    cancelAiReviewStrategyBatchRun,
+    createAiReviewStrategyBatchRun,
+} from "@/lib/ai/review-strategy-batches";
 
 export type AiReviewStrategyActionState = {
     error?: string;
     success?: string;
     run?: AiReviewStrategyRunView;
+    batchRunId?: string;
 };
 
 const saveStrategySchema = z.object({
@@ -44,6 +49,19 @@ const retryRunItemSchema = z.object({
     runId: z.string().trim().min(1, "缺少运行记录 ID"),
     stepId: z.string().trim().min(1, "缺少步骤 ID"),
     itemIndex: z.number().int("重试项索引无效").min(1, "重试项索引无效"),
+});
+
+const createBatchRunSchema = z.object({
+    strategyId: z.string().trim().min(1, "请选择要执行的策略"),
+    projectId: z.string().trim().min(1, "缺少项目 ID"),
+    questionIds: z
+        .array(z.string().trim().min(1, "缺少题目 ID"))
+        .min(1, "至少选择 1 道题目"),
+    concurrency: z.number().int("并发数无效").min(1).max(2),
+});
+
+const cancelBatchRunSchema = z.object({
+    batchRunId: z.string().trim().min(1, "缺少批量任务 ID"),
 });
 
 async function requireStrategyAdminAccess() {
@@ -522,6 +540,168 @@ export async function retryAiReviewStrategyRunItemAction(
         revalidateStrategyPaths(run.questionId);
         return {
             error: error instanceof Error ? error.message : "重试失败。",
+        };
+    }
+}
+
+export async function createAiReviewStrategyBatchRunAction(
+    input: z.input<typeof createBatchRunSchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再创建批量任务。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法创建批量任务。",
+        };
+    }
+
+    const parsed = createBatchRunSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "批量任务参数不完整。",
+        };
+    }
+
+    const questions = await prisma.question.findMany({
+        where: {
+            id: {
+                in: parsed.data.questionIds,
+            },
+        },
+        select: {
+            id: true,
+            projectId: true,
+        },
+    });
+
+    if (questions.length !== new Set(parsed.data.questionIds).size) {
+        return {
+            error: "部分题目不存在或已被删除，请刷新后重试。",
+        };
+    }
+
+    const actualProjectId = questions[0]?.projectId;
+
+    if (
+        !actualProjectId ||
+        questions.some((question) => question.projectId !== actualProjectId)
+    ) {
+        return {
+            error: "批量任务暂只支持同一项目下的题目。",
+        };
+    }
+
+    if (actualProjectId !== parsed.data.projectId) {
+        return {
+            error: "批量任务项目参数不匹配，请刷新后重试。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        actualProjectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    try {
+        const batchRun = await createAiReviewStrategyBatchRun({
+            strategyId: parsed.data.strategyId,
+            questionIds: parsed.data.questionIds,
+            concurrency: parsed.data.concurrency,
+            createdById: session.user.id,
+        });
+
+        revalidatePath("/admin/review-tasks");
+        revalidatePath("/workspace/reviews");
+
+        return {
+            success: "批量任务已创建，后台 worker 会继续执行。",
+            batchRunId: batchRun.id,
+        };
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error ? error.message : "创建批量任务失败。",
+        };
+    }
+}
+
+export async function cancelAiReviewStrategyBatchRunAction(
+    input: z.input<typeof cancelBatchRunSchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再取消批量任务。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法取消批量任务。",
+        };
+    }
+
+    const parsed = cancelBatchRunSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "取消参数不完整。",
+        };
+    }
+
+    const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
+        where: {
+            id: parsed.data.batchRunId,
+        },
+        select: {
+            id: true,
+            projectId: true,
+        },
+    });
+
+    if (!batchRun) {
+        return {
+            error: "批量任务不存在。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        batchRun.projectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    try {
+        await cancelAiReviewStrategyBatchRun(batchRun.id);
+
+        return {
+            success: "批量任务已请求取消。",
+        };
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error ? error.message : "取消批量任务失败。",
         };
     }
 }

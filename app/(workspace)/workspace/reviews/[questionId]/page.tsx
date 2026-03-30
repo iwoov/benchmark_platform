@@ -9,6 +9,7 @@ import {
     getReviewQuestionDetail,
     getReviewQuestionNavigation,
 } from "@/lib/reviews/question-list-data";
+import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +29,22 @@ export default async function WorkspaceReviewDetailPage({
 
     const { questionId } = await params;
     const question = await getReviewQuestionDetail(questionId);
-    const navigation = await getReviewQuestionNavigation(questionId);
-
     if (!question) {
         notFound();
     }
+
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const navigation = await getReviewQuestionNavigation({
+        questionId,
+        projectId: Array.isArray(resolvedSearchParams.projectId)
+            ? resolvedSearchParams.projectId[0]
+            : resolvedSearchParams.projectId,
+        conditions: parseReviewQuestionFilterConditions(
+            Array.isArray(resolvedSearchParams.filters)
+                ? resolvedSearchParams.filters[0]
+                : resolvedSearchParams.filters,
+        ),
+    });
 
     const canReview = await canUserReviewProject(
         session.user.id,
@@ -44,7 +56,6 @@ export default async function WorkspaceReviewDetailPage({
         redirect("/workspace/reviews");
     }
 
-    const resolvedSearchParams = (await searchParams) ?? {};
     const listSearch = new URLSearchParams();
 
     for (const key of ["projectId", "page", "pageSize", "filters"]) {

@@ -12,11 +12,10 @@ import {
     Modal,
     Pagination,
     Select,
-    Space,
     Tag,
 } from "antd";
 import { Bot, SlidersHorizontal, X } from "lucide-react";
-import { runAiReviewStrategyAction } from "@/app/actions/ai-review-strategies";
+import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
 import {
     conditionNeedsValue,
     createReviewQuestionFilterCondition,
@@ -179,15 +178,7 @@ export function ReviewQuestionList({
     const [batchModalOpen, setBatchModalOpen] = useState(false);
     const [selectedStrategyId, setSelectedStrategyId] = useState("");
     const [batchConcurrency, setBatchConcurrency] = useState(1);
-    const [isBatchRunning, setIsBatchRunning] = useState(false);
-    const [batchProgress, setBatchProgress] = useState<{
-        total: number;
-        completed: number;
-        succeeded: number;
-        failed: number;
-        skipped: number;
-        currentQuestionTitle?: string;
-    } | null>(null);
+    const [isCreatingBatchRun, setIsCreatingBatchRun] = useState(false);
 
     const rawColumns = useMemo(
         () =>
@@ -361,7 +352,7 @@ export function ReviewQuestionList({
         });
     }
 
-    async function runBatchStrategy() {
+    async function createBatchRun() {
         if (!selectedQuestions.length) {
             notification.warning({
                 message: "请先勾选题目",
@@ -380,120 +371,41 @@ export function ReviewQuestionList({
             return;
         }
 
-        const strategy = selectedStrategy;
-
-        const concurrency = Math.min(
-            2,
-            Math.max(1, Math.floor(batchConcurrency || 1)),
-        );
-        const applicableQuestions = selectedQuestions.filter(
-            (question) =>
-                (!strategy.projectIds.length ||
-                    strategy.projectIds.includes(question.projectId)) &&
-                (!strategy.datasourceIds.length ||
-                    strategy.datasourceIds.includes(question.datasourceId)),
-        );
-        const skippedQuestions = selectedQuestions.filter(
-            (question) =>
-                !applicableQuestions.some((item) => item.id === question.id),
-        );
-
-        if (!applicableQuestions.length) {
-            notification.warning({
-                message: "没有可执行的题目",
-                description:
-                    "当前选中题目与所选策略的数据源范围不匹配，未发起批量运行。",
-                placement: "topRight",
-            });
-            return;
-        }
-
-        setIsBatchRunning(true);
-        setBatchProgress({
-            total: selectedQuestions.length,
-            completed: skippedQuestions.length,
-            succeeded: 0,
-            failed: 0,
-            skipped: skippedQuestions.length,
-        });
-
-        const failures: Array<{ title: string; error: string }> = [];
-        let cursor = 0;
-
-        async function worker() {
-            while (cursor < applicableQuestions.length) {
-                const currentIndex = cursor;
-                cursor += 1;
-                const question = applicableQuestions[currentIndex];
-
-                setBatchProgress((current) =>
-                    current
-                        ? {
-                              ...current,
-                              currentQuestionTitle: question.title,
-                          }
-                        : current,
-                );
-
-                const result = await runAiReviewStrategyAction({
-                    strategyId: strategy.id,
-                    questionId: question.id,
-                });
-
-                if (result.error) {
-                    failures.push({
-                        title: question.title,
-                        error: result.error,
-                    });
-                }
-
-                setBatchProgress((current) =>
-                    current
-                        ? {
-                              ...current,
-                              completed: current.completed + 1,
-                              succeeded:
-                                  current.succeeded + (result.error ? 0 : 1),
-                              failed: current.failed + (result.error ? 1 : 0),
-                          }
-                        : current,
-                );
-            }
-        }
+        setIsCreatingBatchRun(true);
 
         try {
-            await Promise.all(
-                Array.from({
-                    length: Math.min(concurrency, applicableQuestions.length),
-                }).map(() => worker()),
-            );
-
-            const successCount = applicableQuestions.length - failures.length;
-            const failurePreview = failures
-                .slice(0, 3)
-                .map((item) => `${item.title}: ${item.error}`)
-                .join("；");
-
-            notification[failures.length ? "warning" : "success"]({
-                message: "批量 AI 审核已完成",
-                description: [
-                    `成功 ${successCount} 题`,
-                    `失败 ${failures.length} 题`,
-                    `跳过 ${skippedQuestions.length} 题`,
-                    failurePreview,
-                ]
-                    .filter(Boolean)
-                    .join("。"),
-                placement: "topRight",
-                duration: failures.length ? 8 : 5,
+            const result = await createAiReviewStrategyBatchRunAction({
+                strategyId: selectedStrategy.id,
+                projectId: selectedProjectId,
+                questionIds: selectedQuestions.map((question) => question.id),
+                concurrency: Math.min(
+                    2,
+                    Math.max(1, Math.floor(batchConcurrency || 1)),
+                ),
             });
 
-            setBatchModalOpen(false);
+            if (result.error) {
+                notification.error({
+                    message: "创建批量任务失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "批量任务已创建",
+                description:
+                    result.success ??
+                    "后台 worker 会继续执行当前批量审核任务。",
+                placement: "topRight",
+                duration: 5,
+            });
+
             setSelectedQuestionIds([]);
-            router.refresh();
+            setBatchModalOpen(false);
         } finally {
-            setIsBatchRunning(false);
-            setBatchProgress(null);
+            setIsCreatingBatchRun(false);
         }
     }
 
@@ -1105,18 +1017,11 @@ export function ReviewQuestionList({
                     <Modal
                         open={batchModalOpen}
                         title="批量运行 AI 审核"
-                        okText={isBatchRunning ? "执行中" : "开始运行"}
+                        okText={isCreatingBatchRun ? "创建中" : "创建后台任务"}
                         cancelText="取消"
-                        onOk={runBatchStrategy}
-                        onCancel={() => {
-                            if (!isBatchRunning) {
-                                setBatchModalOpen(false);
-                            }
-                        }}
-                        confirmLoading={isBatchRunning}
-                        cancelButtonProps={{ disabled: isBatchRunning }}
-                        closable={!isBatchRunning}
-                        maskClosable={!isBatchRunning}
+                        onOk={createBatchRun}
+                        onCancel={() => setBatchModalOpen(false)}
+                        confirmLoading={isCreatingBatchRun}
                         destroyOnHidden
                     >
                         <div
@@ -1130,6 +1035,13 @@ export function ReviewQuestionList({
                                     建议并发不要超过
                                     2。单题策略内部可能已经有多次模型调用，题目级并发过高容易触发
                                     API 限流。
+                                </span>
+                            </div>
+
+                            <div className="workspace-tip">
+                                <Tag color="gold">任务查看</Tag>
+                                <span>
+                                    创建后可关闭此窗口。请前往侧边栏“批量任务”页面查看执行进度和失败情况。
                                 </span>
                             </div>
 
@@ -1155,7 +1067,7 @@ export function ReviewQuestionList({
                                     )}
                                     placeholder="请选择批量运行策略"
                                     disabled={
-                                        isBatchRunning ||
+                                        isCreatingBatchRun ||
                                         !projectReviewStrategies.length
                                     }
                                     size="large"
@@ -1189,28 +1101,11 @@ export function ReviewQuestionList({
                                     onChange={(value) =>
                                         setBatchConcurrency(value ?? 1)
                                     }
-                                    disabled={isBatchRunning}
+                                    disabled={isCreatingBatchRun}
                                     size="large"
                                     style={{ width: 160 }}
                                 />
                             </div>
-
-                            {batchProgress ? (
-                                <div className="workspace-tip">
-                                    <Tag color="processing">
-                                        {batchProgress.completed}/
-                                        {batchProgress.total}
-                                    </Tag>
-                                    <span>
-                                        成功 {batchProgress.succeeded} 题，失败{" "}
-                                        {batchProgress.failed} 题，跳过{" "}
-                                        {batchProgress.skipped} 题。
-                                        {batchProgress.currentQuestionTitle
-                                            ? ` 当前处理：${batchProgress.currentQuestionTitle}`
-                                            : ""}
-                                    </span>
-                                </div>
-                            ) : null}
                         </div>
                     </Modal>
                 </>

@@ -141,6 +141,12 @@ export type ReviewQuestionNavigation = {
     nextQuestionId: string | null;
 };
 
+type NavigationContext = {
+    questionId: string;
+    projectId?: string;
+    conditions?: ReviewQuestionFilterCondition[];
+};
+
 export type ReviewQuestionListPageData = {
     items: ReviewQuestionListItem[];
     total: number;
@@ -557,7 +563,11 @@ export async function getReviewQuestionDetail(questionId: string) {
     } satisfies ReviewQuestionDetail;
 }
 
-export async function getReviewQuestionNavigation(questionId: string) {
+export async function getReviewQuestionNavigation({
+    questionId,
+    projectId,
+    conditions = [],
+}: NavigationContext) {
     if (!process.env.DATABASE_URL) {
         return {
             previousQuestionId: null,
@@ -582,17 +592,153 @@ export async function getReviewQuestionNavigation(questionId: string) {
         } satisfies ReviewQuestionNavigation;
     }
 
+    const scopedProjectId = projectId || currentQuestion.projectId;
+    const statusCondition = conditions.find(
+        (condition) => condition.fieldKey === "status",
+    );
+    const datasourceCondition = conditions.find(
+        (condition) => condition.fieldKey === "datasourceId",
+    );
+    const validStatusValue =
+        statusCondition?.value === "DRAFT" ||
+        statusCondition?.value === "SUBMITTED" ||
+        statusCondition?.value === "UNDER_REVIEW" ||
+        statusCondition?.value === "APPROVED" ||
+        statusCondition?.value === "REJECTED"
+            ? statusCondition.value
+            : null;
     const orderedQuestions = await prisma.question.findMany({
         where: {
-            projectId: currentQuestion.projectId,
+            projectId: scopedProjectId,
+            status:
+                statusCondition?.operator === "equals" && validStatusValue
+                    ? {
+                          equals: validStatusValue,
+                      }
+                    : statusCondition?.operator === "notEquals" &&
+                        validStatusValue
+                      ? {
+                            not: validStatusValue,
+                        }
+                      : undefined,
+            datasourceId:
+                datasourceCondition?.operator === "equals"
+                    ? {
+                          equals: datasourceCondition.value,
+                      }
+                    : datasourceCondition?.operator === "notEquals"
+                      ? {
+                            not: datasourceCondition.value,
+                        }
+                      : undefined,
         },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         select: {
             id: true,
+            status: true,
+            datasourceId: true,
+            metadata: true,
+            externalRecordId: true,
         },
     });
+    const filteredOrderedQuestions = orderedQuestions
+        .filter((question) =>
+            conditions.every((condition) => {
+                const fieldValue =
+                    condition.fieldKey === "status"
+                        ? question.status
+                        : condition.fieldKey === "datasourceId"
+                          ? question.datasourceId
+                          : condition.fieldKey === "sourceRowNumber"
+                            ? extractSourceRowNumber(question.metadata)
+                            : (extractRawRecord(question.metadata)[
+                                  condition.fieldKey.slice(4)
+                              ] ?? "");
 
-    const currentIndex = orderedQuestions.findIndex(
+                if (
+                    condition.fieldKey === "status" ||
+                    condition.fieldKey === "datasourceId"
+                ) {
+                    if (condition.operator === "equals") {
+                        return fieldValue === condition.value;
+                    }
+
+                    if (condition.operator === "notEquals") {
+                        return fieldValue !== condition.value;
+                    }
+
+                    return true;
+                }
+
+                if (condition.fieldKey === "sourceRowNumber") {
+                    const targetValue = Number(condition.value);
+
+                    if (
+                        Number.isNaN(targetValue) ||
+                        typeof fieldValue !== "number"
+                    ) {
+                        return false;
+                    }
+
+                    if (condition.operator === "equals") {
+                        return fieldValue === targetValue;
+                    }
+
+                    if (condition.operator === "gt") {
+                        return fieldValue > targetValue;
+                    }
+
+                    if (condition.operator === "lt") {
+                        return fieldValue < targetValue;
+                    }
+
+                    return true;
+                }
+
+                const normalizedFieldValue = String(fieldValue)
+                    .trim()
+                    .toLowerCase();
+                const normalizedCompareValue = condition.value
+                    .trim()
+                    .toLowerCase();
+
+                if (condition.operator === "isEmpty") {
+                    return !normalizedFieldValue;
+                }
+
+                if (condition.operator === "isNotEmpty") {
+                    return Boolean(normalizedFieldValue);
+                }
+
+                if (condition.operator === "equals") {
+                    return normalizedFieldValue === normalizedCompareValue;
+                }
+
+                if (condition.operator === "notEquals") {
+                    return normalizedFieldValue !== normalizedCompareValue;
+                }
+
+                if (condition.operator === "notContains") {
+                    return !normalizedFieldValue.includes(
+                        normalizedCompareValue,
+                    );
+                }
+
+                return normalizedFieldValue.includes(normalizedCompareValue);
+            }),
+        )
+        .sort((left, right) => {
+            const externalOrderDiff =
+                parseExternalRecordOrder(left.externalRecordId) -
+                parseExternalRecordOrder(right.externalRecordId);
+
+            if (externalOrderDiff !== 0) {
+                return externalOrderDiff;
+            }
+
+            return left.externalRecordId.localeCompare(right.externalRecordId);
+        });
+
+    const currentIndex = filteredOrderedQuestions.findIndex(
         (question) => question.id === questionId,
     );
 
@@ -604,7 +750,8 @@ export async function getReviewQuestionNavigation(questionId: string) {
     }
 
     return {
-        previousQuestionId: orderedQuestions[currentIndex - 1]?.id ?? null,
-        nextQuestionId: orderedQuestions[currentIndex + 1]?.id ?? null,
+        previousQuestionId:
+            filteredOrderedQuestions[currentIndex - 1]?.id ?? null,
+        nextQuestionId: filteredOrderedQuestions[currentIndex + 1]?.id ?? null,
     } satisfies ReviewQuestionNavigation;
 }

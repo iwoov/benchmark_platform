@@ -52,6 +52,11 @@ const adminSections = [
                 label: "审核任务",
                 icon: ScrollText,
             },
+            {
+                href: "/admin/review-batches",
+                label: "批量任务",
+                icon: Bot,
+            },
             { href: "/admin/reviews", label: "审核记录", icon: ScrollText },
         ],
     },
@@ -86,6 +91,11 @@ const workspaceSections = [
                 icon: PlugZap,
             },
             { href: "/workspace/reviews", label: "审核任务", icon: ScrollText },
+            {
+                href: "/workspace/review-batches",
+                label: "批量任务",
+                icon: Bot,
+            },
         ],
     },
     {
@@ -138,6 +148,10 @@ export function Sidebar({
                       }
 
                       if (item.href === "/workspace/reviews") {
+                          return workspaceCapabilities?.canReview;
+                      }
+
+                      if (item.href === "/workspace/review-batches") {
                           return workspaceCapabilities?.canReview;
                       }
 

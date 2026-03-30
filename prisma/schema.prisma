@@ -74,6 +74,24 @@ enum RunStatus {
   FAILED
 }
 
+enum BatchRunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCEL_REQUESTED
+  CANCELLED
+}
+
+enum BatchRunItemStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
 enum SyncDirection {
   PULL
   PUSH
@@ -101,6 +119,7 @@ model User {
   aiReviewRuns         AiReviewRun[]         @relation("AiReviewRunTrigger")
   aiReviewStrategies   AiReviewStrategy[]    @relation("AiReviewStrategyCreator")
   aiReviewStrategyRuns AiReviewStrategyRun[] @relation("AiReviewStrategyRunTrigger")
+  aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[] @relation("AiReviewStrategyBatchRunCreator")
   dingtalkAccounts     DingtalkAccount[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
@@ -119,6 +138,7 @@ model Project {
   questions    Question[]
   reviews      Review[]
   aiReviewRuns AiReviewRun[]
+  aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[]
   syncLogs     SyncLog[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
@@ -174,6 +194,7 @@ model Question {
   project              Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   datasource           ProjectDataSource     @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
   aiReviewStrategyRuns AiReviewStrategyRun[]
+  aiReviewStrategyBatchRunItems AiReviewStrategyBatchRunItem[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 
@@ -298,6 +319,7 @@ model AiReviewStrategy {
   createdById   String
   createdBy     User                  @relation("AiReviewStrategyCreator", fields: [createdById], references: [id], onDelete: Restrict)
   runs          AiReviewStrategyRun[]
+  batchRuns     AiReviewStrategyBatchRun[]
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
@@ -324,6 +346,62 @@ model AiReviewStrategyRun {
 
   @@index([questionId, createdAt])
   @@index([strategyId, createdAt])
+}
+
+model AiReviewStrategyBatchRun {
+  id              String                      @id @default(cuid())
+  strategyId      String
+  projectId       String
+  createdById     String
+  status          BatchRunStatus              @default(PENDING)
+  concurrency     Int                         @default(1)
+  totalCount      Int                         @default(0)
+  pendingCount    Int                         @default(0)
+  runningCount    Int                         @default(0)
+  successCount    Int                         @default(0)
+  failedCount     Int                         @default(0)
+  skippedCount    Int                         @default(0)
+  requestPayload  Json
+  summaryPayload  Json?
+  errorMessage    String?
+  workerId        String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  lastHeartbeatAt DateTime?
+  strategy        AiReviewStrategy            @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  project         Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy       User                        @relation("AiReviewStrategyBatchRunCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  items           AiReviewStrategyBatchRunItem[]
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@index([projectId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdById, createdAt])
+  @@index([workerId, status])
+}
+
+model AiReviewStrategyBatchRunItem {
+  id            String             @id @default(cuid())
+  batchRunId    String
+  questionId    String
+  sequence      Int
+  status        BatchRunItemStatus @default(PENDING)
+  attemptCount  Int                @default(0)
+  runId         String?
+  errorMessage  String?
+  resultPayload Json?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  batchRun      AiReviewStrategyBatchRun @relation(fields: [batchRunId], references: [id], onDelete: Cascade)
+  question      Question           @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([batchRunId, questionId])
+  @@unique([batchRunId, sequence])
+  @@index([batchRunId, status, sequence])
+  @@index([questionId, createdAt])
 }
 
 model SyncLog {

@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { invokeAiModel } from "@/lib/ai/invoke";
