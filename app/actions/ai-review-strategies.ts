@@ -454,13 +454,13 @@ export async function retryAiReviewStrategyRunItemAction(
 
     if (!session?.user) {
         return {
-            error: "请先登录后再重试失败请求。",
+            error: "请先登录后再重试单次执行项。",
         };
     }
 
     if (!process.env.DATABASE_URL) {
         return {
-            error: "当前未配置 DATABASE_URL，无法重试失败请求。",
+            error: "当前未配置 DATABASE_URL，无法重试单次执行项。",
         };
     }
 
@@ -515,7 +515,7 @@ export async function retryAiReviewStrategyRunItemAction(
         revalidateStrategyPaths(run.questionId);
 
         return {
-            success: "失败请求已重试，结果已更新。",
+            success: "单次执行项已重试，结果已更新。",
             run: updatedRun,
         };
     } catch (error) {

@@ -820,9 +820,7 @@ export function AiReviewStrategyRunner({
                                                                                                     item.status
                                                                                                 }
                                                                                             </Tag>
-                                                                                            {item.status ===
-                                                                                                "FAILED" &&
-                                                                                            run.status !==
+                                                                                            {run.status !==
                                                                                                 "RUNNING" &&
                                                                                             run.status !==
                                                                                                 "PENDING" ? (

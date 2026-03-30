@@ -396,9 +396,15 @@ function getToolContract(type: AiReviewAiToolType) {
 }
 
 function buildSystemPrompt(step: AiReviewAiToolStep) {
+    const formattingGuard =
+        step.toolType === "AI_SOLVE_QUESTION"
+            ? "所有字符串字段必须是纯文本，禁止输出 Markdown、代码块、LaTeX 公式或任何反斜杠数学命令（例如 \\omega、\\frac、\\text）。reasoning 字段只能写自然语言解释。"
+            : "所有字符串字段必须是纯文本，禁止输出 Markdown、代码块、LaTeX 公式或任何未转义的反斜杠命令。";
+
     return [
         `你正在执行题目审核系统中的「${aiReviewToolLabels[step.toolType]}」步骤。`,
         "必须只返回一个 JSON 对象，不要输出 Markdown、代码块、解释或额外文字。",
+        formattingGuard,
         "如果信息不足，也要返回符合字段结构的 JSON，并在 summary 中明确说明原因。",
         `输出结构：${getToolContract(step.toolType)}`,
     ].join("\n");
@@ -1529,7 +1535,7 @@ export async function retryAiReviewStrategyRunItem(
     const stepDefinition = definition.steps.find((step) => step.id === stepId);
 
     if (!stepDefinition || stepDefinition.kind !== "AI_TOOL") {
-        throw new Error("只有 AI 步骤的失败请求支持单条重试。");
+        throw new Error("只有 AI 步骤的单次执行项支持重试。");
     }
 
     const currentItem = currentStep.items.find(
@@ -1537,11 +1543,7 @@ export async function retryAiReviewStrategyRunItem(
     );
 
     if (!currentItem) {
-        throw new Error("未找到要重试的失败记录。");
-    }
-
-    if (currentItem.status !== "FAILED") {
-        throw new Error("当前请求不是失败状态，无需重试。");
+        throw new Error("未找到要重试的执行记录。");
     }
 
     const previousResults = parsedResult.stepResults.slice(0, stepIndex);
