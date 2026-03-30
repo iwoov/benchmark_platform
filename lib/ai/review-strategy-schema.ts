@@ -79,7 +79,7 @@ export const aiReviewOutcomeLabelMap: Record<AiReviewOutcomeLabel, string> = {
 
 export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
     COMPREHENSIVE_CHECK:
-        "你现在是题目审核助手。请从审核视角对输入题目完成全面检查。重点检查：1. 题干是否完整、清晰、无歧义；2. 选项是否完整，是否存在重复、冲突或明显错误；3. 题干与选项是否匹配；4. 标准答案是否明确，是否与题目表述冲突；5. 解析是否完整，是否能支撑标准答案；6. 是否存在错别字、病句、格式问题；7. 是否存在逻辑性、学科性或常识性错误；8. 是否存在漏条件、多解、答案不唯一、无法正常作答等风险。要求：你的任务是尽量暴露潜在问题，而不是替题目辩护；不要直接输出最终人工审核结论；如果信息不足，要明确指出信息不足；必须只返回符合系统要求的 JSON 结果，不要输出额外解释，不要输出 Markdown。",
+        "你现在是题目内容审校助手。你的任务不是独立解答题目，也不是根据你自己的解题结果判断题目对错，而是从审核视角检查题干、标准答案、解析文本本身是否存在质量问题。检查范围：1. 题干是否完整、清晰、无歧义；2. 是否存在漏条件、条件冲突、信息缺失、无法正常理解作答的问题；3. 标准答案是否明确，是否与题干或解析文本存在明显冲突；4. 解析是否完整，是否存在明显事实错误、逻辑跳步、推理断裂、公式误用、概念错误或结论前后不一致；5. 是否存在明显学科事实错误、常识性错误、错别字、病句、格式问题。边界规则：不要独立解题；不要因为 AI 可能答错就判题目有问题；只有题干/答案/解析文本本身出现明确矛盾或错误时才判定问题；若必须完整重做题才能判断，请在 summary 明确“无法在本步骤中确定”；多解或无法作答风险仅在题干文本已明显体现时指出；不要因 options 为空就判缺陷。输出要求：必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。所有字符串字段必须是纯文本，禁止 LaTeX 与反斜杠数学命令（如 \\frac、\\sqrt、\\chi、\\sinh）；若需表达公式请用 ASCII 文本（如 sqrt(x), sinh(1), a/b）。",
     QUESTION_COMPLETENESS_CHECK:
         "请重点检查题干、答案、解析之间是否存在缺失、断裂或明显不完整的信息。",
     TEXT_QUALITY_CHECK:
@@ -87,7 +87,7 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
     TRANSLATE_TO_CHINESE:
         "请将输入内容忠实翻译为简体中文。如果输入包含 JSON、字段列表或其他半结构化内容，请保持原有结构、键名、编号和格式，只翻译自然语言内容。如果原文已经是中文，可直接返回原文。",
     AI_SOLVE_QUESTION:
-        "请像正式答题一样独立完成作答，并输出简洁可信的解题过程。",
+        "请像正式答题一样独立完成作答，并输出简洁可信的解题过程。必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。answer、normalizedAnswer、reasoning 必须是纯文本，禁止 LaTeX 与任何反斜杠数学命令（如 \\frac、\\sqrt、\\int、\\chi）；如需表达公式请使用 ASCII 文本（例如 sqrt(a/b), integral_0^1 f(t) dt）。confidence 必须是 0 到 1 的数字，不要用字符串。",
     ANSWER_MATCH_CHECK:
         "请判断标准答案与模型答案是完全一致、语义一致、部分一致还是明显不一致。",
     REASONING_COMPARE:

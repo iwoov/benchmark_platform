@@ -280,18 +280,97 @@ function extractJson(text: string | null) {
     const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
     const candidate = fencedMatch?.[1]?.trim() ?? text.trim();
 
+    const safeParseJson = (input: string) => {
+        try {
+            return JSON.parse(input);
+        } catch {
+            return JSON.parse(repairInvalidJsonEscapes(input));
+        }
+    };
+
     try {
-        return JSON.parse(candidate);
+        return safeParseJson(candidate);
     } catch {
         const start = candidate.indexOf("{");
         const end = candidate.lastIndexOf("}");
 
         if (start >= 0 && end > start) {
-            return JSON.parse(candidate.slice(start, end + 1));
+            return safeParseJson(candidate.slice(start, end + 1));
         }
 
         throw new Error("模型返回内容不是合法 JSON");
     }
+}
+
+function repairInvalidJsonEscapes(input: string) {
+    let output = "";
+    let inString = false;
+    let quoteEscaped = false;
+
+    const isValidJsonEscape = (char: string) =>
+        char === '"' ||
+        char === "\\" ||
+        char === "/" ||
+        char === "b" ||
+        char === "f" ||
+        char === "n" ||
+        char === "r" ||
+        char === "t" ||
+        char === "u";
+
+    for (let index = 0; index < input.length; index += 1) {
+        const char = input[index];
+
+        if (!inString) {
+            output += char;
+            if (char === '"' && !quoteEscaped) {
+                inString = true;
+            }
+            quoteEscaped = char === "\\" && !quoteEscaped;
+            continue;
+        }
+
+        if (char === '"' && !quoteEscaped) {
+            inString = false;
+            output += char;
+            quoteEscaped = false;
+            continue;
+        }
+
+        if (char === "\\") {
+            const nextChar = input[index + 1];
+
+            if (!nextChar) {
+                output += "\\\\";
+                quoteEscaped = false;
+                continue;
+            }
+
+            if (!isValidJsonEscape(nextChar)) {
+                output += "\\\\";
+                quoteEscaped = false;
+                continue;
+            }
+
+            if (nextChar === "u") {
+                const unicodeHex = input.slice(index + 2, index + 6);
+                if (!/^[0-9a-fA-F]{4}$/.test(unicodeHex)) {
+                    output += "\\\\";
+                    quoteEscaped = false;
+                    continue;
+                }
+            }
+
+            output += char;
+            quoteEscaped = true;
+            continue;
+        }
+
+        output += char;
+        quoteEscaped = false;
+    }
+
+    return output;
 }
 
 function compareWithOperator(
@@ -461,12 +540,180 @@ function coerceAiOutput(
     toolType: AiReviewAiToolType,
     payload: Record<string, unknown>,
 ) {
+    const toLooseString = (value: unknown): string | null => {
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+
+        if (
+            typeof value === "number" ||
+            typeof value === "boolean" ||
+            typeof value === "bigint"
+        ) {
+            return String(value);
+        }
+
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+            const record = value as Record<string, unknown>;
+            const title: string | null = toLooseString(record.title);
+            const detail: string | null =
+                toLooseString(record.detail) ??
+                toLooseString(record.content) ??
+                toLooseString(record.summary) ??
+                toLooseString(record.message);
+
+            if (title && detail) {
+                return `${title}：${detail}`;
+            }
+
+            if (title) {
+                return title;
+            }
+
+            if (detail) {
+                return detail;
+            }
+        }
+
+        try {
+            const text = JSON.stringify(value);
+            return text && text !== "null" ? text : null;
+        } catch {
+            return null;
+        }
+    };
+    const toStringList = (value: unknown) => {
+        if (!Array.isArray(value)) {
+            return [] as string[];
+        }
+
+        return value
+            .map((item) => toLooseString(item))
+            .filter((item): item is string => Boolean(item));
+    };
+    const normalizeSeverity = (value: unknown) => {
+        if (typeof value !== "string") {
+            return "MEDIUM";
+        }
+
+        const normalized = value.trim().toUpperCase();
+        return normalized === "LOW" ||
+            normalized === "MEDIUM" ||
+            normalized === "HIGH"
+            ? normalized
+            : "MEDIUM";
+    };
+    const coerceComprehensiveIssues = (value: unknown) => {
+        if (!Array.isArray(value)) {
+            return [] as Array<{
+                category: string;
+                severity: "LOW" | "MEDIUM" | "HIGH";
+                field: string;
+                title: string;
+                detail: string;
+            }>;
+        }
+
+        return value
+            .map((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                    return null;
+                }
+
+                const record = item as Record<string, unknown>;
+                const title = toLooseString(record.title);
+                const detail =
+                    toLooseString(record.detail) ??
+                    toLooseString(record.content);
+
+                if (!title || !detail) {
+                    return null;
+                }
+
+                return {
+                    category:
+                        toLooseString(record.category) ??
+                        toLooseString(record.type) ??
+                        "其他",
+                    severity: normalizeSeverity(record.severity) as
+                        | "LOW"
+                        | "MEDIUM"
+                        | "HIGH",
+                    field: toLooseString(record.field) ?? "unknown",
+                    title,
+                    detail,
+                };
+            })
+            .filter(
+                (
+                    item,
+                ): item is {
+                    category: string;
+                    severity: "LOW" | "MEDIUM" | "HIGH";
+                    field: string;
+                    title: string;
+                    detail: string;
+                } => Boolean(item),
+            );
+    };
+    const coerceTextQualityIssues = (value: unknown) => {
+        if (!Array.isArray(value)) {
+            return [] as Array<{
+                field: string;
+                type: string;
+                content: string;
+            }>;
+        }
+
+        return value
+            .map((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                    return null;
+                }
+
+                const record = item as Record<string, unknown>;
+                const content =
+                    toLooseString(record.content) ??
+                    toLooseString(record.detail) ??
+                    toLooseString(record.summary);
+
+                if (!content) {
+                    return null;
+                }
+
+                return {
+                    field: toLooseString(record.field) ?? "unknown",
+                    type:
+                        toLooseString(record.type) ??
+                        toLooseString(record.category) ??
+                        "其他",
+                    content,
+                };
+            })
+            .filter(
+                (
+                    item,
+                ): item is {
+                    field: string;
+                    type: string;
+                    content: string;
+                } => Boolean(item),
+            );
+    };
+
+    payload.summary = toLooseString(payload.summary) ?? "";
+
     if (toolType === "AI_SOLVE_QUESTION") {
         const answer =
-            typeof payload.answer === "string" ? payload.answer.trim() : "";
+            toLooseString(payload.answer) ?? "";
         if (!payload.normalizedAnswer && answer) {
             payload.normalizedAnswer = normalizeAnswer(answer);
         }
+        payload.answer = answer;
+        payload.reasoning = toLooseString(payload.reasoning) ?? "";
+        payload.normalizedAnswer =
+            toLooseString(payload.normalizedAnswer) ?? "";
 
         if (typeof payload.confidence === "string") {
             const next = Number(payload.confidence);
@@ -484,6 +731,56 @@ function coerceAiOutput(
         if (!Number.isNaN(next)) {
             payload.score = next;
         }
+    }
+
+    if (toolType === "COMPREHENSIVE_CHECK") {
+        payload.issues = coerceComprehensiveIssues(payload.issues);
+        payload.warnings = toStringList(payload.warnings);
+        payload.suggestions = toStringList(payload.suggestions);
+    }
+
+    if (toolType === "QUESTION_COMPLETENESS_CHECK") {
+        payload.missingFields = toStringList(payload.missingFields);
+        payload.warnings = toStringList(payload.warnings);
+    }
+
+    if (toolType === "TEXT_QUALITY_CHECK") {
+        payload.severity = normalizeSeverity(payload.severity);
+        payload.issues = coerceTextQualityIssues(payload.issues);
+        payload.suggestions = toStringList(payload.suggestions);
+    }
+
+    if (toolType === "TRANSLATE_TO_CHINESE") {
+        payload.translatedText = toLooseString(payload.translatedText) ?? "";
+        payload.sourceLanguage =
+            payload.sourceLanguage === null
+                ? null
+                : (toLooseString(payload.sourceLanguage) ?? null);
+    }
+
+    if (toolType === "ANSWER_MATCH_CHECK") {
+        payload.summary = toLooseString(payload.summary) ?? "";
+        payload.difference =
+            payload.difference === null
+                ? null
+                : (toLooseString(payload.difference) ?? null);
+    }
+
+    if (toolType === "REASONING_COMPARE") {
+        payload.summary = toLooseString(payload.summary) ?? "";
+        payload.missingPoints = toStringList(payload.missingPoints);
+        payload.riskLevel = normalizeSeverity(payload.riskLevel);
+    }
+
+    if (toolType === "DIFFICULTY_EVALUATION") {
+        payload.summary = toLooseString(payload.summary) ?? "";
+        payload.evidence = toStringList(payload.evidence);
+    }
+
+    if (toolType === "REVIEW_SUMMARY") {
+        payload.summary = toLooseString(payload.summary) ?? "";
+        payload.keyIssues = toStringList(payload.keyIssues);
+        payload.riskLevel = normalizeSeverity(payload.riskLevel);
     }
 
     return payload;

@@ -637,49 +637,54 @@ export function ReviewQuestionList({
                                         ))}
                                     </div>
 
-                                    {questions.map((question) => (
-                                        <div
-                                            key={question.id}
-                                            role="button"
-                                            tabIndex={0}
-                                            style={{
-                                                display: "grid",
-                                                gridTemplateColumns:
-                                                    gridTemplateColumns,
-                                                gap: 16,
-                                                padding: "16px",
-                                                borderTop:
-                                                    "1px solid rgba(217, 224, 234, 0.85)",
-                                                alignItems: "center",
-                                                background:
-                                                    selectedQuestionIdSet.has(
-                                                        question.id,
-                                                    )
-                                                        ? "rgba(230, 244, 255, 0.96)"
-                                                        : "rgba(255, 255, 255, 0.82)",
-                                                cursor: "pointer",
-                                            }}
-                                            onClick={() =>
-                                                router.push(
-                                                    buildQuestionDetailPath(
-                                                        question.id,
-                                                    ),
-                                                )
-                                            }
-                                            onKeyDown={(event) => {
-                                                if (
-                                                    event.key === "Enter" ||
-                                                    event.key === " "
-                                                ) {
-                                                    event.preventDefault();
+                                    {questions.map((question) => {
+                                        const isSelected =
+                                            selectedQuestionIdSet.has(
+                                                question.id,
+                                            );
+
+                                        return (
+                                            <div
+                                                key={question.id}
+                                                role="button"
+                                                tabIndex={0}
+                                                className={`review-question-row${
+                                                    isSelected
+                                                        ? " is-selected"
+                                                        : ""
+                                                }`}
+                                                style={{
+                                                    display: "grid",
+                                                    gridTemplateColumns:
+                                                        gridTemplateColumns,
+                                                    gap: 16,
+                                                    padding: "16px",
+                                                    borderTop:
+                                                        "1px solid rgba(217, 224, 234, 0.85)",
+                                                    alignItems: "center",
+                                                    cursor: "pointer",
+                                                }}
+                                                onClick={() =>
                                                     router.push(
                                                         buildQuestionDetailPath(
                                                             question.id,
                                                         ),
-                                                    );
+                                                    )
                                                 }
-                                            }}
-                                        >
+                                                onKeyDown={(event) => {
+                                                    if (
+                                                        event.key === "Enter" ||
+                                                        event.key === " "
+                                                    ) {
+                                                        event.preventDefault();
+                                                        router.push(
+                                                            buildQuestionDetailPath(
+                                                                question.id,
+                                                            ),
+                                                        );
+                                                    }
+                                                }}
+                                            >
                                             <div
                                                 onClick={(event) =>
                                                     event.stopPropagation()
@@ -689,9 +694,7 @@ export function ReviewQuestionList({
                                                 }
                                             >
                                                 <Checkbox
-                                                    checked={selectedQuestionIdSet.has(
-                                                        question.id,
-                                                    )}
+                                                    checked={isSelected}
                                                     onChange={(event) =>
                                                         toggleQuestionSelection(
                                                             question.id,
@@ -746,8 +749,9 @@ export function ReviewQuestionList({
                                                     </div>
                                                 );
                                             })}
-                                        </div>
-                                    ))}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div

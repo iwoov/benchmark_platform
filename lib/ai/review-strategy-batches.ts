@@ -125,12 +125,12 @@ export type AiReviewStrategyBatchRunView = {
     };
     currentItems: Array<{
         questionId: string;
-        questionTitle: string;
+        questionExternalRecordId: string;
         status: BatchRunItemStatus;
     }>;
     recentFailures: Array<{
         questionId: string;
-        questionTitle: string;
+        questionExternalRecordId: string;
         errorMessage: string;
     }>;
 };
@@ -154,7 +154,7 @@ function mapBatchRunView(run: {
     items: Array<{
         status: BatchRunItemStatus;
         errorMessage: string | null;
-        question: { id: string; title: string };
+        question: { id: string; externalRecordId: string };
     }>;
 }): AiReviewStrategyBatchRunView {
     return {
@@ -177,7 +177,7 @@ function mapBatchRunView(run: {
             .filter((item) => item.status === BatchRunItemStatus.RUNNING)
             .map((item) => ({
                 questionId: item.question.id,
-                questionTitle: item.question.title,
+                questionExternalRecordId: item.question.externalRecordId,
                 status: item.status,
             })),
         recentFailures: run.items
@@ -188,7 +188,7 @@ function mapBatchRunView(run: {
             )
             .map((item) => ({
                 questionId: item.question.id,
-                questionTitle: item.question.title,
+                questionExternalRecordId: item.question.externalRecordId,
                 errorMessage: item.errorMessage,
             })),
     };
@@ -238,7 +238,7 @@ export async function getAiReviewStrategyBatchRunsForProject(
                     question: {
                         select: {
                             id: true,
-                            title: true,
+                            externalRecordId: true,
                         },
                     },
                 },

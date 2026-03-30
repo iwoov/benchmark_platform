@@ -40,7 +40,7 @@ type BatchRunView = {
     };
     currentItems: Array<{
         questionId: string;
-        questionTitle: string;
+        questionExternalRecordId: string;
         status:
             | "PENDING"
             | "RUNNING"
@@ -51,7 +51,7 @@ type BatchRunView = {
     }>;
     recentFailures: Array<{
         questionId: string;
-        questionTitle: string;
+        questionExternalRecordId: string;
         errorMessage: string;
     }>;
 };
@@ -386,7 +386,7 @@ export function AiReviewBatchRunConsole({
                                                 {run.currentItems
                                                     .map(
                                                         (item) =>
-                                                            item.questionTitle,
+                                                            item.questionExternalRecordId,
                                                     )
                                                     .join("；")}
                                             </div>
@@ -405,7 +405,9 @@ export function AiReviewBatchRunConsole({
                                                             key={`${run.id}-${item.questionId}`}
                                                             className="muted"
                                                         >
-                                                            {item.questionTitle}
+                                                            {
+                                                                item.questionExternalRecordId
+                                                            }
                                                             ：
                                                             {item.errorMessage}
                                                         </div>

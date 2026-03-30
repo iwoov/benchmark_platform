@@ -27,6 +27,20 @@ export type AiReviewStrategyActionState = {
     batchRunId?: string;
 };
 
+function formatExternalRecordIdsForMessage(
+    externalRecordIds: string[],
+    maxPreview = 20,
+) {
+    if (!externalRecordIds.length) {
+        return "无";
+    }
+
+    const preview = externalRecordIds.slice(0, maxPreview).join("、");
+    const remaining = externalRecordIds.length - maxPreview;
+
+    return remaining > 0 ? `${preview} 等 ${externalRecordIds.length} 条` : preview;
+}
+
 const saveStrategySchema = z.object({
     strategyId: z
         .string()
@@ -569,19 +583,21 @@ export async function createAiReviewStrategyBatchRunAction(
         };
     }
 
+    const uniqueQuestionIds = [...new Set(parsed.data.questionIds)];
     const questions = await prisma.question.findMany({
         where: {
             id: {
-                in: parsed.data.questionIds,
+                in: uniqueQuestionIds,
             },
         },
         select: {
             id: true,
             projectId: true,
+            externalRecordId: true,
         },
     });
 
-    if (questions.length !== new Set(parsed.data.questionIds).size) {
+    if (questions.length !== uniqueQuestionIds.length) {
         return {
             error: "部分题目不存在或已被删除，请刷新后重试。",
         };
@@ -616,10 +632,50 @@ export async function createAiReviewStrategyBatchRunAction(
         };
     }
 
+    const pendingOrRunningItems = await prisma.aiReviewStrategyBatchRunItem.findMany(
+        {
+            where: {
+                questionId: {
+                    in: uniqueQuestionIds,
+                },
+                status: {
+                    in: ["PENDING", "RUNNING"],
+                },
+                batchRun: {
+                    projectId: actualProjectId,
+                    strategyId: parsed.data.strategyId,
+                    status: {
+                        in: ["PENDING", "RUNNING", "CANCEL_REQUESTED"],
+                    },
+                },
+            },
+            select: {
+                questionId: true,
+            },
+        },
+    );
+    const pendingQuestionIdSet = new Set(
+        pendingOrRunningItems.map((item) => item.questionId),
+    );
+    const pendingExternalRecordIds = questions
+        .filter((question) => pendingQuestionIdSet.has(question.id))
+        .map((question) => question.externalRecordId);
+    const creatableQuestionIds = uniqueQuestionIds.filter(
+        (questionId) => !pendingQuestionIdSet.has(questionId),
+    );
+
+    if (!creatableQuestionIds.length) {
+        return {
+            error: `请勿重复提交：以下外部记录 ID 已在待执行/执行中：${formatExternalRecordIdsForMessage(
+                pendingExternalRecordIds,
+            )}`,
+        };
+    }
+
     try {
         const batchRun = await createAiReviewStrategyBatchRun({
             strategyId: parsed.data.strategyId,
-            questionIds: parsed.data.questionIds,
+            questionIds: creatableQuestionIds,
             concurrency: parsed.data.concurrency,
             createdById: session.user.id,
         });
@@ -628,7 +684,11 @@ export async function createAiReviewStrategyBatchRunAction(
         revalidatePath("/workspace/reviews");
 
         return {
-            success: "批量任务已创建，后台 worker 会继续执行。",
+            success: pendingExternalRecordIds.length
+                ? `批量任务已创建（新增 ${creatableQuestionIds.length} 题）。以下外部记录 ID 已在待执行/执行中，已自动跳过：${formatExternalRecordIdsForMessage(
+                      pendingExternalRecordIds,
+                  )}`
+                : "批量任务已创建，后台 worker 会继续执行。",
             batchRunId: batchRun.id,
         };
     } catch (error) {

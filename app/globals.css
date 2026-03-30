@@ -448,6 +448,39 @@ select {
     overscroll-behavior-x: contain;
 }
 
+.review-question-row {
+    background: rgba(255, 255, 255, 0.82);
+    transition:
+        transform 140ms ease,
+        box-shadow 180ms ease,
+        background-color 180ms ease;
+}
+
+.review-question-row:hover {
+    background: rgba(241, 245, 249, 0.94);
+    transform: translateY(-1px);
+    box-shadow:
+        inset 0 0 0 1px rgba(37, 99, 235, 0.16),
+        0 8px 16px rgba(15, 23, 42, 0.06);
+}
+
+.review-question-row:focus-visible {
+    outline: none;
+    background: rgba(241, 245, 249, 0.96);
+    box-shadow:
+        inset 0 0 0 1px rgba(37, 99, 235, 0.22),
+        0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.review-question-row.is-selected {
+    background: rgba(230, 244, 255, 0.96);
+}
+
+.review-question-row.is-selected:hover,
+.review-question-row.is-selected:focus-visible {
+    background: rgba(214, 236, 255, 0.98);
+}
+
 .review-toolbar {
     display: flex;
     align-items: flex-end;
