@@ -57,6 +57,16 @@ function extractSourceRowNumber(metadata: unknown) {
     return typeof sourceRowNumber === "number" ? sourceRowNumber : null;
 }
 
+function parseExternalRecordOrder(value: string) {
+    const match = value.match(/(\d+)(?!.*\d)/);
+
+    if (!match) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    return Number(match[1]);
+}
+
 function extractRawFieldOrder(syncConfig: unknown) {
     if (
         !syncConfig ||
@@ -166,24 +176,36 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                 },
             },
         },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "asc" }],
     });
 
-    return rows.map<ReviewQuestionListItem>((question) => ({
-        id: question.id,
-        projectId: question.project.id,
-        projectName: question.project.name,
-        projectCode: question.project.code,
-        datasourceId: question.datasource.id,
-        datasourceName: question.datasource.name,
-        externalRecordId: question.externalRecordId,
-        title: question.title,
-        status: question.status,
-        updatedAt: question.updatedAt.toISOString(),
-        sourceRowNumber: extractSourceRowNumber(question.metadata),
-        rawRecord: extractRawRecord(question.metadata),
-        rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
-    }));
+    return rows
+        .sort((left, right) => {
+            const externalOrderDiff =
+                parseExternalRecordOrder(left.externalRecordId) -
+                parseExternalRecordOrder(right.externalRecordId);
+
+            if (externalOrderDiff !== 0) {
+                return externalOrderDiff;
+            }
+
+            return left.externalRecordId.localeCompare(right.externalRecordId);
+        })
+        .map<ReviewQuestionListItem>((question) => ({
+            id: question.id,
+            projectId: question.project.id,
+            projectName: question.project.name,
+            projectCode: question.project.code,
+            datasourceId: question.datasource.id,
+            datasourceName: question.datasource.name,
+            externalRecordId: question.externalRecordId,
+            title: question.title,
+            status: question.status,
+            updatedAt: question.updatedAt.toISOString(),
+            sourceRowNumber: extractSourceRowNumber(question.metadata),
+            rawRecord: extractRawRecord(question.metadata),
+            rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        }));
 }
 
 export async function getReviewQuestionDetail(questionId: string) {

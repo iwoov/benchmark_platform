@@ -2,8 +2,6 @@ import type { Prisma } from "@prisma/client";
 import { QuestionStatus } from "@prisma/client";
 import { read, utils } from "xlsx";
 
-const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
-
 const fieldAliases = {
     title: ["title", "题目标题", "标题", "questiontitle", "name", "题目名称"],
     content: [
@@ -295,10 +293,6 @@ function ensureObjectRows(records: unknown[]) {
 export async function parseImportedProjectData(
     file: File,
 ): Promise<ParsedImportPayload> {
-    if (file.size > MAX_IMPORT_FILE_SIZE) {
-        throw new Error("导入文件不能超过 10MB。");
-    }
-
     const datasourceType = detectDatasourceType(file.name);
     const arrayBuffer = await file.arrayBuffer();
     const sourceRows =

@@ -333,6 +333,8 @@ function getToolContract(type: AiReviewAiToolType) {
             return `{"passed":boolean,"summary":string,"missingFields":string[],"warnings":string[]}`;
         case "TEXT_QUALITY_CHECK":
             return `{"passed":boolean,"severity":"LOW|MEDIUM|HIGH","summary":string,"issues":[{"field":string,"type":string,"content":string}],"suggestions":string[]}`;
+        case "TRANSLATE_TO_CHINESE":
+            return `{"translatedText":string,"summary":string,"sourceLanguage":string|null}`;
         case "AI_SOLVE_QUESTION":
             return `{"answer":string,"normalizedAnswer":string,"reasoning":string,"confidence":0-1}`;
         case "ANSWER_MATCH_CHECK":
@@ -618,8 +620,7 @@ async function executeAiToolItem(
                 raw: response.raw,
                 text: response.text,
             },
-            error:
-                error instanceof Error ? error.message : "模型结果解析失败",
+            error: error instanceof Error ? error.message : "模型结果解析失败",
         };
     }
 }
@@ -763,9 +764,7 @@ async function runAiToolStep(
 
     return buildCompletedAiToolStepResult(
         step,
-        items.filter(
-            (item): item is StepExecutionItem => Boolean(item),
-        ),
+        items.filter((item): item is StepExecutionItem => Boolean(item)),
     );
 }
 
@@ -1033,6 +1032,19 @@ function strategyAppliesToQuestion(
     return datasourceIds.includes(question.datasource.id);
 }
 
+function isRunnableReviewStrategy(definition: AiReviewStrategyDefinition) {
+    const enabledSteps = definition.steps.filter((step) => step.enabled);
+
+    if (!enabledSteps.length) {
+        return false;
+    }
+
+    return enabledSteps.some(
+        (step) =>
+            step.kind !== "AI_TOOL" || step.toolType !== "TRANSLATE_TO_CHINESE",
+    );
+}
+
 export async function getAiReviewStrategyConsoleData() {
     if (!process.env.DATABASE_URL) {
         return {
@@ -1181,7 +1193,11 @@ export async function getApplicableAiReviewStrategies(
         .map((strategy) => {
             const definition = parseDefinition(strategy.definition);
 
-            if (!definition || !strategyAppliesToQuestion(strategy, question)) {
+            if (
+                !definition ||
+                !strategyAppliesToQuestion(strategy, question) ||
+                !isRunnableReviewStrategy(definition)
+            ) {
                 return null;
             }
 
@@ -1380,10 +1396,13 @@ export async function executeAiReviewStrategy(
             await persistRunProgress(run.id, parsedResult);
         }
 
-        parsedResult.status = stepResults.some((step) => step.status === "FAILED")
+        parsedResult.status = stepResults.some(
+            (step) => step.status === "FAILED",
+        )
             ? "FAILED"
             : "SUCCESS";
-        parsedResult.finalRecommendation = resolveFinalRecommendation(stepResults);
+        parsedResult.finalRecommendation =
+            resolveFinalRecommendation(stepResults);
         parsedResult.reviewPersistence = null;
 
         if (parsedResult.finalRecommendation?.decision) {
@@ -1479,7 +1498,9 @@ export async function executeAiReviewStrategy(
             data: {
                 status: parsedResult.status,
                 parsedResult: serializeJson(parsedResult),
-                responsePayload: serializeJson(buildRunResponsePayload(stepResults)),
+                responsePayload: serializeJson(
+                    buildRunResponsePayload(stepResults),
+                ),
                 finishedAt: new Date(),
             },
         });
@@ -1506,7 +1527,9 @@ export async function executeAiReviewStrategy(
                         message: "策略执行失败，未自动保存审核记录。",
                     },
                 }),
-                responsePayload: serializeJson(buildRunResponsePayload(stepResults)),
+                responsePayload: serializeJson(
+                    buildRunResponsePayload(stepResults),
+                ),
                 finishedAt: new Date(),
             },
         });

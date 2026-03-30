@@ -28,23 +28,15 @@ export function LoginForm() {
             }}
         >
             <Space direction="vertical" size={24} style={{ width: "100%" }}>
-                <Space direction="vertical" size={8}>
-                    <div
-                        style={{
-                            color: "var(--muted)",
-                            fontWeight: 700,
-                            fontSize: 12,
-                            letterSpacing: "0.12em",
-                            textTransform: "uppercase",
-                        }}
-                    >
-                        Benchmark Platform
-                    </div>
-                    <h2 style={{ margin: 0, fontSize: 32, lineHeight: 1.1 }}>
+                <Space direction="vertical" size={6}>
+                    <h2 style={{ margin: 0, fontSize: 34, lineHeight: 1.05 }}>
                         登录后台
                     </h2>
-                    <p className="muted" style={{ margin: 0, lineHeight: 1.7 }}>
-                        一期先使用平台内账号密码登录，钉钉 OAuth 后续接入。
+                    <p
+                        className="muted"
+                        style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}
+                    >
+                        输入账号和密码继续。
                     </p>
                 </Space>
 
@@ -106,20 +98,6 @@ export function LoginForm() {
                         </Button>
                     </Space>
                 </form>
-
-                <Card className="login-hint-card">
-                    <div style={{ fontWeight: 700 }}>超级管理员账号</div>
-                    <p
-                        style={{
-                            margin: "8px 0 0",
-                            color: "var(--muted)",
-                            lineHeight: 1.7,
-                        }}
-                    >
-                        账号由 `.env` 中的 `ADMIN_USERNAME`、`ADMIN_EMAIL` 和
-                        `ADMIN_PASSWORD` 控制。
-                    </p>
-                </Card>
             </Space>
         </Card>
     );

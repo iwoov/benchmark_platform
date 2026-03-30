@@ -143,6 +143,16 @@ function getDatasourceFieldSet(
     );
 }
 
+const systemFieldOptions = [
+    { value: "title", label: "系统字段 / title" },
+    { value: "content", label: "系统字段 / content" },
+    { value: "answer", label: "系统字段 / answer" },
+    { value: "analysis", label: "系统字段 / analysis" },
+    { value: "questionType", label: "系统字段 / questionType" },
+    { value: "difficulty", label: "系统字段 / difficulty" },
+    { value: "rawRecord", label: "系统字段 / rawRecord" },
+];
+
 export function AiReviewStrategyConsole({
     databaseEnabled,
     modelOptions,
@@ -244,10 +254,13 @@ export function AiReviewStrategyConsole({
             ),
         ];
 
-        return fieldOrder.map((field) => ({
-            value: field,
-            label: field,
-        }));
+        return [
+            ...systemFieldOptions,
+            ...fieldOrder.map((field) => ({
+                value: field,
+                label: field,
+            })),
+        ];
     }, [datasources, form.datasourceIds]);
 
     const datasourceNameMap = useMemo(
@@ -1182,14 +1195,14 @@ export function AiReviewStrategyConsole({
                                                                 rawFieldOptions
                                                             }
                                                             placeholder={
-                                                                form
-                                                                    .datasourceIds
-                                                                    .length
-                                                                    ? "请选择数据源原始字段"
-                                                                    : "请先选择适用数据源"
-                                                            }
-                                                            disabled={
-                                                                !rawFieldOptions.length
+                                                                step.toolType ===
+                                                                "REVIEW_SUMMARY"
+                                                                    ? "可留空，系统会自动带入前置步骤结果"
+                                                                    : form
+                                                                            .datasourceIds
+                                                                            .length
+                                                                      ? "可选系统字段或数据源原始字段"
+                                                                      : "可先选择系统字段，如需原始字段再选择适用数据源"
                                                             }
                                                             size="large"
                                                         />

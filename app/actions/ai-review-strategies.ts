@@ -83,6 +83,15 @@ function extractRawFieldOrder(input: unknown) {
 async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
     const projectIds = [...new Set(input.projectIds)];
     const datasourceIds = [...new Set(input.datasourceIds)];
+    const systemFieldSet = new Set([
+        "title",
+        "content",
+        "answer",
+        "analysis",
+        "questionType",
+        "difficulty",
+        "rawRecord",
+    ]);
     let datasourceFieldSet = new Set<string>();
 
     if (projectIds.length) {
@@ -180,13 +189,19 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
         > => step.kind === "AI_TOOL",
     );
 
-    if (aiToolSteps.length && !datasourceIds.length) {
-        return "请先选择适用数据源，再配置 AI 步骤要提交的原始字段。";
-    }
-
     for (const step of aiToolSteps) {
+        const rawDatasourceFields = step.fieldKeys.filter(
+            (fieldKey) => !systemFieldSet.has(fieldKey),
+        );
+
+        if (rawDatasourceFields.length && !datasourceIds.length) {
+            return "请先选择适用数据源，再配置 AI 步骤要提交的原始字段。";
+        }
+
         if (
-            step.fieldKeys.some((fieldKey) => !datasourceFieldSet.has(fieldKey))
+            rawDatasourceFields.some(
+                (fieldKey) => !datasourceFieldSet.has(fieldKey),
+            )
         ) {
             return `步骤 ${step.name} 选择了不属于当前数据源的原始字段，请重新选择。`;
         }

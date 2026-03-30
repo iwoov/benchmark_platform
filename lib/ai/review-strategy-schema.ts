@@ -4,6 +4,7 @@ export const aiReviewAiToolTypes = [
     "COMPREHENSIVE_CHECK",
     "QUESTION_COMPLETENESS_CHECK",
     "TEXT_QUALITY_CHECK",
+    "TRANSLATE_TO_CHINESE",
     "AI_SOLVE_QUESTION",
     "ANSWER_MATCH_CHECK",
     "REASONING_COMPARE",
@@ -48,6 +49,7 @@ export const aiReviewToolLabels: Record<AiReviewAiToolType, string> = {
     COMPREHENSIVE_CHECK: "全面检查",
     QUESTION_COMPLETENESS_CHECK: "题目完整性检查",
     TEXT_QUALITY_CHECK: "文本质量检查",
+    TRANSLATE_TO_CHINESE: "翻译为中文",
     AI_SOLVE_QUESTION: "AI 解题任务",
     ANSWER_MATCH_CHECK: "答案一致性比对",
     REASONING_COMPARE: "解题过程比对",
@@ -82,6 +84,8 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
         "请重点检查题干、答案、解析之间是否存在缺失、断裂或明显不完整的信息。",
     TEXT_QUALITY_CHECK:
         "请检查字段中的错别字、病句、歧义表达和格式问题，并给出简明修改建议。",
+    TRANSLATE_TO_CHINESE:
+        "请将输入内容忠实翻译为简体中文。如果输入包含 JSON、字段列表或其他半结构化内容，请保持原有结构、键名、编号和格式，只翻译自然语言内容。如果原文已经是中文，可直接返回原文。",
     AI_SOLVE_QUESTION:
         "请像正式答题一样独立完成作答，并输出简洁可信的解题过程。",
     ANSWER_MATCH_CHECK:
@@ -90,8 +94,7 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
         "请比较标准解析与模型推理过程是否一致，指出标准解析缺失或不充分的地方。",
     DIFFICULTY_EVALUATION:
         "请结合题目、答案和推理过程评估难度等级，并说明依据。",
-    REVIEW_SUMMARY:
-        `你现在是题目审核总结助手。请根据前面所有步骤的结构化结果，给出最终审核建议。
+    REVIEW_SUMMARY: `你现在是题目审核总结助手。请根据前面所有步骤的结构化结果，给出最终审核建议。
 
 请重点综合以下信息：
 1. 全面检查是否发现严重问题
@@ -132,6 +135,7 @@ export const aiReviewMetricOptionsByToolType: Record<
     ],
     QUESTION_COMPLETENESS_CHECK: [{ value: "passed", label: "是否通过" }],
     TEXT_QUALITY_CHECK: [{ value: "passed", label: "是否通过" }],
+    TRANSLATE_TO_CHINESE: [],
     AI_SOLVE_QUESTION: [
         { value: "normalizedAnswer", label: "标准化答案" },
         { value: "confidence", label: "置信度" },
@@ -188,7 +192,7 @@ export const aiToolStepSchema = strategyStepBaseSchema.extend({
                 .min(1, "字段名不能为空")
                 .max(100, "字段名不能超过 100 个字符"),
         )
-        .min(1, "请至少选择一个字段"),
+        .default([]),
     promptTemplate: z
         .string()
         .trim()
@@ -293,6 +297,17 @@ export const aiReviewStrategyDefinitionSchema = z.object({
                         });
                     }
                 }
+
+                if (
+                    step.kind === "AI_TOOL" &&
+                    step.toolType !== "REVIEW_SUMMARY" &&
+                    !step.fieldKeys.length
+                ) {
+                    context.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: `步骤 ${step.name} 请至少选择一个字段`,
+                    });
+                }
             }
         }),
 });
@@ -362,6 +377,12 @@ export const textQualityOutputSchema = z.object({
     suggestions: z.array(z.string()).default([]),
 });
 
+export const translateToChineseOutputSchema = z.object({
+    translatedText: z.string().min(1),
+    summary: z.string().min(1),
+    sourceLanguage: z.string().nullable().default(null),
+});
+
 export const aiSolveOutputSchema = z.object({
     answer: z.string().min(1),
     normalizedAnswer: z.string().min(1),
@@ -401,6 +422,7 @@ export const aiReviewOutputSchemas = {
     COMPREHENSIVE_CHECK: comprehensiveCheckOutputSchema,
     QUESTION_COMPLETENESS_CHECK: completenessOutputSchema,
     TEXT_QUALITY_CHECK: textQualityOutputSchema,
+    TRANSLATE_TO_CHINESE: translateToChineseOutputSchema,
     AI_SOLVE_QUESTION: aiSolveOutputSchema,
     ANSWER_MATCH_CHECK: answerMatchOutputSchema,
     REASONING_COMPARE: reasoningCompareOutputSchema,
@@ -431,6 +453,7 @@ export type AiReviewToolOutputMap = {
     COMPREHENSIVE_CHECK: z.infer<typeof comprehensiveCheckOutputSchema>;
     QUESTION_COMPLETENESS_CHECK: z.infer<typeof completenessOutputSchema>;
     TEXT_QUALITY_CHECK: z.infer<typeof textQualityOutputSchema>;
+    TRANSLATE_TO_CHINESE: z.infer<typeof translateToChineseOutputSchema>;
     AI_SOLVE_QUESTION: z.infer<typeof aiSolveOutputSchema>;
     ANSWER_MATCH_CHECK: z.infer<typeof answerMatchOutputSchema>;
     REASONING_COMPARE: z.infer<typeof reasoningCompareOutputSchema>;

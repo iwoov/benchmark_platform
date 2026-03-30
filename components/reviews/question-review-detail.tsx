@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { App, Button, Input, Select, Space, Tag } from "antd";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Languages } from "lucide-react";
+import { translateReviewFieldAction } from "@/app/actions/review-field-translation";
 import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import type {
@@ -88,11 +89,25 @@ function renderRawFieldValue(value: unknown) {
         );
     }
 
-    if (
-        value == null ||
-        (typeof value === "string" && value.trim() === "")
-    ) {
+    if (value == null || (typeof value === "string" && value.trim() === "")) {
         return "—";
+    }
+
+    if (typeof value === "object") {
+        return formatJson(value);
+    }
+
+    return String(value);
+}
+
+function getTranslatableFieldValue(value: unknown) {
+    if (value == null) {
+        return null;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
     }
 
     if (typeof value === "object") {
@@ -202,13 +217,33 @@ export function QuestionReviewDetail({
         "PASS" | "REJECT" | "NEEDS_REVISION"
     >("PASS");
     const [comment, setComment] = useState("");
+    const [fieldTranslations, setFieldTranslations] = useState<
+        Record<
+            string,
+            {
+                loading: boolean;
+                translatedText?: string;
+                displayedText?: string;
+                sourceLanguage?: string | null;
+            }
+        >
+    >({});
     const [isSubmitting, startSubmitting] = useTransition();
+    const translationTimersRef = useRef<Record<string, number>>({});
 
     const orderedRawEntries = (
         question.rawFieldOrder.length
             ? question.rawFieldOrder
             : Object.keys(question.rawRecord)
     ).map((key) => [key, question.rawRecord[key]] as const);
+
+    useEffect(() => {
+        return () => {
+            Object.values(translationTimersRef.current).forEach((timerId) => {
+                window.clearTimeout(timerId);
+            });
+        };
+    }, []);
 
     function submitReview() {
         startSubmitting(async () => {
@@ -242,6 +277,96 @@ export function QuestionReviewDetail({
         }
 
         router.push(`${listPath}/${questionId}`);
+    }
+
+    function streamTranslatedText(
+        fieldKey: string,
+        fullText: string,
+        sourceLanguage?: string | null,
+    ) {
+        const characters = Array.from(fullText);
+        const chunkSize =
+            characters.length > 360 ? 10 : characters.length > 180 ? 6 : 3;
+
+        const tick = (index: number) => {
+            setFieldTranslations((current) => ({
+                ...current,
+                [fieldKey]: {
+                    loading: false,
+                    translatedText: fullText,
+                    displayedText: characters.slice(0, index).join(""),
+                    sourceLanguage,
+                },
+            }));
+
+            if (index >= characters.length) {
+                delete translationTimersRef.current[fieldKey];
+                return;
+            }
+
+            translationTimersRef.current[fieldKey] = window.setTimeout(
+                () => tick(Math.min(index + chunkSize, characters.length)),
+                18,
+            );
+        };
+
+        tick(0);
+    }
+
+    async function translateField(fieldKey: string, value: unknown) {
+        const rawValue = getTranslatableFieldValue(value);
+
+        if (!rawValue) {
+            notification.warning({
+                message: "没有可翻译内容",
+                description: `字段 ${fieldKey} 当前为空，无法翻译。`,
+                placement: "topRight",
+            });
+            return;
+        }
+
+        setFieldTranslations((current) => ({
+            ...current,
+            [fieldKey]: {
+                ...current[fieldKey],
+                loading: true,
+                displayedText: "",
+            },
+        }));
+
+        if (translationTimersRef.current[fieldKey]) {
+            window.clearTimeout(translationTimersRef.current[fieldKey]);
+            delete translationTimersRef.current[fieldKey];
+        }
+
+        const result = await translateReviewFieldAction({
+            questionId: question.id,
+            fieldKey,
+            value: rawValue,
+        });
+
+        if (result.error) {
+            notification.error({
+                message: "翻译失败",
+                description: result.error,
+                placement: "topRight",
+            });
+            setFieldTranslations((current) => ({
+                ...current,
+                [fieldKey]: {
+                    ...current[fieldKey],
+                    loading: false,
+                    displayedText: undefined,
+                },
+            }));
+            return;
+        }
+
+        streamTranslatedText(
+            fieldKey,
+            result.translatedText ?? "",
+            result.sourceLanguage,
+        );
     }
 
     return (
@@ -336,14 +461,53 @@ export function QuestionReviewDetail({
 
                 {orderedRawEntries.length ? (
                     <div className="detail-card-grid">
-                        {orderedRawEntries.map(([key, value]) => (
-                            <div key={key} className="detail-field-card">
-                                <div className="detail-field-label">{key}</div>
-                                <div className="detail-field-content">
-                                    {renderRawFieldValue(value)}
+                        {orderedRawEntries.map(([key, value]) => {
+                            const translationState = fieldTranslations[key];
+                            const translatableValue =
+                                getTranslatableFieldValue(value);
+
+                            return (
+                                <div key={key} className="detail-field-card">
+                                    <div className="detail-field-head">
+                                        <div className="detail-field-label">
+                                            {key}
+                                        </div>
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            icon={<Languages size={16} />}
+                                            loading={translationState?.loading}
+                                            disabled={!translatableValue}
+                                            onClick={() =>
+                                                translateField(key, value)
+                                            }
+                                        >
+                                            翻译
+                                        </Button>
+                                    </div>
+                                    <div className="detail-field-content">
+                                        {renderRawFieldValue(value)}
+                                    </div>
+                                    {translationState?.loading ||
+                                    translationState?.displayedText ? (
+                                        <div className="detail-field-translation">
+                                            <div className="detail-field-translation-label">
+                                                AI 翻译
+                                                {translationState.sourceLanguage
+                                                    ? ` · ${translationState.sourceLanguage}`
+                                                    : ""}
+                                            </div>
+                                            <div className="detail-field-translation-body">
+                                                {translationState.loading &&
+                                                !translationState.displayedText
+                                                    ? "正在翻译..."
+                                                    : translationState.displayedText}
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 ) : (
                     <div className="muted">当前题目没有原始字段可展示。</div>
