@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
 
 function normalizeRawValue(value: unknown): string {
     if (value === null || value === undefined) {
@@ -147,6 +148,17 @@ export type ReviewQuestionListPageData = {
     pageSize: number;
 };
 
+export type ReviewQuestionListFilterMeta = {
+    datasourceOptions: Array<{
+        value: string;
+        label: string;
+    }>;
+    rawFieldOptions: Array<{
+        key: string;
+        label: string;
+    }>;
+};
+
 export async function getReviewQuestionListData(projectIds?: string[]) {
     if (!process.env.DATABASE_URL) {
         return [];
@@ -219,10 +231,12 @@ export async function getReviewQuestionListPageData({
     projectId,
     page = 1,
     pageSize = 50,
+    conditions = [],
 }: {
     projectId: string;
     page?: number;
     pageSize?: number;
+    conditions?: ReviewQuestionFilterCondition[];
 }): Promise<ReviewQuestionListPageData> {
     if (!process.env.DATABASE_URL || !projectId) {
         return {
@@ -234,51 +248,44 @@ export async function getReviewQuestionListPageData({
     }
 
     const normalizedPageSize = [20, 50, 100].includes(pageSize) ? pageSize : 50;
-    const orderedIds = await prisma.question.findMany({
+    const statusCondition = conditions.find(
+        (condition) => condition.fieldKey === "status",
+    );
+    const datasourceCondition = conditions.find(
+        (condition) => condition.fieldKey === "datasourceId",
+    );
+    const validStatusValue =
+        statusCondition?.value === "DRAFT" ||
+        statusCondition?.value === "SUBMITTED" ||
+        statusCondition?.value === "UNDER_REVIEW" ||
+        statusCondition?.value === "APPROVED" ||
+        statusCondition?.value === "REJECTED"
+            ? statusCondition.value
+            : null;
+    const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
-        },
-        select: {
-            id: true,
-            externalRecordId: true,
-        },
-    });
-
-    const sortedIds = orderedIds
-        .sort((left, right) => {
-            const externalOrderDiff =
-                parseExternalRecordOrder(left.externalRecordId) -
-                parseExternalRecordOrder(right.externalRecordId);
-
-            if (externalOrderDiff !== 0) {
-                return externalOrderDiff;
-            }
-
-            return left.externalRecordId.localeCompare(right.externalRecordId);
-        })
-        .map((question) => question.id);
-    const total = sortedIds.length;
-    const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
-    const normalizedPage = Math.min(Math.max(1, page), totalPages);
-    const pageIds = sortedIds.slice(
-        (normalizedPage - 1) * normalizedPageSize,
-        normalizedPage * normalizedPageSize,
-    );
-
-    if (!pageIds.length) {
-        return {
-            items: [],
-            total,
-            page: normalizedPage,
-            pageSize: normalizedPageSize,
-        };
-    }
-
-    const rows = await prisma.question.findMany({
-        where: {
-            id: {
-                in: pageIds,
-            },
+            status:
+                statusCondition?.operator === "equals" && validStatusValue
+                    ? {
+                          equals: validStatusValue,
+                      }
+                    : statusCondition?.operator === "notEquals" &&
+                        validStatusValue
+                      ? {
+                            not: validStatusValue,
+                        }
+                      : undefined,
+            datasourceId:
+                datasourceCondition?.operator === "equals"
+                    ? {
+                          equals: datasourceCondition.value,
+                      }
+                    : datasourceCondition?.operator === "notEquals"
+                      ? {
+                            not: datasourceCondition.value,
+                        }
+                      : undefined,
         },
         select: {
             id: true,
@@ -303,39 +310,186 @@ export async function getReviewQuestionListPageData({
             },
         },
     });
+    const sortedRows = candidateRows
+        .map<ReviewQuestionListItem>((question) => ({
+            id: question.id,
+            projectId: question.project.id,
+            projectName: question.project.name,
+            projectCode: question.project.code,
+            datasourceId: question.datasource.id,
+            datasourceName: question.datasource.name,
+            externalRecordId: question.externalRecordId,
+            title: question.title,
+            status: question.status,
+            updatedAt: question.updatedAt.toISOString(),
+            sourceRowNumber: extractSourceRowNumber(question.metadata),
+            rawRecord: extractRawRecord(question.metadata),
+            rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        }))
+        .filter((question) =>
+            conditions.every((condition) => {
+                const fieldValue =
+                    condition.fieldKey === "status"
+                        ? question.status
+                        : condition.fieldKey === "datasourceId"
+                          ? question.datasourceId
+                          : condition.fieldKey === "sourceRowNumber"
+                            ? question.sourceRowNumber
+                            : (question.rawRecord[
+                                  condition.fieldKey.slice(4)
+                              ] ?? "");
 
-    const rowMap = new Map(
-        rows.map((question) => [
-            question.id,
-            {
-                id: question.id,
-                projectId: question.project.id,
-                projectName: question.project.name,
-                projectCode: question.project.code,
-                datasourceId: question.datasource.id,
-                datasourceName: question.datasource.name,
-                externalRecordId: question.externalRecordId,
-                title: question.title,
-                status: question.status,
-                updatedAt: question.updatedAt.toISOString(),
-                sourceRowNumber: extractSourceRowNumber(question.metadata),
-                rawRecord: extractRawRecord(question.metadata),
-                rawFieldOrder: extractRawFieldOrder(
-                    question.datasource.syncConfig,
-                ),
-            } satisfies ReviewQuestionListItem,
-        ]),
+                if (
+                    condition.fieldKey === "status" ||
+                    condition.fieldKey === "datasourceId"
+                ) {
+                    if (condition.operator === "equals") {
+                        return fieldValue === condition.value;
+                    }
+
+                    if (condition.operator === "notEquals") {
+                        return fieldValue !== condition.value;
+                    }
+
+                    return true;
+                }
+
+                if (condition.fieldKey === "sourceRowNumber") {
+                    const targetValue = Number(condition.value);
+
+                    if (
+                        Number.isNaN(targetValue) ||
+                        typeof fieldValue !== "number"
+                    ) {
+                        return false;
+                    }
+
+                    if (condition.operator === "equals") {
+                        return fieldValue === targetValue;
+                    }
+
+                    if (condition.operator === "gt") {
+                        return fieldValue > targetValue;
+                    }
+
+                    if (condition.operator === "lt") {
+                        return fieldValue < targetValue;
+                    }
+
+                    return true;
+                }
+
+                const normalizedFieldValue = String(fieldValue)
+                    .trim()
+                    .toLowerCase();
+                const normalizedCompareValue = condition.value
+                    .trim()
+                    .toLowerCase();
+
+                if (condition.operator === "isEmpty") {
+                    return !normalizedFieldValue;
+                }
+
+                if (condition.operator === "isNotEmpty") {
+                    return Boolean(normalizedFieldValue);
+                }
+
+                if (condition.operator === "equals") {
+                    return normalizedFieldValue === normalizedCompareValue;
+                }
+
+                if (condition.operator === "notEquals") {
+                    return normalizedFieldValue !== normalizedCompareValue;
+                }
+
+                if (condition.operator === "notContains") {
+                    return !normalizedFieldValue.includes(
+                        normalizedCompareValue,
+                    );
+                }
+
+                return normalizedFieldValue.includes(normalizedCompareValue);
+            }),
+        )
+        .sort((left, right) => {
+            const externalOrderDiff =
+                parseExternalRecordOrder(left.externalRecordId) -
+                parseExternalRecordOrder(right.externalRecordId);
+
+            if (externalOrderDiff !== 0) {
+                return externalOrderDiff;
+            }
+
+            return left.externalRecordId.localeCompare(right.externalRecordId);
+        });
+    const total = sortedRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
+    const normalizedPage = Math.min(Math.max(1, page), totalPages);
+    const pageItems = sortedRows.slice(
+        (normalizedPage - 1) * normalizedPageSize,
+        normalizedPage * normalizedPageSize,
     );
 
+    if (!pageItems.length) {
+        return {
+            items: [],
+            total,
+            page: normalizedPage,
+            pageSize: normalizedPageSize,
+        };
+    }
+
     return {
-        items: pageIds
-            .map((questionId) => rowMap.get(questionId))
-            .filter((question): question is ReviewQuestionListItem =>
-                Boolean(question),
-            ),
+        items: pageItems,
         total,
         page: normalizedPage,
         pageSize: normalizedPageSize,
+    };
+}
+
+export async function getReviewQuestionListFilterMeta(
+    projectId: string,
+): Promise<ReviewQuestionListFilterMeta> {
+    if (!process.env.DATABASE_URL || !projectId) {
+        return {
+            datasourceOptions: [],
+            rawFieldOptions: [],
+        };
+    }
+
+    const datasources = await prisma.projectDataSource.findMany({
+        where: {
+            projectId,
+            status: "ACTIVE",
+        },
+        orderBy: [{ name: "asc" }],
+        select: {
+            id: true,
+            name: true,
+            syncConfig: true,
+        },
+    });
+    const rawFieldOptions = datasources.reduce<
+        Array<{ key: string; label: string }>
+    >((fields, datasource) => {
+        for (const field of extractRawFieldOrder(datasource.syncConfig)) {
+            if (!fields.some((item) => item.key === field)) {
+                fields.push({
+                    key: field,
+                    label: field,
+                });
+            }
+        }
+
+        return fields;
+    }, []);
+
+    return {
+        datasourceOptions: datasources.map((datasource) => ({
+            value: datasource.id,
+            label: datasource.name,
+        })),
+        rawFieldOptions,
     };
 }
 

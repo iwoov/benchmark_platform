@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/db/prisma";
 import { ReviewQuestionList } from "@/components/workspace/review-question-list";
-import { getReviewQuestionListPageData } from "@/lib/reviews/question-list-data";
+import {
+    getReviewQuestionListFilterMeta,
+    getReviewQuestionListPageData,
+} from "@/lib/reviews/question-list-data";
 import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
+import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -52,15 +56,22 @@ export default async function ReviewTasksPage({
         resolvedSearchParams.pageSize,
         50,
     );
+    const filters = parseReviewQuestionFilterConditions(
+        Array.isArray(resolvedSearchParams.filters)
+            ? resolvedSearchParams.filters[0]
+            : resolvedSearchParams.filters,
+    );
 
-    const [questionPage, reviewStrategies] = selectedProjectId
+    const [questionPage, reviewStrategies, filterMeta] = selectedProjectId
         ? await Promise.all([
               getReviewQuestionListPageData({
                   projectId: selectedProjectId,
                   page: requestedPage,
                   pageSize: requestedPageSize,
+                  conditions: filters,
               }),
               getReviewQuestionListAiStrategies([selectedProjectId]),
+              getReviewQuestionListFilterMeta(selectedProjectId),
           ])
         : [
               {
@@ -70,6 +81,10 @@ export default async function ReviewTasksPage({
                   pageSize: 50,
               },
               [],
+              {
+                  datasourceOptions: [],
+                  rawFieldOptions: [],
+              },
           ];
 
     return (
@@ -83,6 +98,9 @@ export default async function ReviewTasksPage({
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}
+            activeConditions={filters}
+            datasourceOptions={filterMeta.datasourceOptions}
+            rawFieldOptions={filterMeta.rawFieldOptions}
             reviewStrategies={reviewStrategies}
         />
     );

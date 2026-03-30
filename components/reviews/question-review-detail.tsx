@@ -231,6 +231,9 @@ export function QuestionReviewDetail({
     const [isSubmitting, startSubmitting] = useTransition();
     const translationTimersRef = useRef<Record<string, number>>({});
     const detailBasePath = listPath.split("?")[0];
+    const listQuery = listPath.includes("?")
+        ? listPath.slice(listPath.indexOf("?"))
+        : "";
 
     const orderedRawEntries = (
         question.rawFieldOrder.length
@@ -279,7 +282,7 @@ export function QuestionReviewDetail({
             return;
         }
 
-        router.push(`${detailBasePath}/${questionId}`);
+        router.push(`${detailBasePath}/${questionId}${listQuery}`);
     }
 
     function goBackToList() {

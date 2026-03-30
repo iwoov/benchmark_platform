@@ -47,7 +47,7 @@ export default async function WorkspaceReviewDetailPage({
     const resolvedSearchParams = (await searchParams) ?? {};
     const listSearch = new URLSearchParams();
 
-    for (const key of ["projectId", "page", "pageSize"]) {
+    for (const key of ["projectId", "page", "pageSize", "filters"]) {
         const value = resolvedSearchParams[key];
         const normalized = Array.isArray(value) ? value[0] : value;
 

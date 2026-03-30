@@ -17,13 +17,15 @@ import {
 } from "antd";
 import { Bot, SlidersHorizontal, X } from "lucide-react";
 import { runAiReviewStrategyAction } from "@/app/actions/ai-review-strategies";
-
-type QuestionStatus =
-    | "DRAFT"
-    | "SUBMITTED"
-    | "UNDER_REVIEW"
-    | "APPROVED"
-    | "REJECTED";
+import {
+    conditionNeedsValue,
+    createReviewQuestionFilterCondition,
+    serializeReviewQuestionFilterConditions,
+    type QuestionStatus,
+    type ReviewQuestionFilterCondition,
+    type ReviewQuestionFilterFieldKey,
+    type ReviewQuestionFilterOperator,
+} from "@/lib/reviews/question-list-filters";
 
 type ProjectOption = {
     id: string;
@@ -57,29 +59,8 @@ type ReviewQuestionItem = {
     rawFieldOrder: string[];
 };
 
-type SystemFieldKey = "status" | "datasourceId" | "sourceRowNumber";
-type RawFieldKey = `raw:${string}`;
-type FilterFieldKey = SystemFieldKey | RawFieldKey;
-
-type FilterOperator =
-    | "equals"
-    | "notEquals"
-    | "contains"
-    | "notContains"
-    | "isEmpty"
-    | "isNotEmpty"
-    | "gt"
-    | "lt";
-
-type FilterCondition = {
-    id: string;
-    fieldKey: FilterFieldKey;
-    operator: FilterOperator;
-    value: string;
-};
-
 type FieldDefinition = {
-    value: FilterFieldKey;
+    value: ReviewQuestionFilterFieldKey;
     label: string;
     kind: "system" | "raw";
     valueType: "text" | "select" | "number";
@@ -98,23 +79,6 @@ const cellStyle = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
 } as const;
-
-function conditionNeedsValue(operator: FilterOperator) {
-    return operator !== "isEmpty" && operator !== "isNotEmpty";
-}
-
-function normalizeText(value: string | null | undefined) {
-    return (value ?? "").trim().toLowerCase();
-}
-
-function createCondition(seed = 0): FilterCondition {
-    return {
-        id: `condition-${Date.now()}-${seed}`,
-        fieldKey: "status",
-        operator: "equals",
-        value: "SUBMITTED",
-    };
-}
 
 function buildRawColumns(questions: ReviewQuestionItem[]) {
     const orderedFields = questions.reduce<string[]>((fields, question) => {
@@ -145,7 +109,10 @@ function getOperatorOptions(valueType: FieldDefinition["valueType"]) {
         return [
             { value: "equals", label: "等于" },
             { value: "notEquals", label: "不等于" },
-        ] satisfies Array<{ value: FilterOperator; label: string }>;
+        ] satisfies Array<{
+            value: ReviewQuestionFilterOperator;
+            label: string;
+        }>;
     }
 
     if (valueType === "number") {
@@ -153,7 +120,10 @@ function getOperatorOptions(valueType: FieldDefinition["valueType"]) {
             { value: "equals", label: "等于" },
             { value: "gt", label: "大于" },
             { value: "lt", label: "小于" },
-        ] satisfies Array<{ value: FilterOperator; label: string }>;
+        ] satisfies Array<{
+            value: ReviewQuestionFilterOperator;
+            label: string;
+        }>;
     }
 
     return [
@@ -162,90 +132,10 @@ function getOperatorOptions(valueType: FieldDefinition["valueType"]) {
         { value: "equals", label: "等于" },
         { value: "isEmpty", label: "为空" },
         { value: "isNotEmpty", label: "不为空" },
-    ] satisfies Array<{ value: FilterOperator; label: string }>;
-}
-
-function getFieldValue(question: ReviewQuestionItem, fieldKey: FilterFieldKey) {
-    if (fieldKey === "status") {
-        return question.status;
-    }
-
-    if (fieldKey === "datasourceId") {
-        return question.datasourceId;
-    }
-
-    if (fieldKey === "sourceRowNumber") {
-        return question.sourceRowNumber;
-    }
-
-    return question.rawRecord[fieldKey.slice(4)] ?? "";
-}
-
-function matchesCondition(
-    question: ReviewQuestionItem,
-    condition: FilterCondition,
-    fieldDefinition: FieldDefinition | undefined,
-) {
-    if (!fieldDefinition) {
-        return true;
-    }
-
-    const fieldValue = getFieldValue(question, condition.fieldKey);
-
-    if (fieldDefinition.valueType === "select") {
-        if (condition.operator === "equals") {
-            return fieldValue === condition.value;
-        }
-
-        return fieldValue !== condition.value;
-    }
-
-    if (fieldDefinition.valueType === "number") {
-        const targetValue = Number(condition.value);
-
-        if (Number.isNaN(targetValue) || typeof fieldValue !== "number") {
-            return false;
-        }
-
-        if (condition.operator === "equals") {
-            return fieldValue === targetValue;
-        }
-
-        if (condition.operator === "gt") {
-            return fieldValue > targetValue;
-        }
-
-        return fieldValue < targetValue;
-    }
-
-    const normalizedFieldValue = normalizeText(String(fieldValue));
-    const normalizedCompareValue = normalizeText(condition.value);
-
-    if (condition.operator === "isEmpty") {
-        return !normalizedFieldValue;
-    }
-
-    if (condition.operator === "isNotEmpty") {
-        return Boolean(normalizedFieldValue);
-    }
-
-    if (condition.operator === "equals") {
-        return normalizedFieldValue === normalizedCompareValue;
-    }
-
-    if (condition.operator === "notContains") {
-        return !normalizedFieldValue.includes(normalizedCompareValue);
-    }
-
-    return normalizedFieldValue.includes(normalizedCompareValue);
-}
-
-function sanitizeConditions(conditions: FilterCondition[]) {
-    return conditions.filter((condition) =>
-        conditionNeedsValue(condition.operator)
-            ? Boolean(condition.value.trim())
-            : true,
-    );
+    ] satisfies Array<{
+        value: ReviewQuestionFilterOperator;
+        label: string;
+    }>;
 }
 
 export function ReviewQuestionList({
@@ -258,6 +148,9 @@ export function ReviewQuestionList({
     currentPage,
     pageSize,
     totalQuestions,
+    activeConditions,
+    datasourceOptions,
+    rawFieldOptions,
     reviewStrategies,
 }: {
     canReview: boolean;
@@ -269,15 +162,17 @@ export function ReviewQuestionList({
     currentPage: number;
     pageSize: number;
     totalQuestions: number;
+    activeConditions: ReviewQuestionFilterCondition[];
+    datasourceOptions: Array<{ value: string; label: string }>;
+    rawFieldOptions: Array<{ key: string; label: string }>;
     reviewStrategies: ReviewStrategyOption[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
     const [modalOpen, setModalOpen] = useState(false);
-    const [conditions, setConditions] = useState<FilterCondition[]>([]);
-    const [draftConditions, setDraftConditions] = useState<FilterCondition[]>(
-        [],
-    );
+    const [draftConditions, setDraftConditions] = useState<
+        ReviewQuestionFilterCondition[]
+    >([]);
     const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>(
         [],
     );
@@ -294,17 +189,16 @@ export function ReviewQuestionList({
         currentQuestionTitle?: string;
     } | null>(null);
 
-    const projectQuestions = useMemo(
-        () =>
-            questions.filter(
-                (question) => question.projectId === selectedProjectId,
-            ),
-        [questions, selectedProjectId],
-    );
-
     const rawColumns = useMemo(
-        () => buildRawColumns(projectQuestions),
-        [projectQuestions],
+        () =>
+            questions.length
+                ? buildRawColumns(questions)
+                : rawFieldOptions.map((field) => ({
+                      key: field.key,
+                      label: field.label,
+                      width: 220,
+                  })),
+        [questions, rawFieldOptions],
     );
 
     const fieldDefinitions = useMemo(() => {
@@ -328,15 +222,15 @@ export function ReviewQuestionList({
                 valueType: "number",
             },
         ];
-        const rawFields = rawColumns.map((column) => ({
-            value: `raw:${column.key}` as const,
-            label: column.label,
+        const rawFields = rawFieldOptions.map((field) => ({
+            value: `raw:${field.key}` as const,
+            label: field.label,
             kind: "raw" as const,
             valueType: "text" as const,
         }));
 
         return [...systemFields, ...rawFields];
-    }, [rawColumns]);
+    }, [rawFieldOptions]);
 
     const fieldDefinitionMap = useMemo(
         () =>
@@ -345,40 +239,12 @@ export function ReviewQuestionList({
                     definition.value,
                     definition,
                 ]),
-            ) as Record<FilterFieldKey, FieldDefinition>,
+            ) as Record<ReviewQuestionFilterFieldKey, FieldDefinition>,
         [fieldDefinitions],
     );
-
-    const datasourceOptions = useMemo(
-        () =>
-            Array.from(
-                projectQuestions.reduce((items, question) => {
-                    items.set(question.datasourceId, {
-                        value: question.datasourceId,
-                        label: question.datasourceName,
-                    });
-                    return items;
-                }, new Map<string, { value: string; label: string }>()),
-            ).map(([, value]) => value),
-        [projectQuestions],
-    );
-
-    const visibleQuestions = useMemo(() => {
-        const activeConditions = sanitizeConditions(conditions);
-
-        return projectQuestions.filter((question) =>
-            activeConditions.every((condition) =>
-                matchesCondition(
-                    question,
-                    condition,
-                    fieldDefinitionMap[condition.fieldKey],
-                ),
-            ),
-        );
-    }, [conditions, fieldDefinitionMap, projectQuestions]);
     const visibleQuestionIds = useMemo(
-        () => visibleQuestions.map((question) => question.id),
-        [visibleQuestions],
+        () => questions.map((question) => question.id),
+        [questions],
     );
     const selectedQuestionIdSet = useMemo(
         () => new Set(selectedQuestionIds),
@@ -386,10 +252,10 @@ export function ReviewQuestionList({
     );
     const selectedQuestions = useMemo(
         () =>
-            visibleQuestions.filter((question) =>
+            questions.filter((question) =>
                 selectedQuestionIdSet.has(question.id),
             ),
-        [selectedQuestionIdSet, visibleQuestions],
+        [questions, selectedQuestionIdSet],
     );
     const projectReviewStrategies = useMemo(
         () =>
@@ -451,6 +317,13 @@ export function ReviewQuestionList({
             pageSize: String(pageSize),
         });
 
+        const serializedFilters =
+            serializeReviewQuestionFilterConditions(activeConditions);
+
+        if (serializedFilters) {
+            search.set("filters", serializedFilters);
+        }
+
         return `${listPath}/${questionId}?${search.toString()}`;
     }
 
@@ -458,12 +331,20 @@ export function ReviewQuestionList({
         projectId?: string;
         page?: number;
         pageSize?: number;
+        conditions?: ReviewQuestionFilterCondition[];
     }) {
         const search = new URLSearchParams({
             projectId: next.projectId ?? selectedProjectId,
             page: String(next.page ?? currentPage),
             pageSize: String(next.pageSize ?? pageSize),
         });
+        const serializedFilters = serializeReviewQuestionFilterConditions(
+            next.conditions ?? activeConditions,
+        );
+
+        if (serializedFilters) {
+            search.set("filters", serializedFilters);
+        }
 
         router.push(`${listPath}?${search.toString()}`);
     }
@@ -638,7 +519,7 @@ export function ReviewQuestionList({
                     </p>
                 </div>
                 <Tag color="blue">
-                    {visibleQuestions.length} / {projectQuestions.length}
+                    {questions.length} / {totalQuestions}
                 </Tag>
             </div>
 
@@ -654,11 +535,11 @@ export function ReviewQuestionList({
                             <Select
                                 value={selectedProjectId}
                                 onChange={(value) => {
-                                    setConditions([]);
                                     setSelectedQuestionIds([]);
                                     pushListState({
                                         projectId: value,
                                         page: 1,
+                                        conditions: [],
                                     });
                                 }}
                                 options={projects.map((project) => ({
@@ -683,17 +564,28 @@ export function ReviewQuestionList({
                                 icon={<SlidersHorizontal size={16} />}
                                 onClick={() => {
                                     setDraftConditions(
-                                        conditions.length
-                                            ? conditions
-                                            : [createCondition(1)],
+                                        activeConditions.length
+                                            ? activeConditions
+                                            : [
+                                                  createReviewQuestionFilterCondition(
+                                                      1,
+                                                  ),
+                                              ],
                                     );
                                     setModalOpen(true);
                                 }}
                             >
                                 筛选条件
                             </Button>
-                            {conditions.length ? (
-                                <Button onClick={() => setConditions([])}>
+                            {activeConditions.length ? (
+                                <Button
+                                    onClick={() =>
+                                        pushListState({
+                                            page: 1,
+                                            conditions: [],
+                                        })
+                                    }
+                                >
                                     清空筛选
                                 </Button>
                             ) : null}
@@ -718,9 +610,9 @@ export function ReviewQuestionList({
                         </div>
                     </div>
 
-                    {conditions.length ? (
+                    {activeConditions.length ? (
                         <div className="review-filter-tags">
-                            {conditions.map((condition) => {
+                            {activeConditions.map((condition) => {
                                 const fieldDefinition =
                                     fieldDefinitionMap[condition.fieldKey];
                                 const datasourceLabel = datasourceOptions.find(
@@ -729,7 +621,7 @@ export function ReviewQuestionList({
                                 )?.label;
                                 const operatorLabel =
                                     getOperatorOptions(
-                                        fieldDefinition.valueType,
+                                        fieldDefinition?.valueType ?? "text",
                                     ).find(
                                         (option) =>
                                             option.value === condition.operator,
@@ -745,7 +637,9 @@ export function ReviewQuestionList({
 
                                 return (
                                     <Tag key={condition.id} color="blue">
-                                        {fieldDefinition.label} {operatorLabel}
+                                        {fieldDefinition?.label ??
+                                            condition.fieldKey}{" "}
+                                        {operatorLabel}
                                         {conditionNeedsValue(condition.operator)
                                             ? ` ${valueLabel}`
                                             : ""}
@@ -760,10 +654,10 @@ export function ReviewQuestionList({
                             description="当前项目下还没有原始字段可展示"
                             style={{ marginTop: 24 }}
                         />
-                    ) : !visibleQuestions.length ? (
+                    ) : !questions.length ? (
                         <Empty
                             description={
-                                projectQuestions.length
+                                totalQuestions
                                     ? "当前筛选条件下没有记录"
                                     : "当前项目下还没有题目"
                             }
@@ -831,7 +725,7 @@ export function ReviewQuestionList({
                                         ))}
                                     </div>
 
-                                    {visibleQuestions.map((question) => (
+                                    {questions.map((question) => (
                                         <div
                                             key={question.id}
                                             role="button"
@@ -990,7 +884,10 @@ export function ReviewQuestionList({
                         open={modalOpen}
                         onCancel={() => setModalOpen(false)}
                         onOk={() => {
-                            setConditions(sanitizeConditions(draftConditions));
+                            pushListState({
+                                page: 1,
+                                conditions: draftConditions,
+                            });
                             setModalOpen(false);
                         }}
                         okText="应用筛选"
@@ -1014,7 +911,7 @@ export function ReviewQuestionList({
                                     const fieldDefinition =
                                         fieldDefinitionMap[condition.fieldKey];
                                     const operatorOptions: Array<{
-                                        value: FilterOperator;
+                                        value: ReviewQuestionFilterOperator;
                                         label: string;
                                     }> = getOperatorOptions(
                                         fieldDefinition?.valueType ?? "text",
