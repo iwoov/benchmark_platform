@@ -6,6 +6,7 @@ import {
 import { prisma } from "@/lib/db/prisma";
 import { executeAiReviewStrategy } from "@/lib/ai/review-strategies";
 import { aiReviewStrategyDefinitionSchema } from "@/lib/ai/review-strategy-schema";
+import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 
 const TERMINAL_BATCH_STATUSES = new Set<BatchRunStatus>([
     BatchRunStatus.SUCCESS,
@@ -700,6 +701,7 @@ async function executeBatchRunItem(
         questionId: string;
     },
 ) {
+    const startedAt = Date.now();
     try {
         const result = await executeAiReviewStrategy(
             batchRun.strategyId,
@@ -725,19 +727,32 @@ async function executeBatchRunItem(
                 finishedAt: new Date(),
             },
         });
+        logInfo("batch.item.success", {
+            batchRunId: batchRun.id,
+            itemId: item.id,
+            questionId: item.questionId,
+            runId: result.runId,
+            durationMs: Date.now() - startedAt,
+        });
     } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "批量任务执行失败。";
         await prisma.aiReviewStrategyBatchRunItem.update({
             where: {
                 id: item.id,
             },
             data: {
                 status: BatchRunItemStatus.FAILED,
-                errorMessage:
-                    error instanceof Error
-                        ? error.message
-                        : "批量任务执行失败。",
+                errorMessage: message,
                 finishedAt: new Date(),
             },
+        });
+        logError("batch.item.failed", {
+            batchRunId: batchRun.id,
+            itemId: item.id,
+            questionId: item.questionId,
+            durationMs: Date.now() - startedAt,
+            error: message,
         });
     } finally {
         await syncBatchRunState(batchRun.id);
@@ -762,6 +777,10 @@ async function processBatchRun(batchRunId: string, workerId: string) {
         });
 
         if (!batchRun) {
+            logInfo("batch.run.missing", {
+                batchRunId,
+                workerId,
+            });
             return;
         }
 
@@ -776,6 +795,12 @@ async function processBatchRun(batchRunId: string, workerId: string) {
         });
 
         if (batchRun.status === BatchRunStatus.CANCEL_REQUESTED) {
+            logWarn("batch.run.cancel_requested", {
+                batchRunId: batchRun.id,
+                workerId,
+                runningCount: batchRun.runningCount,
+                pendingCount: batchRun.pendingCount,
+            });
             await prisma.aiReviewStrategyBatchRunItem.updateMany({
                 where: {
                     batchRunId: batchRun.id,
@@ -791,12 +816,20 @@ async function processBatchRun(batchRunId: string, workerId: string) {
             const nextState = await syncBatchRunState(batchRun.id);
 
             if (!nextState?.runningCount) {
+                logInfo("batch.run.cancelled", {
+                    batchRunId: batchRun.id,
+                    workerId,
+                });
                 return;
             }
         }
 
         if (!batchRun.pendingCount && !batchRun.runningCount) {
             await syncBatchRunState(batchRun.id);
+            logInfo("batch.run.finished", {
+                batchRunId: batchRun.id,
+                workerId,
+            });
             return;
         }
 
@@ -805,8 +838,20 @@ async function processBatchRun(batchRunId: string, workerId: string) {
 
         if (!items.length) {
             await syncBatchRunState(batchRun.id);
+            logInfo("batch.run.no_items_to_claim", {
+                batchRunId: batchRun.id,
+                workerId,
+            });
             return;
         }
+
+        logInfo("batch.run.items_claimed", {
+            batchRunId: batchRun.id,
+            workerId,
+            claimCount: items.length,
+            limit,
+            questionIds: items.map((item) => item.questionId),
+        });
 
         await syncBatchRunState(batchRun.id);
         await Promise.allSettled(
@@ -830,6 +875,14 @@ export async function runAiReviewStrategyBatchWorkerOnce(workerId: string) {
     if (!batchRun) {
         return false;
     }
+
+    logInfo("batch.run.claimed", {
+        batchRunId: batchRun.id,
+        workerId,
+        strategyId: batchRun.strategyId,
+        status: batchRun.status,
+        concurrency: batchRun.concurrency,
+    });
 
     await processBatchRun(batchRun.id, workerId);
     return true;

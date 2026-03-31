@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 import { isAdminRole } from "@/lib/auth/roles";
+import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import {
     aiReviewStrategyPersistedSchema,
     type AiReviewStrategyPersistedInput,
@@ -455,6 +456,11 @@ export async function runAiReviewStrategyAction(
     }
 
     try {
+        logInfo("user.request.run_strategy", {
+            userId: session.user.id,
+            strategyId: parsed.data.strategyId,
+            questionId: parsed.data.questionId,
+        });
         const execution = await executeAiReviewStrategy(
             parsed.data.strategyId,
             parsed.data.questionId,
@@ -473,11 +479,27 @@ export async function runAiReviewStrategyAction(
         revalidatePath("/workspace/reviews");
         revalidateStrategyPaths(question.id);
 
+        logInfo("user.request.run_strategy.success", {
+            userId: session.user.id,
+            strategyId: parsed.data.strategyId,
+            questionId: parsed.data.questionId,
+            runId: execution.runId,
+            status: execution.parsedResult.status,
+            reviewPersistenceStatus:
+                execution.parsedResult.reviewPersistence?.status ?? null,
+        });
+
         return {
             success: `题目 ${question.title} 的 AI 审核策略已执行完成。${reviewMessage}`,
         };
     } catch (error) {
         revalidateStrategyPaths(question.id);
+        logError("user.request.run_strategy.failed", {
+            userId: session.user.id,
+            strategyId: parsed.data.strategyId,
+            questionId: parsed.data.questionId,
+            error: error instanceof Error ? error.message : "策略执行失败。",
+        });
         return {
             error: error instanceof Error ? error.message : "策略执行失败。",
         };
@@ -678,6 +700,14 @@ export async function createAiReviewStrategyBatchRunAction(
     }
 
     try {
+        logInfo("user.request.create_batch_run", {
+            userId: session.user.id,
+            strategyId: parsed.data.strategyId,
+            projectId: actualProjectId,
+            questionCount: creatableQuestionIds.length,
+            concurrency: parsed.data.concurrency,
+            skippedDuplicateCount: pendingExternalRecordIds.length,
+        });
         const batchRun = await createAiReviewStrategyBatchRun({
             strategyId: parsed.data.strategyId,
             questionIds: creatableQuestionIds,
@@ -688,6 +718,13 @@ export async function createAiReviewStrategyBatchRunAction(
         revalidatePath("/admin/review-tasks");
         revalidatePath("/workspace/reviews");
 
+        logInfo("user.request.create_batch_run.success", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+            strategyId: parsed.data.strategyId,
+            projectId: actualProjectId,
+        });
+
         return {
             success: pendingExternalRecordIds.length
                 ? `批量任务已创建（新增 ${creatableQuestionIds.length} 题）。以下外部记录 ID 已在待执行/执行中，已自动跳过：${formatExternalRecordIdsForMessage(
@@ -697,6 +734,12 @@ export async function createAiReviewStrategyBatchRunAction(
             batchRunId: batchRun.id,
         };
     } catch (error) {
+        logError("user.request.create_batch_run.failed", {
+            userId: session.user.id,
+            strategyId: parsed.data.strategyId,
+            projectId: actualProjectId,
+            error: error instanceof Error ? error.message : "创建批量任务失败。",
+        });
         return {
             error:
                 error instanceof Error ? error.message : "创建批量任务失败。",
@@ -758,12 +801,26 @@ export async function cancelAiReviewStrategyBatchRunAction(
     }
 
     try {
+        logWarn("user.request.cancel_batch_run", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+            projectId: batchRun.projectId,
+        });
         await cancelAiReviewStrategyBatchRun(batchRun.id);
 
+        logInfo("user.request.cancel_batch_run.success", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+        });
         return {
             success: "批量任务已请求取消。",
         };
     } catch (error) {
+        logError("user.request.cancel_batch_run.failed", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+            error: error instanceof Error ? error.message : "取消批量任务失败。",
+        });
         return {
             error:
                 error instanceof Error ? error.message : "取消批量任务失败。",
@@ -825,14 +882,29 @@ export async function deleteAiReviewStrategyBatchRunAction(
     }
 
     try {
+        logWarn("user.request.delete_batch_run", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+            projectId: batchRun.projectId,
+        });
         await deleteAiReviewStrategyBatchRun(batchRun.id);
         revalidatePath("/admin/review-batches");
         revalidatePath("/workspace/review-batches");
+
+        logInfo("user.request.delete_batch_run.success", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+        });
 
         return {
             success: "批量任务已删除。",
         };
     } catch (error) {
+        logError("user.request.delete_batch_run.failed", {
+            userId: session.user.id,
+            batchRunId: batchRun.id,
+            error: error instanceof Error ? error.message : "删除批量任务失败。",
+        });
         return {
             error:
                 error instanceof Error ? error.message : "删除批量任务失败。",

@@ -4,6 +4,7 @@ import {
     type AiModelRoutingConfig,
     type AiResolvedRoute,
 } from "@/lib/ai/routing";
+import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 
 export type AiMessageRole = "system" | "user" | "assistant";
 
@@ -472,9 +473,14 @@ function summarizeAttempts(attempts: AttemptError[]) {
 export async function invokeAiModel(
     input: AiInvocationRequest,
 ): Promise<AiInvocationResult> {
+    const startedAt = Date.now();
     const config = await getAiModelRoutingConfig(input.modelCode);
 
     if (!config) {
+        logWarn("ai.invoke.config_missing", {
+            modelCode: input.modelCode,
+            stream: Boolean(input.stream),
+        });
         return {
             ok: false,
             modelCode: input.modelCode,
@@ -492,6 +498,11 @@ export async function invokeAiModel(
     const attempts: AttemptError[] = [];
 
     if (!candidateRoutes.length) {
+        logWarn("ai.invoke.no_routes", {
+            modelCode: input.modelCode,
+            protocol: config.protocol,
+            stream,
+        });
         return {
             ok: false,
             modelCode: input.modelCode,
@@ -509,6 +520,16 @@ export async function invokeAiModel(
             routeAttempt += 1
         ) {
             const request = buildRequest(route, input, config, stream);
+            const routeStartAt = Date.now();
+
+            logInfo("ai.invoke.attempt_started", {
+                modelCode: input.modelCode,
+                protocol: config.protocol,
+                stream,
+                providerCode: route.providerCode,
+                endpointCode: route.endpointCode,
+                attempt: routeAttempt,
+            });
 
             try {
                 const response = await fetchWithTimeout(
@@ -522,16 +543,38 @@ export async function invokeAiModel(
                 );
 
                 if (!response.ok) {
+                    const responseError = await parseErrorResponse(response);
                     attempts.push({
                         attempt: routeAttempt,
                         endpointCode: route.endpointCode,
                         providerCode: route.providerCode,
-                        error: await parseErrorResponse(response),
+                        error: responseError,
+                    });
+                    logWarn("ai.invoke.attempt_failed_http", {
+                        modelCode: input.modelCode,
+                        protocol: config.protocol,
+                        stream,
+                        providerCode: route.providerCode,
+                        endpointCode: route.endpointCode,
+                        attempt: routeAttempt,
+                        status: response.status,
+                        durationMs: Date.now() - routeStartAt,
+                        error: responseError,
                     });
                     continue;
                 }
 
                 if (stream) {
+                    logInfo("ai.invoke.success", {
+                        modelCode: input.modelCode,
+                        protocol: config.protocol,
+                        stream,
+                        providerCode: route.providerCode,
+                        endpointCode: route.endpointCode,
+                        attempt: routeAttempt,
+                        durationMs: Date.now() - routeStartAt,
+                        totalDurationMs: Date.now() - startedAt,
+                    });
                     return {
                         ok: true,
                         modelCode: input.modelCode,
@@ -551,6 +594,20 @@ export async function invokeAiModel(
                 }
 
                 const raw = await response.json();
+                const text = extractText(config.protocol, raw);
+
+                logInfo("ai.invoke.success", {
+                    modelCode: input.modelCode,
+                    protocol: config.protocol,
+                    stream,
+                    providerCode: route.providerCode,
+                    endpointCode: route.endpointCode,
+                    attempt: routeAttempt,
+                    durationMs: Date.now() - routeStartAt,
+                    totalDurationMs: Date.now() - startedAt,
+                    hasText: Boolean(text),
+                    textLength: text?.length ?? 0,
+                });
 
                 return {
                     ok: true,
@@ -563,10 +620,10 @@ export async function invokeAiModel(
                         endpointCode: route.endpointCode,
                         endpointLabel: route.endpointLabel,
                         providerCode: route.providerCode,
-                        providerName: route.providerName,
-                        baseUrl: route.baseUrl,
-                    },
-                    text: extractText(config.protocol, raw),
+                            providerName: route.providerName,
+                            baseUrl: route.baseUrl,
+                        },
+                    text,
                     raw,
                 };
             } catch (error) {
@@ -579,9 +636,31 @@ export async function invokeAiModel(
                     providerCode: route.providerCode,
                     error: message,
                 });
+                logError("ai.invoke.attempt_failed_exception", {
+                    modelCode: input.modelCode,
+                    protocol: config.protocol,
+                    stream,
+                    providerCode: route.providerCode,
+                    endpointCode: route.endpointCode,
+                    attempt: routeAttempt,
+                    durationMs: Date.now() - routeStartAt,
+                    error: message,
+                });
             }
         }
     }
+
+    logError("ai.invoke.failed_all_attempts", {
+        modelCode: input.modelCode,
+        protocol: config.protocol,
+        stream,
+        totalDurationMs: Date.now() - startedAt,
+        attempts: attempts.map((attempt) => ({
+            attempt: attempt.attempt,
+            providerCode: attempt.providerCode,
+            endpointCode: attempt.endpointCode,
+        })),
+    });
 
     return {
         ok: false,
