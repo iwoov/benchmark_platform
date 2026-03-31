@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
     App,
@@ -14,8 +14,9 @@ import {
     Select,
     Tag,
 } from "antd";
-import { Bot, SlidersHorizontal, X } from "lucide-react";
+import { Bot, Download, SlidersHorizontal, X } from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
+import { exportReviewQuestionsAction } from "@/app/actions/review-exports";
 import {
     conditionNeedsValue,
     createReviewQuestionFilterCondition,
@@ -63,6 +64,14 @@ type FieldDefinition = {
     label: string;
     kind: "system" | "raw";
     valueType: "text" | "select" | "number";
+};
+
+type ExportFormat = "excel" | "json" | "markdown";
+type ExportScope = "selected" | "filteredAll";
+
+type ExportFieldOption = {
+    value: string;
+    label: string;
 };
 
 const questionStatusMeta = {
@@ -179,6 +188,14 @@ export function ReviewQuestionList({
     const [selectedStrategyId, setSelectedStrategyId] = useState("");
     const [batchConcurrency, setBatchConcurrency] = useState(1);
     const [isCreatingBatchRun, setIsCreatingBatchRun] = useState(false);
+    const [exportModalOpen, setExportModalOpen] = useState(false);
+    const [exportScope, setExportScope] = useState<ExportScope>("selected");
+    const [exportFormat, setExportFormat] = useState<ExportFormat>("excel");
+    const [selectedExportFields, setSelectedExportFields] = useState<string[]>(
+        [],
+    );
+    const [isExporting, setIsExporting] = useState(false);
+    const selectionAnchorQuestionIdRef = useRef<string | null>(null);
 
     const rawColumns = useMemo(
         () =>
@@ -248,6 +265,28 @@ export function ReviewQuestionList({
             ),
         [questions, selectedQuestionIdSet],
     );
+    const exportFieldOptions = useMemo<ExportFieldOption[]>(() => {
+        const baseFields: ExportFieldOption[] = [
+            { value: "externalRecordId", label: "外部记录 ID" },
+            { value: "title", label: "题目标题" },
+            { value: "status", label: "题目状态" },
+            { value: "updatedAt", label: "题目更新时间" },
+            { value: "projectName", label: "项目名称" },
+            { value: "projectCode", label: "项目编码" },
+            { value: "datasourceName", label: "数据源" },
+            { value: "sourceRowNumber", label: "来源行号" },
+            { value: "reviewDecision", label: "审核结论" },
+            { value: "reviewComment", label: "审核意见" },
+            { value: "reviewReviewer", label: "审核人" },
+            { value: "reviewUpdatedAt", label: "审核更新时间" },
+        ];
+        const rawFields = rawFieldOptions.map((field) => ({
+            value: `raw:${field.key}`,
+            label: `原始字段 · ${field.label}`,
+        }));
+
+        return [...baseFields, ...rawFields];
+    }, [rawFieldOptions]);
     const projectReviewStrategies = useMemo(
         () =>
             reviewStrategies.filter(
@@ -291,6 +330,13 @@ export function ReviewQuestionList({
                 visibleQuestionIds.includes(questionId),
             ),
         );
+
+        if (
+            selectionAnchorQuestionIdRef.current &&
+            !visibleQuestionIds.includes(selectionAnchorQuestionIdRef.current)
+        ) {
+            selectionAnchorQuestionIdRef.current = null;
+        }
     }, [visibleQuestionIds]);
 
     useEffect(() => {
@@ -340,8 +386,56 @@ export function ReviewQuestionList({
         router.push(`${listPath}?${search.toString()}`);
     }
 
-    function toggleQuestionSelection(questionId: string, checked: boolean) {
+    function isShiftPressed(nativeEvent: Event | undefined) {
+        if (!nativeEvent) {
+            return false;
+        }
+
+        if ("shiftKey" in nativeEvent) {
+            return Boolean(
+                (nativeEvent as Event & { shiftKey?: unknown }).shiftKey,
+            );
+        }
+
+        return false;
+    }
+
+    function toggleQuestionSelection(
+        questionId: string,
+        checked: boolean,
+        withShift = false,
+    ) {
         setSelectedQuestionIds((current) => {
+            const anchorQuestionId = selectionAnchorQuestionIdRef.current;
+            const currentPageQuestionIds = questions.map((item) => item.id);
+
+            if (withShift && anchorQuestionId) {
+                const anchorIndex = currentPageQuestionIds.indexOf(
+                    anchorQuestionId,
+                );
+                const targetIndex = currentPageQuestionIds.indexOf(questionId);
+
+                if (anchorIndex >= 0 && targetIndex >= 0) {
+                    const [start, end] =
+                        anchorIndex <= targetIndex
+                            ? [anchorIndex, targetIndex]
+                            : [targetIndex, anchorIndex];
+                    const rangeIds = currentPageQuestionIds.slice(
+                        start,
+                        end + 1,
+                    );
+                    const nextSet = new Set(current);
+
+                    if (checked) {
+                        rangeIds.forEach((id) => nextSet.add(id));
+                    } else {
+                        rangeIds.forEach((id) => nextSet.delete(id));
+                    }
+
+                    return Array.from(nextSet);
+                }
+            }
+
             if (checked) {
                 return current.includes(questionId)
                     ? current
@@ -350,6 +444,8 @@ export function ReviewQuestionList({
 
             return current.filter((item) => item !== questionId);
         });
+
+        selectionAnchorQuestionIdRef.current = questionId;
     }
 
     async function createBatchRun() {
@@ -406,6 +502,111 @@ export function ReviewQuestionList({
             setBatchModalOpen(false);
         } finally {
             setIsCreatingBatchRun(false);
+        }
+    }
+
+    function openExportModal() {
+        if (!selectedQuestionIds.length && !totalQuestions) {
+            notification.warning({
+                message: "没有可导出数据",
+                description: "当前项目下没有可导出的题目。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        if (!selectedExportFields.length) {
+            setSelectedExportFields([
+                "externalRecordId",
+                "status",
+                "reviewDecision",
+                "reviewComment",
+            ]);
+        }
+
+        if (!selectedQuestionIds.length) {
+            setExportScope("filteredAll");
+        }
+
+        setExportModalOpen(true);
+    }
+
+    async function exportSelectedQuestions() {
+        if (exportScope === "selected" && !selectedQuestions.length) {
+            notification.warning({
+                message: "请先勾选题目",
+                description: "请选择“仅导出勾选题目”时至少勾选 1 道题目。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        if (!selectedExportFields.length) {
+            notification.warning({
+                message: "请选择导出字段",
+                description: "至少选择 1 个字段后再导出。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        setIsExporting(true);
+
+        try {
+            const result = await exportReviewQuestionsAction({
+                projectId: selectedProjectId,
+                scope: exportScope,
+                questionIds: selectedQuestions.map((question) => question.id),
+                filters: activeConditions,
+                fieldKeys: selectedExportFields,
+                format: exportFormat,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "导出失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            if (!result.base64 || !result.fileName || !result.mimeType) {
+                notification.error({
+                    message: "导出失败",
+                    description: "导出结果不完整，请稍后重试。",
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            const bytes = Uint8Array.from(atob(result.base64), (char) =>
+                char.charCodeAt(0),
+            );
+            const blob = new Blob([bytes], { type: result.mimeType });
+            const objectUrl = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = objectUrl;
+            anchor.download = result.fileName;
+            document.body.append(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(objectUrl);
+
+            notification.success({
+                message: "导出成功",
+                description: result.success ?? "文件已开始下载。",
+                placement: "topRight",
+            });
+            setExportModalOpen(false);
+        } catch (error) {
+            notification.error({
+                message: "导出失败",
+                description: error instanceof Error ? error.message : "请稍后再试。",
+                placement: "topRight",
+            });
+        } finally {
+            setIsExporting(false);
         }
     }
 
@@ -511,6 +712,13 @@ export function ReviewQuestionList({
                                 onClick={() => setBatchModalOpen(true)}
                             >
                                 批量运行 AI 审核
+                            </Button>
+                            <Button
+                                icon={<Download size={16} />}
+                                disabled={!selectedQuestionIds.length && !totalQuestions}
+                                onClick={openExportModal}
+                            >
+                                导出数据
                             </Button>
                             {selectedQuestionIds.length ? (
                                 <Button
@@ -700,6 +908,9 @@ export function ReviewQuestionList({
                                                             question.id,
                                                             event.target
                                                                 .checked,
+                                                            isShiftPressed(
+                                                                event.nativeEvent,
+                                                            ),
                                                         )
                                                     }
                                                 />
@@ -1108,6 +1319,83 @@ export function ReviewQuestionList({
                                     disabled={isCreatingBatchRun}
                                     size="large"
                                     style={{ width: 160 }}
+                                />
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={exportModalOpen}
+                        onCancel={() => setExportModalOpen(false)}
+                        onOk={exportSelectedQuestions}
+                        okText={isExporting ? "导出中..." : "导出"}
+                        cancelText="取消"
+                        okButtonProps={{ loading: isExporting }}
+                        title="导出勾选题目"
+                        destroyOnHidden
+                    >
+                        <div style={{ display: "grid", gap: 14, marginTop: 12 }}>
+                            <div className="workspace-tip">
+                                <Tag color="blue">说明</Tag>
+                                <span>
+                                    已勾选 {selectedQuestionIds.length} 题。可选择导出范围、字段与格式。
+                                </span>
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">导出范围</div>
+                                <Select
+                                    value={exportScope}
+                                    onChange={(value) =>
+                                        setExportScope(value as ExportScope)
+                                    }
+                                    options={[
+                                        {
+                                            value: "selected",
+                                            label: `仅导出勾选题目（${selectedQuestionIds.length} 条）`,
+                                        },
+                                        {
+                                            value: "filteredAll",
+                                            label: `导出当前筛选全部结果（约 ${totalQuestions} 条）`,
+                                        },
+                                    ]}
+                                    size="large"
+                                    style={{ width: "100%" }}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">导出格式</div>
+                                <Select
+                                    value={exportFormat}
+                                    onChange={(value) =>
+                                        setExportFormat(value as ExportFormat)
+                                    }
+                                    options={[
+                                        { value: "excel", label: "Excel (.xlsx)" },
+                                        { value: "json", label: "JSON (.json)" },
+                                        { value: "markdown", label: "Markdown (.md)" },
+                                    ]}
+                                    size="large"
+                                    style={{ width: "100%" }}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    导出字段（可多选）
+                                </div>
+                                <Select
+                                    mode="multiple"
+                                    value={selectedExportFields}
+                                    onChange={(value) =>
+                                        setSelectedExportFields(value as string[])
+                                    }
+                                    options={exportFieldOptions}
+                                    placeholder="选择导出字段"
+                                    size="large"
+                                    style={{ width: "100%" }}
+                                    optionFilterProp="label"
                                 />
                             </div>
                         </div>
