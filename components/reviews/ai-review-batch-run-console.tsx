@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Select, Space, Tag } from "antd";
+import { App, Button, Empty, Popconfirm, Select, Space, Tag } from "antd";
 import { Bot, RefreshCcw } from "lucide-react";
-import { cancelAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
+import {
+    cancelAiReviewStrategyBatchRunAction,
+    deleteAiReviewStrategyBatchRunAction,
+} from "@/app/actions/ai-review-strategies";
 
 type ProjectOption = {
     id: string;
@@ -105,6 +108,9 @@ export function AiReviewBatchRunConsole({
     const [cancellingBatchRunId, setCancellingBatchRunId] = useState<
         string | null
     >(null);
+    const [deletingBatchRunId, setDeletingBatchRunId] = useState<string | null>(
+        null,
+    );
 
     useEffect(() => {
         setRuns(initialRuns);
@@ -231,6 +237,34 @@ export function AiReviewBatchRunConsole({
         }
     }
 
+    async function deleteBatchRun(batchRunId: string) {
+        setDeletingBatchRunId(batchRunId);
+
+        try {
+            const result = await deleteAiReviewStrategyBatchRunAction({
+                batchRunId,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "删除批量任务失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "批量任务已删除",
+                description: result.success ?? "该任务已从列表移除。",
+                placement: "topRight",
+            });
+            setRuns((current) => current.filter((run) => run.id !== batchRunId));
+        } finally {
+            setDeletingBatchRunId(null);
+        }
+    }
+
     function pushProject(projectId: string) {
         router.push(`${listPath}?projectId=${projectId}`);
     }
@@ -348,6 +382,32 @@ export function AiReviewBatchRunConsole({
                                                         取消
                                                     </Button>
                                                 ) : null}
+                                                <Popconfirm
+                                                    title="删除批量任务"
+                                                    description="删除后不可恢复，确定继续吗？"
+                                                    okText="删除"
+                                                    cancelText="取消"
+                                                    okButtonProps={{
+                                                        danger: true,
+                                                        loading:
+                                                            deletingBatchRunId ===
+                                                            run.id,
+                                                    }}
+                                                    onConfirm={() =>
+                                                        deleteBatchRun(run.id)
+                                                    }
+                                                >
+                                                    <Button
+                                                        size="small"
+                                                        danger
+                                                        loading={
+                                                            deletingBatchRunId ===
+                                                            run.id
+                                                        }
+                                                    >
+                                                        删除
+                                                    </Button>
+                                                </Popconfirm>
                                             </Space>
                                         </div>
 

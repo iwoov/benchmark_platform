@@ -527,6 +527,37 @@ export async function cancelAiReviewStrategyBatchRun(batchRunId: string) {
     });
 }
 
+export async function deleteAiReviewStrategyBatchRun(batchRunId: string) {
+    const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
+        where: {
+            id: batchRunId,
+        },
+        select: {
+            id: true,
+            status: true,
+            runningCount: true,
+        },
+    });
+
+    if (!batchRun) {
+        throw new Error("批量任务不存在。");
+    }
+
+    if (
+        (batchRun.status === BatchRunStatus.RUNNING ||
+            batchRun.status === BatchRunStatus.CANCEL_REQUESTED) &&
+        batchRun.runningCount > 0
+    ) {
+        throw new Error("任务仍在执行中，请先取消并等待当前题目执行完成。");
+    }
+
+    await prisma.aiReviewStrategyBatchRun.delete({
+        where: {
+            id: batchRunId,
+        },
+    });
+}
+
 export async function recoverAiReviewStrategyBatchRuns(workerId: string) {
     await prisma.aiReviewStrategyBatchRunItem.updateMany({
         where: {

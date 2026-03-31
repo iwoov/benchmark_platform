@@ -63,18 +63,15 @@ function getPrismaClient() {
   }
 
   const client = createPrismaClient();
+  const previousClient = cachedState?.client;
 
-  if (process.env.NODE_ENV !== "production") {
-    const previousClient = cachedState?.client;
+  globalThis.prismaState = {
+    client,
+    signature,
+  };
 
-    globalThis.prismaState = {
-      client,
-      signature,
-    };
-
-    if (previousClient && previousClient !== client) {
-      void previousClient.$disconnect().catch(() => undefined);
-    }
+  if (previousClient && previousClient !== client) {
+    void previousClient.$disconnect().catch(() => undefined);
   }
 
   return client;

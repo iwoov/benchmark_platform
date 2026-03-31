@@ -18,6 +18,7 @@ import {
 import {
     cancelAiReviewStrategyBatchRun,
     createAiReviewStrategyBatchRun,
+    deleteAiReviewStrategyBatchRun,
 } from "@/lib/ai/review-strategy-batches";
 
 export type AiReviewStrategyActionState = {
@@ -75,6 +76,10 @@ const createBatchRunSchema = z.object({
 });
 
 const cancelBatchRunSchema = z.object({
+    batchRunId: z.string().trim().min(1, "缺少批量任务 ID"),
+});
+
+const deleteBatchRunSchema = z.object({
     batchRunId: z.string().trim().min(1, "缺少批量任务 ID"),
 });
 
@@ -762,6 +767,75 @@ export async function cancelAiReviewStrategyBatchRunAction(
         return {
             error:
                 error instanceof Error ? error.message : "取消批量任务失败。",
+        };
+    }
+}
+
+export async function deleteAiReviewStrategyBatchRunAction(
+    input: z.input<typeof deleteBatchRunSchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再删除批量任务。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法删除批量任务。",
+        };
+    }
+
+    const parsed = deleteBatchRunSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "删除参数不完整。",
+        };
+    }
+
+    const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
+        where: {
+            id: parsed.data.batchRunId,
+        },
+        select: {
+            id: true,
+            projectId: true,
+        },
+    });
+
+    if (!batchRun) {
+        return {
+            error: "批量任务不存在。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        batchRun.projectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    try {
+        await deleteAiReviewStrategyBatchRun(batchRun.id);
+        revalidatePath("/admin/review-batches");
+        revalidatePath("/workspace/review-batches");
+
+        return {
+            success: "批量任务已删除。",
+        };
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error ? error.message : "删除批量任务失败。",
         };
     }
 }
