@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
-import { invokeAiModel } from "@/lib/ai/invoke";
+import { invokeAiModel, resolveAiInvocationText } from "@/lib/ai/invoke";
 import { translateToChineseOutputSchema } from "@/lib/ai/review-strategy-schema";
 
 const translateReviewFieldSchema = z.object({
@@ -245,7 +245,8 @@ export async function translateReviewFieldAction(
 
     const response = await invokeAiModel({
         modelCode,
-        stream: false,
+        stream: true,
+        responseMimeType: "application/json",
         messages: [
             {
                 role: "system",
@@ -270,16 +271,16 @@ export async function translateReviewFieldAction(
         ],
     });
 
-    if (!response.ok || response.stream) {
+    if (!response.ok) {
         return {
-            error: response.ok
-                ? "当前翻译功能不支持流式结果。"
-                : response.error,
+            error: response.error,
         };
     }
 
+    const resolvedResponse = await resolveAiInvocationText(response);
+
     try {
-        const payload = extractJson(response.text);
+        const payload = extractJson(resolvedResponse.text);
         const parsedOutput = translateToChineseOutputSchema.safeParse(payload);
 
         if (!parsedOutput.success) {
@@ -297,7 +298,7 @@ export async function translateReviewFieldAction(
         };
     } catch (error) {
         const fallbackTranslatedText = extractTranslatedTextFallback(
-            response.text,
+            resolvedResponse.text,
         );
 
         if (fallbackTranslatedText) {

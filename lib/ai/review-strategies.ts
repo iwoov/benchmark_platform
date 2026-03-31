@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { invokeAiModel } from "@/lib/ai/invoke";
+import { invokeAiModel, resolveAiInvocationText } from "@/lib/ai/invoke";
 import {
     aiReviewOutputSchemas,
     aiReviewStrategyDefinitionSchema,
@@ -867,7 +867,8 @@ async function executeAiToolItem(
     };
     const response = await invokeAiModel({
         modelCode: step.modelCode,
-        stream: false,
+        stream: true,
+        responseMimeType: "application/json",
         messages: [
             {
                 role: "system",
@@ -886,7 +887,7 @@ async function executeAiToolItem(
         ],
     });
 
-    if (!response.ok || response.stream) {
+    if (!response.ok) {
         return {
             index,
             status: "FAILED" as const,
@@ -899,12 +900,16 @@ async function executeAiToolItem(
             rawResponse: {
                 failure: response,
             },
-            error: response.ok ? "当前步骤不支持流式结果。" : response.error,
+            error: response.error,
         };
     }
 
+    const resolvedResponse = await resolveAiInvocationText(response);
+    const responseText = resolvedResponse.text;
+    const responseRaw = resolvedResponse.raw;
+
     try {
-        const parsedRaw = extractJson(response.text);
+        const parsedRaw = extractJson(responseText);
         const normalizedPayload =
             parsedRaw &&
             typeof parsedRaw === "object" &&
@@ -943,7 +948,7 @@ async function executeAiToolItem(
             output: parsed.data,
             rawResponse: {
                 route: response.route,
-                raw: response.raw,
+                raw: responseRaw,
             },
             derived: deriveMetrics(step.toolType, parsed.data, question),
         };
@@ -965,8 +970,8 @@ async function executeAiToolItem(
             },
             rawResponse: {
                 route: response.route,
-                raw: response.raw,
-                text: response.text,
+                raw: responseRaw,
+                text: responseText,
             },
             error: error instanceof Error ? error.message : "模型结果解析失败",
         };

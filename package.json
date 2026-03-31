@@ -3,8 +3,8 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "next dev",
-        "dev:web": "next dev",
+        "dev": "next dev -p 3001",
+        "dev:web": "next dev -p 3001",
         "dev:worker": "tsx scripts/ai-review-batch-worker.ts",
         "dev:all": "concurrently -k -n web,worker -c blue,green \"pnpm dev:web\" \"pnpm dev:worker\"",
         "build": "next build",

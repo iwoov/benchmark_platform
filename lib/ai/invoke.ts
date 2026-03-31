@@ -30,6 +30,7 @@ export type AiInvocationRequest = {
     maxTokens?: number;
     temperature?: number;
     stream?: boolean;
+    responseMimeType?: "application/json" | "text/plain";
 };
 
 export type AiInvocationSuccess = {
@@ -46,6 +47,7 @@ export type AiInvocationSuccess = {
         providerName: string;
         baseUrl: string;
     };
+    attemptStartedAt: number;
     text: string | null;
     raw: unknown;
 };
@@ -64,6 +66,7 @@ export type AiStreamInvocationSuccess = {
         providerName: string;
         baseUrl: string;
     };
+    attemptStartedAt: number;
     response: Response;
 };
 
@@ -118,6 +121,19 @@ function getReasoningBudget(reasoningLevel: AiReasoningLevel) {
             return 4096;
         case "HIGH":
             return 8192;
+        default:
+            return null;
+    }
+}
+
+function getGeminiThinkingLevel(reasoningLevel: AiReasoningLevel) {
+    switch (reasoningLevel) {
+        case "LOW":
+            return "low";
+        case "MEDIUM":
+            return "medium";
+        case "HIGH":
+            return "high";
         default:
             return null;
     }
@@ -240,7 +256,7 @@ function buildGeminiPayload(
     config: AiModelRoutingConfig,
 ) {
     const { systemText, conversation } = splitSystemMessages(input.messages);
-    const reasoningBudget = getReasoningBudget(config.reasoningLevel);
+    const thinkingLevel = getGeminiThinkingLevel(config.reasoningLevel);
     const temperature =
         input.temperature ?? config.temperatureDefault ?? undefined;
     const maxTokens = input.maxTokens ?? config.maxTokensDefault ?? undefined;
@@ -254,7 +270,7 @@ function buildGeminiPayload(
               }
             : {}),
         contents: conversation.map((message) => ({
-            role: message.role === "assistant" ? "MODEL" : "USER",
+            role: message.role === "assistant" ? "model" : "user",
             parts: normalizeParts(message.content).map((part) =>
                 part.type === "text"
                     ? {
@@ -270,14 +286,18 @@ function buildGeminiPayload(
         })),
         generationConfig: {
             responseModalities: ["TEXT"],
+            ...(input.responseMimeType
+                ? { responseMimeType: input.responseMimeType }
+                : {}),
             ...(typeof temperature === "number" ? { temperature } : {}),
             ...(typeof maxTokens === "number"
                 ? { maxOutputTokens: maxTokens }
                 : {}),
-            ...(reasoningBudget
+            ...(thinkingLevel
                 ? {
                       thinkingConfig: {
-                          thinkingBudget: reasoningBudget,
+                          thinkingLevel,
+                          includeThoughts: true,
                       },
                   }
                 : {}),
@@ -301,9 +321,9 @@ function buildRequest(
             };
         case "GEMINI_COMPATIBLE":
             return {
-                url: `${baseUrl}/models/${encodeURIComponent(config.modelCode)}:${
-                    stream ? "streamGenerateContent" : "generateContent"
-                }`,
+                url: stream
+                    ? `${baseUrl}/models/${encodeURIComponent(config.modelCode)}:streamGenerateContent?alt=sse`
+                    : `${baseUrl}/models/${encodeURIComponent(config.modelCode)}:generateContent`,
                 body: buildGeminiPayload(input, config),
             };
         case "ANTHROPIC_COMPATIBLE":
@@ -317,6 +337,7 @@ function buildRequest(
 function buildHeaders(
     route: AiResolvedRoute,
     protocol: AiModelRoutingConfig["protocol"],
+    stream: boolean,
 ): Record<string, string> {
     const apiKey = route.apiKey ?? "";
 
@@ -327,12 +348,14 @@ function buildHeaders(
         return {
             "Content-Type": "application/json",
             "x-goog-api-key": `Bearer ${apiKey}`,
+            ...(stream ? { Accept: "text/event-stream" } : {}),
         };
     }
 
     return {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        ...(stream ? { Accept: "text/event-stream" } : {}),
     };
 }
 
@@ -408,14 +431,14 @@ function readAnthropicText(raw: any) {
     return null;
 }
 
-function readGeminiText(raw: any) {
+function readGeminiText(raw: any, includeThoughts = false) {
     const parts = raw?.candidates?.[0]?.content?.parts;
 
     if (!Array.isArray(parts)) {
         return null;
     }
 
-    return parts
+    const text = parts
         .map((part: unknown) => {
             if (
                 part &&
@@ -423,6 +446,14 @@ function readGeminiText(raw: any) {
                 "text" in part &&
                 typeof part.text === "string"
             ) {
+                if (
+                    !includeThoughts &&
+                    "thought" in part &&
+                    part.thought === true
+                ) {
+                    return "";
+                }
+
                 return part.text;
             }
 
@@ -430,6 +461,8 @@ function readGeminiText(raw: any) {
         })
         .filter(Boolean)
         .join("");
+
+    return text || null;
 }
 
 function extractText(protocol: AiModelRoutingConfig["protocol"], raw: unknown) {
@@ -441,6 +474,209 @@ function extractText(protocol: AiModelRoutingConfig["protocol"], raw: unknown) {
         case "GEMINI_COMPATIBLE":
             return readGeminiText(raw);
     }
+}
+
+function parseJsonSafely(input: string) {
+    try {
+        return JSON.parse(input) as unknown;
+    } catch {
+        return null;
+    }
+}
+
+function readOpenAiStreamDelta(raw: any) {
+    const delta = raw?.choices?.[0]?.delta?.content;
+    if (typeof delta === "string") {
+        return delta;
+    }
+    if (Array.isArray(delta)) {
+        return delta
+            .map((item: unknown) => {
+                if (typeof item === "string") {
+                    return item;
+                }
+                if (
+                    item &&
+                    typeof item === "object" &&
+                    "text" in item &&
+                    typeof item.text === "string"
+                ) {
+                    return item.text;
+                }
+                return "";
+            })
+            .join("");
+    }
+
+    return readOpenAiText(raw) ?? "";
+}
+
+function readAnthropicStreamDelta(raw: any) {
+    if (
+        raw?.type === "content_block_delta" &&
+        raw?.delta &&
+        typeof raw.delta.text === "string"
+    ) {
+        return raw.delta.text;
+    }
+
+    if (
+        raw?.type === "message_delta" &&
+        raw?.delta &&
+        typeof raw.delta.text === "string"
+    ) {
+        return raw.delta.text;
+    }
+
+    return readAnthropicText(raw) ?? "";
+}
+
+function readGeminiStreamDelta(raw: any) {
+    return readGeminiText(raw, false) ?? "";
+}
+
+function extractStreamDeltaText(
+    protocol: AiModelRoutingConfig["protocol"],
+    raw: unknown,
+) {
+    switch (protocol) {
+        case "OPENAI_COMPATIBLE":
+            return readOpenAiStreamDelta(raw);
+        case "ANTHROPIC_COMPATIBLE":
+            return readAnthropicStreamDelta(raw);
+        case "GEMINI_COMPATIBLE":
+            return readGeminiStreamDelta(raw);
+    }
+}
+
+export async function resolveAiInvocationText(
+    result: AiInvocationSuccess | AiStreamInvocationSuccess,
+): Promise<{
+    text: string | null;
+    raw: unknown;
+}> {
+    if (!result.stream) {
+        return {
+            text: result.text,
+            raw: result.raw,
+        };
+    }
+
+    const contentType = result.response.headers.get("content-type") ?? "";
+    const startedAt = result.attemptStartedAt;
+    let rawText = "";
+
+    if (result.response.body) {
+        const reader = result.response.body.getReader();
+        const decoder = new TextDecoder();
+        let firstChunkAt: number | null = null;
+        let chunkCount = 0;
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            if (!value || value.length === 0) {
+                continue;
+            }
+
+                if (firstChunkAt === null) {
+                    firstChunkAt = Date.now();
+                    logInfo("ai.invoke.first_chunk", {
+                    modelCode: result.modelCode,
+                    protocol: result.protocol,
+                    stream: true,
+                    providerCode: result.route.providerCode,
+                    endpointCode: result.route.endpointCode,
+                        ttftMs: firstChunkAt - startedAt,
+                    });
+                }
+
+            rawText += decoder.decode(value, { stream: true });
+            chunkCount += 1;
+        }
+
+        rawText += decoder.decode();
+
+        logInfo("ai.invoke.stream_completed", {
+            modelCode: result.modelCode,
+            protocol: result.protocol,
+            stream: true,
+            providerCode: result.route.providerCode,
+            endpointCode: result.route.endpointCode,
+            durationMs: Date.now() - startedAt,
+            ttftMs: firstChunkAt === null ? null : firstChunkAt - startedAt,
+            chunkCount,
+            bytes: rawText.length,
+        });
+    } else {
+        rawText = await result.response.text();
+    }
+
+    if (!rawText.trim()) {
+        return {
+            text: null,
+            raw: { stream: true, chunks: [] },
+        };
+    }
+
+    const parsedDirect = parseJsonSafely(rawText);
+    if (parsedDirect !== null) {
+        if (Array.isArray(parsedDirect)) {
+            const text = parsedDirect
+                .map((chunk) =>
+                    extractStreamDeltaText(result.protocol, chunk) ?? "",
+                )
+                .join("");
+
+            return {
+                text: text || null,
+                raw: parsedDirect,
+            };
+        }
+
+        return {
+            text: extractText(result.protocol, parsedDirect),
+            raw: parsedDirect,
+        };
+    }
+
+    const lines = rawText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const chunks: unknown[] = [];
+    let text = "";
+
+    for (const line of lines) {
+        const dataPart = line.startsWith("data:") ? line.slice(5).trim() : line;
+
+        if (!dataPart || dataPart === "[DONE]") {
+            continue;
+        }
+
+        const chunk = parseJsonSafely(dataPart);
+        if (chunk === null) {
+            continue;
+        }
+
+        chunks.push(chunk);
+        text += extractStreamDeltaText(result.protocol, chunk) ?? "";
+    }
+
+    if (!chunks.length && !contentType.includes("event-stream")) {
+        return {
+            text: rawText.trim() || null,
+            raw: { stream: true, rawText },
+        };
+    }
+
+    return {
+        text: text || null,
+        raw: { stream: true, chunks },
+    };
 }
 
 async function fetchWithTimeout(
@@ -456,6 +692,12 @@ async function fetchWithTimeout(
             ...init,
             signal: controller.signal,
         });
+    } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+            throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+
+        throw error;
     } finally {
         clearTimeout(timer);
     }
@@ -521,6 +763,7 @@ export async function invokeAiModel(
         ) {
             const request = buildRequest(route, input, config, stream);
             const routeStartAt = Date.now();
+            const requestTimeoutMs = Math.min(route.timeoutMs, 120000);
 
             logInfo("ai.invoke.attempt_started", {
                 modelCode: input.modelCode,
@@ -529,6 +772,8 @@ export async function invokeAiModel(
                 providerCode: route.providerCode,
                 endpointCode: route.endpointCode,
                 attempt: routeAttempt,
+                url: request.url,
+                timeoutMs: requestTimeoutMs,
             });
 
             try {
@@ -536,10 +781,10 @@ export async function invokeAiModel(
                     request.url,
                     {
                         method: "POST",
-                        headers: buildHeaders(route, config.protocol),
+                        headers: buildHeaders(route, config.protocol, stream),
                         body: JSON.stringify(request.body),
                     },
-                    route.timeoutMs,
+                    requestTimeoutMs,
                 );
 
                 if (!response.ok) {
@@ -558,6 +803,8 @@ export async function invokeAiModel(
                         endpointCode: route.endpointCode,
                         attempt: routeAttempt,
                         status: response.status,
+                        statusText: response.statusText,
+                        timeoutMs: requestTimeoutMs,
                         durationMs: Date.now() - routeStartAt,
                         error: responseError,
                     });
@@ -589,6 +836,7 @@ export async function invokeAiModel(
                             providerName: route.providerName,
                             baseUrl: route.baseUrl,
                         },
+                        attemptStartedAt: routeStartAt,
                         response,
                     };
                 }
@@ -620,9 +868,10 @@ export async function invokeAiModel(
                         endpointCode: route.endpointCode,
                         endpointLabel: route.endpointLabel,
                         providerCode: route.providerCode,
-                            providerName: route.providerName,
-                            baseUrl: route.baseUrl,
-                        },
+                        providerName: route.providerName,
+                        baseUrl: route.baseUrl,
+                    },
+                    attemptStartedAt: routeStartAt,
                     text,
                     raw,
                 };
@@ -643,6 +892,7 @@ export async function invokeAiModel(
                     providerCode: route.providerCode,
                     endpointCode: route.endpointCode,
                     attempt: routeAttempt,
+                    timeoutMs: requestTimeoutMs,
                     durationMs: Date.now() - routeStartAt,
                     error: message,
                 });
