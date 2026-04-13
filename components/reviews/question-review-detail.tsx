@@ -451,168 +451,205 @@ export function QuestionReviewDetail({
                 </div>
             </section>
 
-            <section className="content-surface">
-                <div className="section-head" style={{ marginBottom: 16 }}>
-                    <div>
-                        <h3
-                            style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}
+            <div className="detail-two-column">
+                <div className="detail-two-column-left">
+                    <section className="content-surface">
+                        <div
+                            className="section-head"
+                            style={{ marginBottom: 16 }}
                         >
-                            原始字段
-                        </h3>
-                        <p
-                            className="muted"
-                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                        >
-                            按导入时的字段顺序竖向展示，便于和原始 JSON / Excel
-                            对照。
-                        </p>
-                    </div>
+                            <div>
+                                <h3
+                                    style={{
+                                        margin: 0,
+                                        fontSize: 20,
+                                        lineHeight: 1.1,
+                                    }}
+                                >
+                                    原始字段
+                                </h3>
+                                <p
+                                    className="muted"
+                                    style={{
+                                        margin: "10px 0 0",
+                                        lineHeight: 1.7,
+                                    }}
+                                >
+                                    按导入时的字段顺序竖向展示，便于和原始 JSON
+                                    / Excel 对照。
+                                </p>
+                            </div>
+                        </div>
+
+                        {orderedRawEntries.length ? (
+                            <div className="detail-card-grid">
+                                {orderedRawEntries.map(([key, value]) => {
+                                    const translationState =
+                                        fieldTranslations[key];
+                                    const translatableValue =
+                                        getTranslatableFieldValue(value);
+
+                                    return (
+                                        <div
+                                            key={key}
+                                            className="detail-field-card"
+                                        >
+                                            <div className="detail-field-head">
+                                                <div className="detail-field-label">
+                                                    {key}
+                                                </div>
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    icon={
+                                                        <Languages size={16} />
+                                                    }
+                                                    loading={
+                                                        translationState?.loading
+                                                    }
+                                                    disabled={
+                                                        !translatableValue
+                                                    }
+                                                    onClick={() =>
+                                                        translateField(
+                                                            key,
+                                                            value,
+                                                        )
+                                                    }
+                                                >
+                                                    翻译
+                                                </Button>
+                                            </div>
+                                            <div className="detail-field-content">
+                                                {renderRawFieldValue(value)}
+                                            </div>
+                                            {translationState?.loading ||
+                                            translationState?.displayedText ? (
+                                                <div className="detail-field-translation">
+                                                    <div className="detail-field-translation-label">
+                                                        AI 翻译
+                                                        {translationState.sourceLanguage
+                                                            ? ` · ${translationState.sourceLanguage}`
+                                                            : ""}
+                                                    </div>
+                                                    <div className="detail-field-translation-body">
+                                                        {translationState.loading &&
+                                                        !translationState.displayedText
+                                                            ? "正在翻译..."
+                                                            : translationState.displayedText}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="muted">
+                                当前题目没有原始字段可展示。
+                            </div>
+                        )}
+                    </section>
                 </div>
 
-                {orderedRawEntries.length ? (
-                    <div className="detail-card-grid">
-                        {orderedRawEntries.map(([key, value]) => {
-                            const translationState = fieldTranslations[key];
-                            const translatableValue =
-                                getTranslatableFieldValue(value);
+                <div className="detail-two-column-right">
+                    {canReview ? (
+                        <AiReviewStrategyRunner
+                            questionId={question.id}
+                            strategies={reviewStrategies}
+                            runs={strategyRuns}
+                        />
+                    ) : null}
 
-                            return (
-                                <div key={key} className="detail-field-card">
-                                    <div className="detail-field-head">
-                                        <div className="detail-field-label">
-                                            {key}
-                                        </div>
-                                        <Button
-                                            type="text"
-                                            size="small"
-                                            icon={<Languages size={16} />}
-                                            loading={translationState?.loading}
-                                            disabled={!translatableValue}
-                                            onClick={() =>
-                                                translateField(key, value)
-                                            }
-                                        >
-                                            翻译
-                                        </Button>
-                                    </div>
-                                    <div className="detail-field-content">
-                                        {renderRawFieldValue(value)}
-                                    </div>
-                                    {translationState?.loading ||
-                                    translationState?.displayedText ? (
-                                        <div className="detail-field-translation">
-                                            <div className="detail-field-translation-label">
-                                                AI 翻译
-                                                {translationState.sourceLanguage
-                                                    ? ` · ${translationState.sourceLanguage}`
-                                                    : ""}
-                                            </div>
-                                            <div className="detail-field-translation-body">
-                                                {translationState.loading &&
-                                                !translationState.displayedText
-                                                    ? "正在翻译..."
-                                                    : translationState.displayedText}
-                                            </div>
-                                        </div>
-                                    ) : null}
+                    {canReview ? (
+                        <section className="content-surface">
+                            <div
+                                className="section-head"
+                                style={{ marginBottom: 16 }}
+                            >
+                                <div>
+                                    <h3
+                                        style={{
+                                            margin: 0,
+                                            fontSize: 20,
+                                            lineHeight: 1.1,
+                                        }}
+                                    >
+                                        提交审核
+                                    </h3>
+                                    <p
+                                        className="muted"
+                                        style={{
+                                            margin: "10px 0 0",
+                                            lineHeight: 1.7,
+                                        }}
+                                    >
+                                        在详情页直接填写审核意见并提交结论。
+                                    </p>
                                 </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="muted">当前题目没有原始字段可展示。</div>
-                )}
-            </section>
+                            </div>
 
-            {canReview ? (
-                <AiReviewStrategyRunner
-                    questionId={question.id}
-                    strategies={reviewStrategies}
-                    runs={strategyRuns}
-                />
-            ) : null}
+                            <div style={{ display: "grid", gap: 16 }}>
+                                <div>
+                                    <label
+                                        className="field-label"
+                                        htmlFor="review-decision"
+                                    >
+                                        审核结论
+                                    </label>
+                                    <Select
+                                        id="review-decision"
+                                        value={decision}
+                                        onChange={(value) => setDecision(value)}
+                                        options={[
+                                            { value: "PASS", label: "通过" },
+                                            {
+                                                value: "NEEDS_REVISION",
+                                                label: "退回修改",
+                                            },
+                                            { value: "REJECT", label: "驳回" },
+                                        ]}
+                                        size="large"
+                                    />
+                                </div>
 
-            {canReview ? (
-                <section className="content-surface">
-                    <div className="section-head" style={{ marginBottom: 16 }}>
-                        <div>
-                            <h3
-                                style={{
-                                    margin: 0,
-                                    fontSize: 20,
-                                    lineHeight: 1.1,
-                                }}
-                            >
-                                提交审核
-                            </h3>
-                            <p
-                                className="muted"
-                                style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                            >
-                                在详情页直接填写审核意见并提交结论。
-                            </p>
-                        </div>
-                    </div>
+                                <div>
+                                    <label
+                                        className="field-label"
+                                        htmlFor="review-comment"
+                                    >
+                                        审核意见
+                                    </label>
+                                    <Input.TextArea
+                                        id="review-comment"
+                                        value={comment}
+                                        onChange={(event) =>
+                                            setComment(event.target.value)
+                                        }
+                                        rows={6}
+                                        placeholder="请输入审核意见、修改建议或驳回原因"
+                                    />
+                                </div>
 
-                    <div style={{ display: "grid", gap: 16 }}>
-                        <div>
-                            <label
-                                className="field-label"
-                                htmlFor="review-decision"
-                            >
-                                审核结论
-                            </label>
-                            <Select
-                                id="review-decision"
-                                value={decision}
-                                onChange={(value) => setDecision(value)}
-                                options={[
-                                    { value: "PASS", label: "通过" },
-                                    {
-                                        value: "NEEDS_REVISION",
-                                        label: "退回修改",
-                                    },
-                                    { value: "REJECT", label: "驳回" },
-                                ]}
-                                size="large"
-                            />
-                        </div>
-
-                        <div>
-                            <label
-                                className="field-label"
-                                htmlFor="review-comment"
-                            >
-                                审核意见
-                            </label>
-                            <Input.TextArea
-                                id="review-comment"
-                                value={comment}
-                                onChange={(event) =>
-                                    setComment(event.target.value)
-                                }
-                                rows={6}
-                                placeholder="请输入审核意见、修改建议或驳回原因"
-                            />
-                        </div>
-
-                        <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "flex-end",
-                            }}
-                        >
-                            <Button
-                                type="primary"
-                                onClick={submitReview}
-                                loading={isSubmitting}
-                            >
-                                提交审核
-                            </Button>
-                        </div>
-                    </div>
-                </section>
-            ) : null}
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "flex-end",
+                                    }}
+                                >
+                                    <Button
+                                        type="primary"
+                                        onClick={submitReview}
+                                        loading={isSubmitting}
+                                    >
+                                        提交审核
+                                    </Button>
+                                </div>
+                            </div>
+                        </section>
+                    ) : null}
+                </div>
+            </div>
         </div>
     );
 }

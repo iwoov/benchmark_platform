@@ -55,11 +55,17 @@ export default async function WorkspaceReviewsPage({
             ? resolvedSearchParams.filters[0]
             : resolvedSearchParams.filters,
     );
+    const requestedDatasourceId = Array.isArray(
+        resolvedSearchParams.datasourceId,
+    )
+        ? resolvedSearchParams.datasourceId[0]
+        : resolvedSearchParams.datasourceId;
 
     const [questionPage, reviewStrategies, filterMeta] = selectedProjectId
         ? await Promise.all([
               getReviewQuestionListPageData({
                   projectId: selectedProjectId,
+                  datasourceId: requestedDatasourceId,
                   page: requestedPage,
                   pageSize: requestedPageSize,
                   conditions: filters,
@@ -81,6 +87,12 @@ export default async function WorkspaceReviewsPage({
               },
           ];
 
+    const selectedDatasourceId = filterMeta.datasourceOptions.some(
+        (option) => option.value === requestedDatasourceId,
+    )
+        ? (requestedDatasourceId as string)
+        : "";
+
     return (
         <ReviewQuestionList
             canReview={Boolean(workspaceContext?.canReview)}
@@ -95,6 +107,7 @@ export default async function WorkspaceReviewsPage({
             )}
             questions={questionPage.items}
             selectedProjectId={selectedProjectId}
+            selectedDatasourceId={selectedDatasourceId}
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}

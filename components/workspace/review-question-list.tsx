@@ -197,6 +197,7 @@ export function ReviewQuestionList({
     projects,
     questions,
     selectedProjectId,
+    selectedDatasourceId,
     currentPage,
     pageSize,
     totalQuestions,
@@ -211,6 +212,7 @@ export function ReviewQuestionList({
     projects: ProjectOption[];
     questions: ReviewQuestionItem[];
     selectedProjectId: string;
+    selectedDatasourceId: string;
     currentPage: number;
     pageSize: number;
     totalQuestions: number;
@@ -413,6 +415,10 @@ export function ReviewQuestionList({
             pageSize: String(pageSize),
         });
 
+        if (selectedDatasourceId) {
+            search.set("datasourceId", selectedDatasourceId);
+        }
+
         const serializedFilters =
             serializeReviewQuestionFilterConditions(activeConditions);
 
@@ -425,6 +431,7 @@ export function ReviewQuestionList({
 
     function pushListState(next: {
         projectId?: string;
+        datasourceId?: string;
         page?: number;
         pageSize?: number;
         conditions?: ReviewQuestionFilterCondition[];
@@ -434,6 +441,12 @@ export function ReviewQuestionList({
             page: String(next.page ?? currentPage),
             pageSize: String(next.pageSize ?? pageSize),
         });
+        const nextDatasourceId = next.datasourceId ?? selectedDatasourceId;
+
+        if (nextDatasourceId) {
+            search.set("datasourceId", nextDatasourceId);
+        }
+
         const serializedFilters = serializeReviewQuestionFilterConditions(
             next.conditions ?? activeConditions,
         );
@@ -710,6 +723,7 @@ export function ReviewQuestionList({
                                     setSelectedQuestionIds([]);
                                     pushListState({
                                         projectId: value,
+                                        datasourceId: "",
                                         page: 1,
                                         conditions: [],
                                     });
@@ -722,6 +736,29 @@ export function ReviewQuestionList({
                                 size="large"
                             />
                         </div>
+
+                        {datasourceOptions.length > 0 && (
+                            <div className="review-toolbar-field">
+                                <div className="review-toolbar-label">
+                                    数据源
+                                </div>
+                                <Select
+                                    value={selectedDatasourceId || undefined}
+                                    onChange={(value) => {
+                                        setSelectedQuestionIds([]);
+                                        pushListState({
+                                            datasourceId: value ?? "",
+                                            page: 1,
+                                        });
+                                    }}
+                                    allowClear
+                                    placeholder="全部数据源"
+                                    options={datasourceOptions}
+                                    style={{ minWidth: 220 }}
+                                    size="large"
+                                />
+                            </div>
+                        )}
 
                         <div className="review-toolbar-actions">
                             {selectedProject ? (

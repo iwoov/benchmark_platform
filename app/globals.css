@@ -693,6 +693,20 @@ select {
     line-height: 1.6;
 }
 
+.detail-two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+.detail-two-column-left,
+.detail-two-column-right {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
 .detail-card-grid {
     display: grid;
     gap: 16px;
@@ -1885,7 +1899,8 @@ select {
     .import-form-grid,
     .review-filter-row,
     .settings-form-grid,
-    .detail-meta-grid {
+    .detail-meta-grid,
+    .detail-two-column {
         grid-template-columns: 1fr;
     }
 

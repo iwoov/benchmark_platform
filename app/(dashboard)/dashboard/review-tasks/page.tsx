@@ -61,11 +61,17 @@ export default async function ReviewTasksPage({
             ? resolvedSearchParams.filters[0]
             : resolvedSearchParams.filters,
     );
+    const requestedDatasourceId = Array.isArray(
+        resolvedSearchParams.datasourceId,
+    )
+        ? resolvedSearchParams.datasourceId[0]
+        : resolvedSearchParams.datasourceId;
 
     const [questionPage, reviewStrategies, filterMeta] = selectedProjectId
         ? await Promise.all([
               getReviewQuestionListPageData({
                   projectId: selectedProjectId,
+                  datasourceId: requestedDatasourceId,
                   page: requestedPage,
                   pageSize: requestedPageSize,
                   conditions: filters,
@@ -87,6 +93,12 @@ export default async function ReviewTasksPage({
               },
           ];
 
+    const selectedDatasourceId = filterMeta.datasourceOptions.some(
+        (option) => option.value === requestedDatasourceId,
+    )
+        ? (requestedDatasourceId as string)
+        : "";
+
     return (
         <ReviewQuestionList
             canReview
@@ -95,6 +107,7 @@ export default async function ReviewTasksPage({
             projects={projects}
             questions={questionPage.items}
             selectedProjectId={selectedProjectId}
+            selectedDatasourceId={selectedDatasourceId}
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}

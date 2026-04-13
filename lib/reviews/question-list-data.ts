@@ -402,11 +402,13 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
 
 export async function getReviewQuestionListPageData({
     projectId,
+    datasourceId,
     page = 1,
     pageSize = 50,
     conditions = [],
 }: {
     projectId: string;
+    datasourceId?: string;
     page?: number;
     pageSize?: number;
     conditions?: ReviewQuestionFilterCondition[];
@@ -465,16 +467,17 @@ export async function getReviewQuestionListPageData({
                             not: validStatusValue,
                         }
                       : undefined,
-            datasourceId:
-                datasourceCondition?.operator === "equals"
+            datasourceId: datasourceId
+                ? { equals: datasourceId }
+                : datasourceCondition?.operator === "equals"
+                  ? {
+                        equals: datasourceCondition.value,
+                    }
+                  : datasourceCondition?.operator === "notEquals"
                     ? {
-                          equals: datasourceCondition.value,
+                          not: datasourceCondition.value,
                       }
-                    : datasourceCondition?.operator === "notEquals"
-                      ? {
-                            not: datasourceCondition.value,
-                        }
-                      : undefined,
+                    : undefined,
         },
         select: {
             id: true,
