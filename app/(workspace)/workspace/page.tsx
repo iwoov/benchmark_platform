@@ -1,4 +1,10 @@
-import { Empty, Tag } from "antd";
+import { Empty } from "antd";
+import {
+    FolderKanban,
+    PencilLine,
+    ScanSearch,
+    ShieldCheck,
+} from "lucide-react";
 import { auth } from "@/auth";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 
@@ -10,104 +16,184 @@ export default async function WorkspaceHomePage() {
 
     const quickStats = [
         {
-            label: "我的项目",
+            label: "项目",
             value: String(workspaceContext?.projectCount ?? 0),
-            note: "基于项目成员关系展示",
+            note: "已加入",
+            icon: FolderKanban,
         },
         {
-            label: "可出题项目",
+            label: "出题",
             value: String(workspaceContext?.authorProjectCount ?? 0),
-            note: "拥有 AUTHOR 角色",
+            note: "AUTHOR",
+            icon: PencilLine,
         },
         {
-            label: "可审核项目",
+            label: "审核",
             value: String(workspaceContext?.reviewerProjectCount ?? 0),
-            note: "拥有 REVIEWER 角色",
+            note: "REVIEWER",
+            icon: ScanSearch,
         },
     ];
+    const scopeBadges = [
+        {
+            icon: FolderKanban,
+            label: `${workspaceContext?.projectCount ?? 0} 个项目`,
+        },
+        {
+            icon: PencilLine,
+            label: `${workspaceContext?.authorProjectCount ?? 0} 个出题项目`,
+        },
+        {
+            icon: ScanSearch,
+            label: `${workspaceContext?.reviewerProjectCount ?? 0} 个审核项目`,
+        },
+    ];
+    const roleSummary = [
+        workspaceContext?.canAuthor ? "AUTHOR" : null,
+        workspaceContext?.canReview ? "REVIEWER" : null,
+    ]
+        .filter(Boolean)
+        .join(" / ");
 
     return (
         <>
             <section className="content-surface overview-hero">
                 <div className="overview-hero-copy">
-                    <div className="dashboard-kicker">Workspace Overview</div>
-                    <h2>{session?.user.name}，当前进入专家协作工作台。</h2>
-                    <p>
-                        普通账号统一从这里处理项目协作任务。平台侧的项目、数据接入由管理员维护，工作台只保留出题与审核真正需要的能力。
-                    </p>
+                    <div className="dashboard-kicker">Workspace</div>
+                    <h2>聚焦项目、出题与审核。</h2>
+                    <p>去掉平台侧噪音，只保留当前角色真正会用到的入口。</p>
+                    <div className="overview-tag-row">
+                        {scopeBadges.map((item) => {
+                            const Icon = item.icon;
+
+                            return (
+                                <div key={item.label} className="overview-mini-chip">
+                                    <Icon size={15} />
+                                    <span>{item.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 <div className="overview-side-card">
-                    <div>
-                        <div className="overview-side-card-label">
-                            Access Scope
+                    <div className="overview-side-card-row">
+                        <div>
+                            <div className="overview-side-card-label">
+                                当前用户
+                            </div>
+                            <div className="overview-side-card-value compact">
+                                {session?.user.name || session?.user.username}
+                            </div>
                         </div>
-                        <div className="overview-side-card-value">
-                            {workspaceContext?.projectCount ?? 0}
+                        <div className="overview-side-card-note">
+                            @{session?.user.username}
                         </div>
                     </div>
-                    <div className="muted" style={{ lineHeight: 1.7 }}>
-                        当前可访问项目数。平台按项目角色精确控制管理、出题和审核能力。
+                    <div className="overview-side-card-row">
+                        <div>
+                            <div className="overview-side-card-label">
+                                可访问项目
+                            </div>
+                            <div className="overview-side-card-value">
+                                {workspaceContext?.projectCount ?? 0}
+                            </div>
+                        </div>
+                        <div className="overview-side-card-note">
+                            按项目成员关系控制范围
+                        </div>
+                    </div>
+                    <div className="overview-side-card-row">
+                        <div>
+                            <div className="overview-side-card-label">
+                                能力角色
+                            </div>
+                            <div className="overview-side-card-value compact">
+                                {roleSummary || "未分配"}
+                            </div>
+                        </div>
+                        <div className="overview-side-card-note">
+                            角色能力即时生效
+                        </div>
                     </div>
                 </div>
             </section>
 
             <section className="overview-stat-grid">
-                {quickStats.map((item) => (
-                    <div
-                        key={item.label}
-                        className="content-surface overview-stat-card"
-                    >
-                        <div className="stat-value">{item.value}</div>
-                        <div>
-                            <div className="overview-stat-title">
-                                {item.label}
+                {quickStats.map((item) => {
+                    const Icon = item.icon;
+
+                    return (
+                        <div key={item.label} className="overview-stat-item">
+                            <div className="overview-stat-item-icon">
+                                <Icon size={18} />
                             </div>
-                            <div className="muted" style={{ marginTop: 6 }}>
-                                {item.note}
+                            <div>
+                                <div className="overview-stat-title">
+                                    {item.label}
+                                </div>
+                                <div className="stat-value">{item.value}</div>
+                                <div className="overview-stat-title">
+                                    {item.note}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </section>
 
             <section className="content-surface">
                 <div className="section-head" style={{ marginBottom: 16 }}>
-                    <div>
-                        <h2
-                            style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
-                        >
-                            工作方式
-                        </h2>
-                        <p
-                            className="muted"
-                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                        >
-                            平台级由超级管理员和平台管理员维护配置与数据接入，项目协作只保留
-                            AUTHOR 和 REVIEWER 两类角色。
-                        </p>
-                    </div>
+                    <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                        当前职责
+                    </h2>
                 </div>
 
                 {workspaceContext?.projectCount ? (
-                    <div style={{ display: "grid", gap: 12 }}>
+                    <div className="overview-role-list">
                         {workspaceContext.canAuthor ? (
-                            <div className="workspace-tip">
-                                <Tag color="blue">AUTHOR</Tag>
-                                <span>
-                                    可在项目内提交题目、修改题目并查看审核反馈。
-                                </span>
+                            <div className="overview-role-item">
+                                <div className="overview-role-icon">
+                                    <PencilLine size={18} />
+                                </div>
+                                <div>
+                                    <div className="overview-role-title">
+                                        AUTHOR
+                                    </div>
+                                    <div className="overview-role-note">
+                                        提交、补充与修改题目。
+                                    </div>
+                                </div>
                             </div>
                         ) : null}
                         {workspaceContext.canReview ? (
-                            <div className="workspace-tip">
-                                <Tag color="gold">REVIEWER</Tag>
-                                <span>
-                                    可在项目内查看题目、给出人工意见并触发 AI
-                                    审核。
-                                </span>
+                            <div className="overview-role-item">
+                                <div className="overview-role-icon">
+                                    <ScanSearch size={18} />
+                                </div>
+                                <div>
+                                    <div className="overview-role-title">
+                                        REVIEWER
+                                    </div>
+                                    <div className="overview-role-note">
+                                        查看题目、给出意见并触发 AI 审核。
+                                    </div>
+                                </div>
                             </div>
                         ) : null}
+                        <div className="overview-role-item">
+                            <div className="overview-role-icon">
+                                <ShieldCheck size={18} />
+                            </div>
+                            <div>
+                                <div className="overview-role-title">
+                                    管理边界
+                                </div>
+                                <div className="overview-role-note">
+                                    平台配置与数据接入仍由管理员负责。
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <Empty description="当前还没有分配项目角色" />

@@ -3,9 +3,15 @@
 import Link from "next/link";
 import { Avatar, Space, Tag } from "antd";
 import {
+    BrainCircuit,
     Bot,
+    ClipboardCheck,
+    Cpu,
+    FileSearch,
     FolderKanban,
     LayoutDashboard,
+    Layers3,
+    ShieldCheck,
     PlugZap,
     ScrollText,
     SlidersHorizontal,
@@ -41,23 +47,23 @@ const adminSections = [
     {
         title: "审核工作台",
         items: [
-            { href: "/admin/ai", label: "AI 设置", icon: Bot },
+            { href: "/admin/ai", label: "AI 设置", icon: Cpu },
             {
                 href: "/admin/ai-strategies",
                 label: "AI 审核策略",
-                icon: Bot,
+                icon: BrainCircuit,
             },
             {
                 href: "/admin/review-tasks",
                 label: "审核任务",
-                icon: ScrollText,
+                icon: ClipboardCheck,
             },
             {
                 href: "/admin/review-batches",
                 label: "批量任务",
-                icon: Bot,
+                icon: Layers3,
             },
-            { href: "/admin/reviews", label: "审核记录", icon: ScrollText },
+            { href: "/admin/reviews", label: "审核记录", icon: FileSearch },
         ],
     },
     {
@@ -160,25 +166,23 @@ export function Sidebar({
               }));
     const rootPath = variant === "admin" ? "/admin" : "/workspace";
     const title = variant === "admin" ? "Platform Admin" : "Expert Workspace";
-    const copy =
-        variant === "admin"
-            ? "平台配置、权限和数据接入统一在这里管理。"
-            : "项目协作、出题与审核在同一工作流内完成。";
-    const showSidebarHeader = true;
+    const BrandIcon = variant === "admin" ? ShieldCheck : LayoutDashboard;
 
     return (
         <aside className="dashboard-sidebar">
             <div className="sidebar-shell">
                 <div>
-                    {showSidebarHeader ? (
-                        <div className="sidebar-header">
-                            <div className="sidebar-eyebrow">
-                                Benchmark Platform
-                            </div>
-                            <div className="sidebar-title">{title}</div>
-                            <div className="muted sidebar-copy">{copy}</div>
+                    <div className="sidebar-header">
+                        <div className="sidebar-brand">
+                            <span className="sidebar-brand-mark">
+                                <BrandIcon size={16} />
+                            </span>
+                            <span className="sidebar-eyebrow">
+                                Benchmark
+                            </span>
                         </div>
-                    ) : null}
+                        <div className="sidebar-title">{title}</div>
+                    </div>
 
                     <nav className="sidebar-nav-groups">
                         {visibleSections.map((section) => (
@@ -204,7 +208,9 @@ export function Sidebar({
                                                     isActive && "active",
                                                 )}
                                             >
-                                                <Icon size={17} />
+                                                <span className="sidebar-link-icon">
+                                                    <Icon size={16} />
+                                                </span>
                                                 <span>{item.label}</span>
                                             </Link>
                                         );

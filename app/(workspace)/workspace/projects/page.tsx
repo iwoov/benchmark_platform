@@ -16,7 +16,7 @@ export default async function WorkspaceProjectsPage() {
     <section className="content-surface">
       <h2 style={{ marginTop: 0, fontSize: 24, lineHeight: 1.1 }}>我的项目</h2>
       <p className="muted" style={{ margin: "10px 0 18px", lineHeight: 1.7 }}>
-        这里展示当前用户已经被分配的项目，以及你在每个项目中的角色。
+        只显示你已加入的项目与角色。
       </p>
 
       {workspaceContext?.memberships.length ? (
@@ -51,9 +51,11 @@ export default async function WorkspaceProjectsPage() {
             >
               <div>
                 <div style={{ fontWeight: 700 }}>{membership.project.name}</div>
-                <div className="muted" style={{ marginTop: 4 }}>
-                  {membership.project.description || "暂无项目描述"}
-                </div>
+                {membership.project.description ? (
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    {membership.project.description}
+                  </div>
+                ) : null}
               </div>
               <div>{membership.project.code}</div>
               <div>

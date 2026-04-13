@@ -86,7 +86,7 @@ export default async function ProjectsPage() {
                         className="muted"
                         style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                     >
-                        平台管理员统一负责项目成员分配与数据接入。项目内只保留出题用户和审核用户两类协作角色。
+                        管理项目、成员分配与数据接入范围。
                     </p>
                 </div>
                 <CreateProjectForm />

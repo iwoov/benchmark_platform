@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { Space, Tag } from "antd";
 import { auth } from "@/auth";
 import { CreateUserForm } from "@/components/dashboard/create-user-form";
 import { UserManagementTable } from "@/components/dashboard/user-management-table";
@@ -53,8 +52,7 @@ export default async function UsersPage() {
                         className="muted"
                         style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                     >
-                        平台账号统一由管理员维护。超级管理员负责管理员角色与 AI
-                        配置，平台管理员负责普通账号维护和项目协作分配。
+                        维护平台账号、角色边界与启停状态。
                     </p>
                 </div>
                 <CreateUserForm
@@ -82,13 +80,6 @@ export default async function UsersPage() {
                     projectCount: user.memberships.length,
                 }))}
             />
-
-            <Space size={12} style={{ marginTop: 18 }}>
-                <Tag color="blue">说明</Tag>
-                <span className="muted">
-                    超级管理员可维护管理员角色，平台管理员只维护普通账号。项目功能角色请到项目管理页中的“成员管理”分配。
-                </span>
-            </Space>
         </section>
     );
 }

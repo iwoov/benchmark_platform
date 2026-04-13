@@ -14,7 +14,7 @@ export default async function WorkspaceSubmissionsPage() {
         <div>
           <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>出题任务</h2>
           <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
-            面向项目内的出题专家，后续会在这里展示待完善题目、草稿和退回修改项。
+            面向 AUTHOR 的题目录入与修改入口。
           </p>
         </div>
         <Tag color="blue">AUTHOR</Tag>
@@ -27,10 +27,7 @@ export default async function WorkspaceSubmissionsPage() {
           {workspaceContext.authorProjects.map((membership) => (
             <div key={membership.id} className="workspace-tip">
               <Tag color="blue">{membership.project.code}</Tag>
-              <span>
-                你在项目「{membership.project.name}
-                」中拥有出题权限。后续这里会展示该项目下待提交、待修改和草稿题目。
-              </span>
+              <span>项目「{membership.project.name}」已开启出题权限。</span>
             </div>
           ))}
         </div>

@@ -61,7 +61,7 @@ export default async function DataSourcesPage() {
     return (
         <ProjectDatasourceConsole
             title="数据源"
-            description="平台管理员负责将 JSON 和 Excel 文件导入到指定项目中，形成项目内可追踪的数据源与题目记录。AI 配置由超级管理员统一维护。"
+            description="导入项目数据源并跟踪同步状态。"
             projects={projects}
             datasources={datasources.map((datasource) => ({
                 id: datasource.id,

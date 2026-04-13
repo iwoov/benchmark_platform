@@ -54,7 +54,7 @@ export default async function ReviewsPage() {
                         className="muted"
                         style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                     >
-                        这里汇总所有人工审核操作记录，用于追踪谁在什么时间对哪条题目做了什么结论。
+                        汇总人工审核记录与处理结论。
                     </p>
                 </div>
             </div>
