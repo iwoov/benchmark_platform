@@ -215,6 +215,7 @@ export function ReviewFieldSettingsModal({
     return (
         <Modal
             open={open}
+            rootClassName="review-dialog review-field-settings-dialog"
             onCancel={onClose}
             onOk={savePreference}
             okText="保存配置"
@@ -246,7 +247,7 @@ export function ReviewFieldSettingsModal({
                 >
                     <Input
                         allowClear
-                        size="large"
+                        size="middle"
                         placeholder="搜索字段名"
                         prefix={<Search size={16} />}
                         value={searchValue}
@@ -254,6 +255,7 @@ export function ReviewFieldSettingsModal({
                         style={{ maxWidth: 320 }}
                     />
                     <Button
+                        size="middle"
                         icon={<RotateCcw size={16} />}
                         onClick={resetPreference}
                         loading={isResetting}

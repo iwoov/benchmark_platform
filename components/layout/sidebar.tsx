@@ -165,7 +165,8 @@ export function Sidebar({
                   }),
               }));
     const rootPath = variant === "admin" ? "/admin" : "/workspace";
-    const title = variant === "admin" ? "Platform Admin" : "Expert Workspace";
+    const title =
+        variant === "admin" ? "EvalCheck Admin" : "EvalCheck Workspace";
     const BrandIcon = variant === "admin" ? ShieldCheck : LayoutDashboard;
 
     return (
@@ -177,9 +178,7 @@ export function Sidebar({
                             <span className="sidebar-brand-mark">
                                 <BrandIcon size={16} />
                             </span>
-                            <span className="sidebar-eyebrow">
-                                Benchmark
-                            </span>
+                            <span className="sidebar-eyebrow">EvalCheck</span>
                         </div>
                         <div className="sidebar-title">{title}</div>
                     </div>

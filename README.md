@@ -1,4 +1,4 @@
-# Benchmark Platform
+# EvalCheck
 
 ## 本地开发
 
@@ -27,7 +27,7 @@ pnpm dev
 超级管理员账号由 `.env` 控制：
 
 ```env
-ADMIN_NAME="Platform Admin"
+ADMIN_NAME="EvalCheck Admin"
 ADMIN_USERNAME="admin"
 ADMIN_EMAIL="admin@example.com"
 ADMIN_PASSWORD="admin123456"

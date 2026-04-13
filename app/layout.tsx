@@ -3,8 +3,8 @@ import { Providers } from "@/app/providers";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "Benchmark Platform",
-  description: "Benchmark 协作评测平台后台",
+  title: "EvalCheck",
+  description: "EvalCheck 协作评测平台后台",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -665,22 +665,11 @@ export function ReviewQuestionList({
     }
 
     return (
-        <section className="content-surface">
+        <section className="content-surface review-content-surface review-compact-scope">
             <div className="section-head" style={{ marginBottom: 16 }}>
                 <div>
-                    <h3
-                        style={{
-                            margin: 0,
-                            fontSize: 22,
-                            lineHeight: 1.1,
-                        }}
-                    >
-                        题目列表
-                    </h3>
-                    <p
-                        className="muted"
-                        style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                    >
+                    <h3 className="review-page-title">题目列表</h3>
+                    <p className="muted review-page-copy">
                         {scopeLabel ?? "当前项目"}内展示原始 JSON / Excel
                         导入字段。先选择项目，再按条件叠加筛选记录，点击列表行可进入题目详情页。
                     </p>
@@ -715,7 +704,7 @@ export function ReviewQuestionList({
                                     label: `${project.name} (${project.code})`,
                                 }))}
                                 style={{ minWidth: 280 }}
-                                size="large"
+                                size="middle"
                             />
                         </div>
 
@@ -737,7 +726,7 @@ export function ReviewQuestionList({
                                     placeholder="全部数据源"
                                     options={datasourceOptions}
                                     style={{ minWidth: 220 }}
-                                    size="large"
+                                    size="middle"
                                 />
                             </div>
                         )}
@@ -904,12 +893,13 @@ export function ReviewQuestionList({
                                     }}
                                 >
                                     <div
+                                        className="review-table-head"
                                         style={{
                                             display: "grid",
                                             gridTemplateColumns:
                                                 gridTemplateColumns,
                                             gap: 16,
-                                            padding: "14px 16px",
+                                            padding: "11px 16px",
                                             background:
                                                 "rgba(248, 250, 252, 0.9)",
                                             fontWeight: 700,
@@ -972,7 +962,7 @@ export function ReviewQuestionList({
                                                     gridTemplateColumns:
                                                         gridTemplateColumns,
                                                     gap: 16,
-                                                    padding: "16px",
+                                                    padding: "12px 16px",
                                                     borderTop:
                                                         "1px solid rgba(217, 224, 234, 0.85)",
                                                     alignItems: "center",
@@ -1154,6 +1144,7 @@ export function ReviewQuestionList({
 
                     <Modal
                         open={modalOpen}
+                        rootClassName="review-dialog"
                         onCancel={() => setModalOpen(false)}
                         onOk={() => {
                             pushListState({
@@ -1215,7 +1206,7 @@ export function ReviewQuestionList({
                                                                 : definition.label,
                                                     }),
                                                 )}
-                                                size="large"
+                                                size="middle"
                                                 onChange={(value) => {
                                                     const nextFieldDefinition =
                                                         fieldDefinitionMap[
@@ -1260,7 +1251,7 @@ export function ReviewQuestionList({
                                             <Select
                                                 value={condition.operator}
                                                 options={operatorOptions}
-                                                size="large"
+                                                size="middle"
                                                 onChange={(value) => {
                                                     setDraftConditions((prev) =>
                                                         prev.map((item) =>
@@ -1311,7 +1302,7 @@ export function ReviewQuestionList({
                                                                 )
                                                               : availableDatasourceOptions
                                                     }
-                                                    size="large"
+                                                    size="middle"
                                                     onChange={(value) => {
                                                         setDraftConditions(
                                                             (prev) =>
@@ -1336,7 +1327,7 @@ export function ReviewQuestionList({
                                             ) : (
                                                 <Input
                                                     value={condition.value}
-                                                    size="large"
+                                                    size="middle"
                                                     placeholder={
                                                         fieldDefinition?.valueType ===
                                                         "number"
@@ -1409,6 +1400,7 @@ export function ReviewQuestionList({
 
                     <Modal
                         open={batchModalOpen}
+                        rootClassName="review-dialog"
                         title="批量运行 AI 审核"
                         okText={isCreatingBatchRun ? "创建中" : "创建后台任务"}
                         cancelText="取消"
@@ -1463,7 +1455,7 @@ export function ReviewQuestionList({
                                         isCreatingBatchRun ||
                                         !projectReviewStrategies.length
                                     }
-                                    size="large"
+                                    size="middle"
                                 />
                                 {selectedStrategy?.description ? (
                                     <div className="muted">
@@ -1495,7 +1487,7 @@ export function ReviewQuestionList({
                                         setBatchConcurrency(value ?? 1)
                                     }
                                     disabled={isCreatingBatchRun}
-                                    size="large"
+                                    size="middle"
                                     style={{ width: 160 }}
                                 />
                             </div>
@@ -1504,6 +1496,7 @@ export function ReviewQuestionList({
 
                     <Modal
                         open={exportModalOpen}
+                        rootClassName="review-dialog"
                         onCancel={() => setExportModalOpen(false)}
                         onOk={exportSelectedQuestions}
                         okText={isExporting ? "导出中..." : "导出"}
@@ -1542,7 +1535,7 @@ export function ReviewQuestionList({
                                             label: `导出当前筛选全部结果（约 ${totalQuestions} 条）`,
                                         },
                                     ]}
-                                    size="large"
+                                    size="middle"
                                     style={{ width: "100%" }}
                                 />
                             </div>
@@ -1570,7 +1563,7 @@ export function ReviewQuestionList({
                                             label: "Markdown (.md)",
                                         },
                                     ]}
-                                    size="large"
+                                    size="middle"
                                     style={{ width: "100%" }}
                                 />
                             </div>
@@ -1589,7 +1582,7 @@ export function ReviewQuestionList({
                                     }
                                     options={exportFieldOptions}
                                     placeholder="选择导出字段"
-                                    size="large"
+                                    size="middle"
                                     style={{ width: "100%" }}
                                     optionFilterProp="label"
                                 />

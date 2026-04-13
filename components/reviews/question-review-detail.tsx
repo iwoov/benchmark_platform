@@ -474,8 +474,8 @@ export function QuestionReviewDetail({
     }
 
     return (
-        <div style={{ display: "grid", gap: 16 }}>
-            <section className="content-surface">
+        <div className="review-compact-scope" style={{ display: "grid", gap: 16 }}>
+            <section className="content-surface review-content-surface">
                 <div className="section-head">
                     <div
                         style={{
@@ -488,12 +488,14 @@ export function QuestionReviewDetail({
                         <Space size={8} wrap>
                             <Button
                                 icon={<ArrowLeft size={16} />}
+                                size="middle"
                                 onClick={goBackToList}
                             >
                                 返回列表
                             </Button>
                             <Button
                                 icon={<ChevronLeft size={16} />}
+                                size="middle"
                                 onClick={() =>
                                     goToQuestion(navigation.previousQuestionId)
                                 }
@@ -501,17 +503,14 @@ export function QuestionReviewDetail({
                             />
                             <Button
                                 icon={<ChevronRight size={16} />}
+                                size="middle"
                                 onClick={() =>
                                     goToQuestion(navigation.nextQuestionId)
                                 }
                                 disabled={!navigation.nextQuestionId}
                             />
                         </Space>
-                        <h2
-                            style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
-                        >
-                            {question.title}
-                        </h2>
+                        <h2 className="review-detail-title">{question.title}</h2>
                         <Space size={8} wrap>
                             <Tag
                                 color={
@@ -523,7 +522,7 @@ export function QuestionReviewDetail({
                             <Tag>{question.externalRecordId}</Tag>
                             <Tag>{question.project.code}</Tag>
                             <Tag>{question.datasource.name}</Tag>
-                            <span className="muted" style={{ fontSize: 13 }}>
+                            <span className="muted review-page-meta">
                                 {new Date(question.updatedAt).toLocaleString(
                                     "zh-CN",
                                 )}
@@ -535,32 +534,20 @@ export function QuestionReviewDetail({
 
             <div className="detail-two-column">
                 <div className="detail-two-column-left">
-                    <section className="content-surface">
+                    <section className="content-surface review-content-surface">
                         <div
                             className="section-head"
                             style={{ marginBottom: 16 }}
                         >
                             <div>
-                                <h3
-                                    style={{
-                                        margin: 0,
-                                        fontSize: 20,
-                                        lineHeight: 1.1,
-                                    }}
-                                >
+                                <h3 className="review-section-title">
                                     原始字段
                                 </h3>
-                                    <p
-                                        className="muted"
-                                        style={{
-                                            margin: "10px 0 0",
-                                            lineHeight: 1.7,
-                                        }}
-                                    >
+                                <p className="muted review-page-copy">
                                     按字段设置中的顺序竖向展示，便于和原始 JSON /
                                     Excel 对照。
-                                    </p>
-                                </div>
+                                </p>
+                            </div>
                         </div>
 
                         {orderedRawEntries.length ? (
@@ -667,28 +654,16 @@ export function QuestionReviewDetail({
                     ) : null}
 
                     {canReview ? (
-                        <section className="content-surface">
+                        <section className="content-surface review-content-surface">
                             <div
                                 className="section-head"
                                 style={{ marginBottom: 16 }}
                             >
                                 <div>
-                                    <h3
-                                        style={{
-                                            margin: 0,
-                                            fontSize: 20,
-                                            lineHeight: 1.1,
-                                        }}
-                                    >
+                                    <h3 className="review-section-title">
                                         提交审核
                                     </h3>
-                                    <p
-                                        className="muted"
-                                        style={{
-                                            margin: "10px 0 0",
-                                            lineHeight: 1.7,
-                                        }}
-                                    >
+                                    <p className="muted review-page-copy">
                                         在详情页直接填写审核意见并提交结论。
                                     </p>
                                 </div>
@@ -714,7 +689,7 @@ export function QuestionReviewDetail({
                                             },
                                             { value: "REJECT", label: "驳回" },
                                         ]}
-                                        size="large"
+                                        size="middle"
                                     />
                                 </div>
 
@@ -733,6 +708,7 @@ export function QuestionReviewDetail({
                                         }
                                         rows={6}
                                         placeholder="请输入审核意见、修改建议或驳回原因"
+                                        size="middle"
                                     />
                                 </div>
 
@@ -744,6 +720,7 @@ export function QuestionReviewDetail({
                                 >
                                     <Button
                                         type="primary"
+                                        size="middle"
                                         onClick={submitReview}
                                         loading={isSubmitting}
                                     >

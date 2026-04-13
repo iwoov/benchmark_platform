@@ -443,7 +443,163 @@ select {
     overscroll-behavior-x: contain;
 }
 
+.review-content-surface {
+    padding: 16px 0;
+}
+
+.review-page-title {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.review-detail-title {
+    margin: 0;
+    font-size: 21px;
+    line-height: 1.14;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+}
+
+.review-section-title {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.18;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.review-page-copy {
+    margin: 8px 0 0;
+    max-width: 68ch;
+    font-size: 13px;
+    line-height: 1.58;
+}
+
+.review-page-meta {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.review-compact-scope .ant-btn {
+    height: 31px;
+    padding-inline: 11px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.review-compact-scope .ant-btn.ant-btn-icon-only {
+    width: 31px;
+    padding-inline: 0;
+}
+
+.review-compact-scope .review-toolbar-actions .ant-btn {
+    height: 30px;
+    padding-inline: 10px;
+}
+
+.review-compact-scope .ant-select-single {
+    font-size: 13px;
+}
+
+.review-compact-scope .ant-select-single .ant-select-selector,
+.review-compact-scope .ant-input-affix-wrapper,
+.review-compact-scope .ant-input,
+.review-compact-scope .ant-input-number,
+.review-compact-scope .ant-input-number-input-wrap,
+.review-compact-scope .ant-input-number-input {
+    min-height: 34px;
+    height: 34px;
+    font-size: 13px;
+}
+
+.review-compact-scope .ant-input-textarea textarea.ant-input {
+    min-height: 120px;
+    height: auto;
+    font-size: 13px;
+    line-height: 1.65;
+    padding: 9px 11px;
+}
+
+.review-compact-scope .ant-select-multiple .ant-select-selector {
+    min-height: 36px;
+    padding-block: 2px;
+    font-size: 13px;
+}
+
+.review-compact-scope .ant-tag {
+    font-size: 12px;
+    line-height: 20px;
+    padding-inline: 8px;
+}
+
+.review-dialog .ant-modal {
+    padding-bottom: 0;
+}
+
+.review-dialog .ant-modal-content {
+    border-radius: 18px;
+    padding: 18px 20px 18px;
+    box-shadow: 0 22px 44px rgba(15, 23, 42, 0.12);
+}
+
+.review-dialog .ant-modal-header {
+    margin-bottom: 10px;
+}
+
+.review-dialog .ant-modal-title {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.review-dialog .ant-modal-body {
+    font-size: 13px;
+}
+
+.review-dialog .ant-modal-footer {
+    margin-top: 16px;
+}
+
+.review-dialog .ant-modal-footer .ant-btn {
+    height: 32px;
+    padding-inline: 12px;
+    font-size: 13px;
+}
+
+.review-dialog .ant-btn {
+    border-radius: 10px;
+}
+
+.review-dialog .ant-select-single .ant-select-selector,
+.review-dialog .ant-input-affix-wrapper,
+.review-dialog .ant-input,
+.review-dialog .ant-input-number,
+.review-dialog .ant-input-number-input-wrap,
+.review-dialog .ant-input-number-input {
+    min-height: 34px;
+    height: 34px;
+    font-size: 13px;
+}
+
+.review-dialog .ant-select-multiple .ant-select-selector {
+    min-height: 36px;
+    font-size: 13px;
+}
+
+.review-dialog .workspace-tip {
+    padding: 8px 0;
+}
+
+.review-table-head {
+    font-size: 12px;
+    letter-spacing: 0.01em;
+}
+
 .review-question-row {
+    font-size: 13px;
     transition: background-color 180ms ease;
 }
 
@@ -470,7 +626,7 @@ select {
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
-    padding: 16px 0;
+    padding: 12px 0;
     border-bottom: 1px solid var(--line);
 }
 
@@ -499,7 +655,7 @@ select {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 12px;
 }
 
 .review-filter-row {
@@ -527,8 +683,10 @@ select {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 0;
+    padding: 10px 0;
     border-bottom: 1px solid var(--line-soft);
+    font-size: 13px;
+    line-height: 1.55;
 }
 
 .member-form-grid {
@@ -644,7 +802,7 @@ select {
 
 .detail-meta-card,
 .detail-field-card {
-    padding: 16px 0;
+    padding: 13px 0;
     border-bottom: 1px solid var(--line);
 }
 
@@ -661,7 +819,7 @@ select {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
 }
 
 .detail-meta-value {
@@ -680,25 +838,26 @@ select {
 .detail-two-column-left,
 .detail-two-column-right {
     display: grid;
-    gap: 16px;
+    gap: 14px;
     min-width: 0;
 }
 
 .detail-two-column-right {
-    padding-left: 24px;
+    padding-left: 20px;
     border-left: 1px solid var(--line);
 }
 
 .detail-card-grid {
     display: grid;
-    gap: 16px;
+    gap: 12px;
 }
 
 .detail-field-content {
-    margin-top: 12px;
+    margin-top: 10px;
     white-space: pre-wrap;
     word-break: break-word;
-    line-height: 1.8;
+    font-size: 13px;
+    line-height: 1.72;
 }
 
 .detail-field-json {
@@ -711,7 +870,7 @@ select {
     padding: 4px 0;
     cursor: pointer;
     color: var(--muted);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     list-style: none;
 }
@@ -725,8 +884,8 @@ select {
 }
 
 .detail-field-translation {
-    margin-top: 14px;
-    padding: 12px 0;
+    margin-top: 12px;
+    padding: 10px 0 0;
     border-top: 1px solid var(--line);
 }
 
@@ -739,11 +898,12 @@ select {
 }
 
 .detail-field-translation-body {
-    margin-top: 8px;
+    margin-top: 6px;
     white-space: pre-wrap;
     word-break: break-word;
-    line-height: 1.8;
-    min-height: 28px;
+    font-size: 13px;
+    line-height: 1.72;
+    min-height: 24px;
 }
 
 .stat-value {
