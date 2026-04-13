@@ -5,6 +5,7 @@ import {
     getReviewQuestionListPageData,
 } from "@/lib/reviews/question-list-data";
 import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
+import { getResolvedUserProjectReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
 
@@ -61,7 +62,7 @@ export default async function WorkspaceReviewsPage({
         ? resolvedSearchParams.datasourceId[0]
         : resolvedSearchParams.datasourceId;
 
-    const [questionPage, reviewStrategies, filterMeta] = selectedProjectId
+    const [questionPage, reviewStrategies, filterMeta, fieldPreference] = selectedProjectId
         ? await Promise.all([
               getReviewQuestionListPageData({
                   projectId: selectedProjectId,
@@ -72,6 +73,10 @@ export default async function WorkspaceReviewsPage({
               }),
               getReviewQuestionListAiStrategies([selectedProjectId]),
               getReviewQuestionListFilterMeta(selectedProjectId),
+              getResolvedUserProjectReviewFieldPreference(
+                  session?.user?.id ?? "",
+                  selectedProjectId,
+              ),
           ])
         : [
               {
@@ -84,6 +89,13 @@ export default async function WorkspaceReviewsPage({
               {
                   datasourceOptions: [],
                   rawFieldOptions: [],
+              },
+              {
+                  hasSavedPreference: false,
+                  fieldCatalog: [],
+                  fieldOrder: [],
+                  listVisibleFieldKeys: [],
+                  detailVisibleFieldKeys: [],
               },
           ];
 
@@ -114,6 +126,7 @@ export default async function WorkspaceReviewsPage({
             activeConditions={filters}
             datasourceOptions={filterMeta.datasourceOptions}
             rawFieldOptions={filterMeta.rawFieldOptions}
+            fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
         />
     );

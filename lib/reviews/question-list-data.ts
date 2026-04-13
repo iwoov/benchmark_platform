@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
+import { getProjectReviewFieldCatalog } from "@/lib/reviews/field-preferences";
 import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
 import {
     buildReviewCompositeKey,
@@ -645,20 +646,7 @@ export async function getReviewQuestionListFilterMeta(
             syncConfig: true,
         },
     });
-    const rawFieldOptions = datasources.reduce<
-        Array<{ key: string; label: string }>
-    >((fields, datasource) => {
-        for (const field of extractRawFieldOrder(datasource.syncConfig)) {
-            if (!fields.some((item) => item.key === field)) {
-                fields.push({
-                    key: field,
-                    label: field,
-                });
-            }
-        }
-
-        return fields;
-    }, []);
+    const rawFieldOptions = await getProjectReviewFieldCatalog(projectId);
 
     return {
         datasourceOptions: datasources.map((datasource) => ({

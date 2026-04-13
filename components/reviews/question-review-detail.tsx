@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Languages } from "lucide-react";
 import { translateReviewFieldAction } from "@/app/actions/review-field-translation";
 import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
+import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import type {
     ReviewQuestionDetail,
     ReviewQuestionNavigation,
@@ -212,6 +213,7 @@ export function QuestionReviewDetail({
     canReview,
     listPath,
     navigation,
+    fieldPreference,
     reviewStrategies,
     strategyRuns,
 }: {
@@ -219,6 +221,7 @@ export function QuestionReviewDetail({
     canReview: boolean;
     listPath: string;
     navigation: ReviewQuestionNavigation;
+    fieldPreference: ResolvedReviewFieldPreference;
     reviewStrategies: Array<{
         id: string;
         name: string;
@@ -325,11 +328,9 @@ export function QuestionReviewDetail({
         ? listPath.slice(listPath.indexOf("?"))
         : "";
 
-    const orderedRawEntries = (
-        question.rawFieldOrder.length
-            ? question.rawFieldOrder
-            : Object.keys(question.rawRecord)
-    ).map((key) => [key, question.rawRecord[key]] as const);
+    const orderedRawEntries = fieldPreference.detailVisibleFieldKeys.map(
+        (key) => [key, question.rawRecord[key]] as const,
+    );
 
     const imageFieldSet = new Set(question.imageFields ?? []);
     const imageMap = question.imageMap ?? {};
@@ -549,17 +550,17 @@ export function QuestionReviewDetail({
                                 >
                                     原始字段
                                 </h3>
-                                <p
-                                    className="muted"
-                                    style={{
-                                        margin: "10px 0 0",
-                                        lineHeight: 1.7,
-                                    }}
-                                >
-                                    按导入时的字段顺序竖向展示，便于和原始 JSON
-                                    / Excel 对照。
-                                </p>
-                            </div>
+                                    <p
+                                        className="muted"
+                                        style={{
+                                            margin: "10px 0 0",
+                                            lineHeight: 1.7,
+                                        }}
+                                    >
+                                    按字段设置中的顺序竖向展示，便于和原始 JSON /
+                                    Excel 对照。
+                                    </p>
+                                </div>
                         </div>
 
                         {orderedRawEntries.length ? (
@@ -650,7 +651,7 @@ export function QuestionReviewDetail({
                             </div>
                         ) : (
                             <div className="muted">
-                                当前题目没有原始字段可展示。
+                                当前字段配置未启用任何详情字段。
                             </div>
                         )}
                     </section>

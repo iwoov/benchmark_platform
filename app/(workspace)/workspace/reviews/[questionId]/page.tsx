@@ -5,6 +5,7 @@ import {
     getAiReviewStrategyRunsForQuestion,
     getApplicableAiReviewStrategies,
 } from "@/lib/ai/review-strategies";
+import { getResolvedUserProjectReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import {
     getReviewQuestionDetail,
     getReviewQuestionNavigation,
@@ -58,7 +59,13 @@ export default async function WorkspaceReviewDetailPage({
 
     const listSearch = new URLSearchParams();
 
-    for (const key of ["projectId", "page", "pageSize", "filters"]) {
+    for (const key of [
+        "projectId",
+        "datasourceId",
+        "page",
+        "pageSize",
+        "filters",
+    ]) {
         const value = resolvedSearchParams[key];
         const normalized = Array.isArray(value) ? value[0] : value;
 
@@ -67,9 +74,13 @@ export default async function WorkspaceReviewDetailPage({
         }
     }
 
-    const [reviewStrategies, strategyRuns] = await Promise.all([
+    const [reviewStrategies, strategyRuns, fieldPreference] = await Promise.all([
         getApplicableAiReviewStrategies(question),
         getAiReviewStrategyRunsForQuestion(question.id),
+        getResolvedUserProjectReviewFieldPreference(
+            session.user.id,
+            question.project.id,
+        ),
     ]);
 
     return (
@@ -82,6 +93,7 @@ export default async function WorkspaceReviewDetailPage({
                     : "/workspace/reviews"
             }
             navigation={navigation}
+            fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
             strategyRuns={strategyRuns}
         />

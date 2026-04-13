@@ -14,9 +14,11 @@ import {
     Select,
     Tag,
 } from "antd";
-import { Bot, Download, SlidersHorizontal, X } from "lucide-react";
+import { Bot, Download, Eye, SlidersHorizontal, X } from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
+import { ReviewFieldSettingsModal } from "@/components/reviews/review-field-settings-modal";
 import { exportReviewQuestionsAction } from "@/app/actions/review-exports";
+import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import {
     conditionNeedsValue,
     createReviewQuestionFilterCondition,
@@ -109,30 +111,6 @@ const cellStyle = {
     whiteSpace: "nowrap",
 } as const;
 
-function buildRawColumns(questions: ReviewQuestionItem[]) {
-    const orderedFields = questions.reduce<string[]>((fields, question) => {
-        for (const field of question.rawFieldOrder) {
-            if (!fields.includes(field)) {
-                fields.push(field);
-            }
-        }
-
-        for (const field of Object.keys(question.rawRecord)) {
-            if (!fields.includes(field)) {
-                fields.push(field);
-            }
-        }
-
-        return fields;
-    }, []);
-
-    return orderedFields.map((field) => ({
-        key: field,
-        label: field,
-        width: 220,
-    }));
-}
-
 function getOperatorOptions(valueType: FieldDefinition["valueType"]) {
     if (valueType === "select") {
         return [
@@ -204,6 +182,7 @@ export function ReviewQuestionList({
     activeConditions,
     datasourceOptions,
     rawFieldOptions,
+    fieldPreference,
     reviewStrategies,
 }: {
     canReview: boolean;
@@ -219,11 +198,13 @@ export function ReviewQuestionList({
     activeConditions: ReviewQuestionFilterCondition[];
     datasourceOptions: Array<{ value: string; label: string }>;
     rawFieldOptions: Array<{ key: string; label: string }>;
+    fieldPreference: ResolvedReviewFieldPreference;
     reviewStrategies: ReviewStrategyOption[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
     const [modalOpen, setModalOpen] = useState(false);
+    const [fieldSettingsOpen, setFieldSettingsOpen] = useState(false);
     const [draftConditions, setDraftConditions] = useState<
         ReviewQuestionFilterCondition[]
     >([]);
@@ -245,14 +226,15 @@ export function ReviewQuestionList({
 
     const rawColumns = useMemo(
         () =>
-            questions.length
-                ? buildRawColumns(questions)
-                : rawFieldOptions.map((field) => ({
-                      key: field.key,
-                      label: field.label,
-                      width: 220,
-                  })),
-        [questions, rawFieldOptions],
+            fieldPreference.listVisibleFieldKeys.map((fieldKey) => ({
+                key: fieldKey,
+                label:
+                    fieldPreference.fieldCatalog.find(
+                        (field) => field.key === fieldKey,
+                    )?.label ?? fieldKey,
+                width: 220,
+            })),
+        [fieldPreference],
     );
 
     const fieldDefinitions = useMemo(() => {
@@ -786,6 +768,13 @@ export function ReviewQuestionList({
                             >
                                 筛选条件
                             </Button>
+                            <Button
+                                icon={<Eye size={16} />}
+                                onClick={() => setFieldSettingsOpen(true)}
+                                disabled={!selectedProjectId}
+                            >
+                                字段设置
+                            </Button>
                             {activeConditions.length ? (
                                 <Button
                                     onClick={() =>
@@ -877,12 +866,7 @@ export function ReviewQuestionList({
                         </div>
                     ) : null}
 
-                    {!rawColumns.length ? (
-                        <Empty
-                            description="当前项目下还没有原始字段可展示"
-                            style={{ marginTop: 24 }}
-                        />
-                    ) : !questions.length ? (
+                    {!questions.length ? (
                         <Empty
                             description={
                                 totalQuestions
@@ -893,6 +877,17 @@ export function ReviewQuestionList({
                         />
                     ) : (
                         <>
+                            {!rawColumns.length ? (
+                                <div
+                                    className="workspace-tip"
+                                    style={{ marginTop: 20 }}
+                                >
+                                    <Tag color="gold">提示</Tag>
+                                    <span>
+                                        当前字段配置未在列表中启用任何原始字段，列表仅展示固定信息列。
+                                    </span>
+                                </div>
+                            ) : null}
                             <div
                                 className="review-list-scroll"
                                 style={{
@@ -1398,6 +1393,19 @@ export function ReviewQuestionList({
                             </div>
                         </div>
                     </Modal>
+
+                    <ReviewFieldSettingsModal
+                        open={fieldSettingsOpen}
+                        projectId={selectedProjectId}
+                        projectLabel={
+                            selectedProject
+                                ? `${selectedProject.name} (${selectedProject.code})`
+                                : undefined
+                        }
+                        fieldPreference={fieldPreference}
+                        onClose={() => setFieldSettingsOpen(false)}
+                        onSaved={() => router.refresh()}
+                    />
 
                     <Modal
                         open={batchModalOpen}

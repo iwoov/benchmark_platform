@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { ReviewQuestionList } from "@/components/workspace/review-question-list";
 import {
@@ -5,6 +6,7 @@ import {
     getReviewQuestionListPageData,
 } from "@/lib/reviews/question-list-data";
 import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
+import { getResolvedUserProjectReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +30,7 @@ export default async function ReviewTasksPage({
 }: {
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+    const session = await auth();
     const projects = process.env.DATABASE_URL
         ? await prisma.project.findMany({
               where: {
@@ -67,7 +70,7 @@ export default async function ReviewTasksPage({
         ? resolvedSearchParams.datasourceId[0]
         : resolvedSearchParams.datasourceId;
 
-    const [questionPage, reviewStrategies, filterMeta] = selectedProjectId
+    const [questionPage, reviewStrategies, filterMeta, fieldPreference] = selectedProjectId
         ? await Promise.all([
               getReviewQuestionListPageData({
                   projectId: selectedProjectId,
@@ -78,6 +81,10 @@ export default async function ReviewTasksPage({
               }),
               getReviewQuestionListAiStrategies([selectedProjectId]),
               getReviewQuestionListFilterMeta(selectedProjectId),
+              getResolvedUserProjectReviewFieldPreference(
+                  session?.user?.id ?? "",
+                  selectedProjectId,
+              ),
           ])
         : [
               {
@@ -90,6 +97,13 @@ export default async function ReviewTasksPage({
               {
                   datasourceOptions: [],
                   rawFieldOptions: [],
+              },
+              {
+                  hasSavedPreference: false,
+                  fieldCatalog: [],
+                  fieldOrder: [],
+                  listVisibleFieldKeys: [],
+                  detailVisibleFieldKeys: [],
               },
           ];
 
@@ -114,6 +128,7 @@ export default async function ReviewTasksPage({
             activeConditions={filters}
             datasourceOptions={filterMeta.datasourceOptions}
             rawFieldOptions={filterMeta.rawFieldOptions}
+            fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
         />
     );
