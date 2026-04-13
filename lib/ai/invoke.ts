@@ -17,6 +17,11 @@ export type AiMessagePart =
           type: "file";
           fileUri: string;
           mimeType: string;
+      }
+    | {
+          type: "image_base64";
+          base64: string;
+          mimeType: string;
       };
 
 export type AiMessage = {
@@ -154,11 +159,11 @@ function normalizeParts(content: AiMessage["content"]): AiMessagePart[] {
 
 function getPlainText(content: AiMessage["content"]) {
     return normalizeParts(content)
-        .map((part) =>
-            part.type === "text"
-                ? part.text
-                : `[file:${part.mimeType}] ${part.fileUri}`,
-        )
+        .map((part) => {
+            if (part.type === "text") return part.text;
+            if (part.type === "image_base64") return `[image:${part.mimeType}]`;
+            return `[file:${part.mimeType}] ${part.fileUri}`;
+        })
         .join("\n");
 }
 
@@ -191,14 +196,25 @@ function buildOpenAiPayload(
             content:
                 typeof message.content === "string"
                     ? message.content
-                    : message.content.map((part) =>
-                          part.type === "text"
-                              ? { type: "text", text: part.text }
-                              : {
-                                    type: "text",
-                                    text: `[file:${part.mimeType}] ${part.fileUri}`,
-                                },
-                      ),
+                    : message.content.map((part) => {
+                          if (part.type === "text") {
+                              return { type: "text", text: part.text };
+                          }
+
+                          if (part.type === "image_base64") {
+                              return {
+                                  type: "image_url",
+                                  image_url: {
+                                      url: `data:${part.mimeType};base64,${part.base64}`,
+                                  },
+                              };
+                          }
+
+                          return {
+                              type: "text",
+                              text: `[file:${part.mimeType}] ${part.fileUri}`,
+                          };
+                      }),
         })),
         ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
         ...(typeof temperature === "number" ? { temperature } : {}),
@@ -226,17 +242,27 @@ function buildAnthropicPayload(
             content:
                 typeof message.content === "string"
                     ? message.content
-                    : message.content.map((part) =>
-                          part.type === "text"
-                              ? {
-                                    type: "text",
-                                    text: part.text,
-                                }
-                              : {
-                                    type: "text",
-                                    text: `[file:${part.mimeType}] ${part.fileUri}`,
-                                },
-                      ),
+                    : message.content.map((part) => {
+                          if (part.type === "text") {
+                              return { type: "text", text: part.text };
+                          }
+
+                          if (part.type === "image_base64") {
+                              return {
+                                  type: "image",
+                                  source: {
+                                      type: "base64",
+                                      media_type: part.mimeType,
+                                      data: part.base64,
+                                  },
+                              };
+                          }
+
+                          return {
+                              type: "text",
+                              text: `[file:${part.mimeType}] ${part.fileUri}`,
+                          };
+                      }),
         })),
         ...(systemText ? { system: systemText } : {}),
         ...(reasoningBudget
@@ -271,18 +297,27 @@ function buildGeminiPayload(
             : {}),
         contents: conversation.map((message) => ({
             role: message.role === "assistant" ? "model" : "user",
-            parts: normalizeParts(message.content).map((part) =>
-                part.type === "text"
-                    ? {
-                          text: part.text,
-                      }
-                    : {
-                          fileData: {
-                              fileUri: part.fileUri,
-                              mimeType: part.mimeType,
-                          },
-                      },
-            ),
+            parts: normalizeParts(message.content).map((part) => {
+                if (part.type === "text") {
+                    return { text: part.text };
+                }
+
+                if (part.type === "image_base64") {
+                    return {
+                        inlineData: {
+                            mimeType: part.mimeType,
+                            data: part.base64,
+                        },
+                    };
+                }
+
+                return {
+                    fileData: {
+                        fileUri: part.fileUri,
+                        mimeType: part.mimeType,
+                    },
+                };
+            }),
         })),
         generationConfig: {
             responseModalities: ["TEXT"],
@@ -582,17 +617,17 @@ export async function resolveAiInvocationText(
                 continue;
             }
 
-                if (firstChunkAt === null) {
-                    firstChunkAt = Date.now();
-                    logInfo("ai.invoke.first_chunk", {
+            if (firstChunkAt === null) {
+                firstChunkAt = Date.now();
+                logInfo("ai.invoke.first_chunk", {
                     modelCode: result.modelCode,
                     protocol: result.protocol,
                     stream: true,
                     providerCode: result.route.providerCode,
                     endpointCode: result.route.endpointCode,
-                        ttftMs: firstChunkAt - startedAt,
-                    });
-                }
+                    ttftMs: firstChunkAt - startedAt,
+                });
+            }
 
             rawText += decoder.decode(value, { stream: true });
             chunkCount += 1;
@@ -626,8 +661,9 @@ export async function resolveAiInvocationText(
     if (parsedDirect !== null) {
         if (Array.isArray(parsedDirect)) {
             const text = parsedDirect
-                .map((chunk) =>
-                    extractStreamDeltaText(result.protocol, chunk) ?? "",
+                .map(
+                    (chunk) =>
+                        extractStreamDeltaText(result.protocol, chunk) ?? "",
                 )
                 .join("");
 

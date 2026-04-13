@@ -1571,6 +1571,77 @@ select {
     font-size: 12px;
 }
 
+.strategy-step-item-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.9);
+    overflow: hidden;
+}
+
+.strategy-step-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.strategy-step-item-head-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.step-output-rendered {
+    padding: 12px 14px 14px;
+}
+
+.step-output-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.step-output-summary {
+    margin-top: 8px;
+    line-height: 1.7;
+    color: var(--color-text-primary, #1a1a1a);
+}
+
+.step-output-section-label {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--muted, #666);
+}
+
+.step-output-issue {
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    background: rgba(248, 250, 252, 0.5);
+}
+
+.step-output-issue-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.step-output-issue-detail {
+    margin-top: 6px;
+    line-height: 1.7;
+    font-size: 13px;
+    color: var(--color-text-secondary, #555);
+}
+
 .overview-hero {
     display: grid;
     grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);

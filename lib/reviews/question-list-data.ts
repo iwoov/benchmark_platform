@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
 import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
 import {
     buildReviewCompositeKey,
@@ -143,6 +144,8 @@ export type ReviewQuestionDetail = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    imageFields: string[];
+    imageMap: Record<string, string[]> | null;
 };
 
 type ReviewAwareQuestionRecord = {
@@ -727,6 +730,8 @@ export async function getReviewQuestionDetail(questionId: string) {
         sourceRowNumber: extractSourceRowNumber(question.metadata),
         rawRecord: extractRawRecord(question.metadata),
         rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        imageFields: readImageFields(question.datasource.syncConfig),
+        imageMap: readImageMap(question.datasource.syncConfig),
     } satisfies ReviewQuestionDetail;
 }
 

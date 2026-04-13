@@ -100,6 +100,96 @@ function renderRawFieldValue(value: unknown) {
     return String(value);
 }
 
+/**
+ * Normalize a filename for fuzzy matching.
+ * Filesystems often replace characters like : with _ when saving,
+ * so the imageMap key may differ from the raw field value.
+ */
+function normalizeForMatch(value: string) {
+    return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
+}
+
+function lookupImageUrls(
+    value: string,
+    imageMap: Record<string, string[]>,
+): string[] | null {
+    // 1. Exact match
+    const exact = imageMap[value];
+
+    if (exact?.length) {
+        return exact;
+    }
+
+    // 2. Normalized match (handles : vs _ and similar filesystem differences)
+    const normalizedValue = normalizeForMatch(value);
+
+    for (const [key, urls] of Object.entries(imageMap)) {
+        if (normalizeForMatch(key) === normalizedValue && urls.length) {
+            return urls;
+        }
+    }
+
+    return null;
+}
+
+function renderImageField(value: unknown, imageMap: Record<string, string[]>) {
+    const strValue = value == null ? "" : String(value).trim();
+
+    if (!strValue) {
+        return <span className="muted">—</span>;
+    }
+
+    const urls = lookupImageUrls(strValue, imageMap);
+
+    if (!urls || !urls.length) {
+        return (
+            <div>
+                <div
+                    className="muted"
+                    style={{ marginBottom: 4, fontSize: 12 }}
+                >
+                    {strValue}
+                </div>
+                <span className="muted" style={{ fontSize: 12 }}>
+                    (未找到匹配图片)
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <div className="muted" style={{ marginBottom: 8, fontSize: 12 }}>
+                {strValue}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {urls.map((url) => (
+                    <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={url}
+                            alt={strValue}
+                            style={{
+                                maxWidth: 400,
+                                maxHeight: 300,
+                                borderRadius: 6,
+                                border: "1px solid var(--color-border)",
+                                objectFit: "contain",
+                                background: "var(--color-surface-2, #f5f5f5)",
+                            }}
+                        />
+                    </a>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function getTranslatableFieldValue(value: unknown) {
     if (value == null) {
         return null;
@@ -240,6 +330,9 @@ export function QuestionReviewDetail({
             ? question.rawFieldOrder
             : Object.keys(question.rawRecord)
     ).map((key) => [key, question.rawRecord[key]] as const);
+
+    const imageFieldSet = new Set(question.imageFields ?? []);
+    const imageMap = question.imageMap ?? {};
 
     useEffect(() => {
         const timers = translationTimersRef.current;
@@ -488,6 +581,7 @@ export function QuestionReviewDetail({
                                         fieldTranslations[key];
                                     const translatableValue =
                                         getTranslatableFieldValue(value);
+                                    const isImageField = imageFieldSet.has(key);
 
                                     return (
                                         <div
@@ -497,31 +591,53 @@ export function QuestionReviewDetail({
                                             <div className="detail-field-head">
                                                 <div className="detail-field-label">
                                                     {key}
+                                                    {isImageField ? (
+                                                        <Tag
+                                                            color="green"
+                                                            style={{
+                                                                marginLeft: 6,
+                                                                fontSize: 11,
+                                                            }}
+                                                        >
+                                                            图片
+                                                        </Tag>
+                                                    ) : null}
                                                 </div>
-                                                <Button
-                                                    type="text"
-                                                    size="small"
-                                                    icon={
-                                                        <Languages size={16} />
-                                                    }
-                                                    loading={
-                                                        translationState?.loading
-                                                    }
-                                                    disabled={
-                                                        !translatableValue
-                                                    }
-                                                    onClick={() =>
-                                                        translateField(
-                                                            key,
-                                                            value,
-                                                        )
-                                                    }
-                                                >
-                                                    翻译
-                                                </Button>
+                                                {!isImageField ? (
+                                                    <Button
+                                                        type="text"
+                                                        size="small"
+                                                        icon={
+                                                            <Languages
+                                                                size={16}
+                                                            />
+                                                        }
+                                                        loading={
+                                                            translationState?.loading
+                                                        }
+                                                        disabled={
+                                                            !translatableValue
+                                                        }
+                                                        onClick={() =>
+                                                            translateField(
+                                                                key,
+                                                                value,
+                                                            )
+                                                        }
+                                                    >
+                                                        翻译
+                                                    </Button>
+                                                ) : null}
                                             </div>
                                             <div className="detail-field-content">
-                                                {renderRawFieldValue(value)}
+                                                {isImageField
+                                                    ? renderImageField(
+                                                          value,
+                                                          imageMap,
+                                                      )
+                                                    : renderRawFieldValue(
+                                                          value,
+                                                      )}
                                             </div>
                                             {translationState?.loading ||
                                             translationState?.displayedText ? (

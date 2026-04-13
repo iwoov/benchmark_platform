@@ -1,13 +1,24 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import {
+    useActionState,
+    useEffect,
+    useRef,
+    useState,
+    useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
-import { Button, Empty, Input, Modal, Space, Tag } from "antd";
-import { FileUp, Plus } from "lucide-react";
+import { App, Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
+import { FileUp, Image as ImageIcon, Plus, Settings } from "lucide-react";
 import {
     importProjectDataAction,
     type ImportProjectDataFormState,
 } from "@/app/actions/datasources";
+import {
+    uploadDatasourceImagePackAction,
+    updateDatasourceImageFieldsAction,
+    type ImagePackUploadState,
+} from "@/app/actions/datasource-images";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
     getDataSourceStatusColor,
@@ -37,9 +48,13 @@ type DataSourceItem = {
     originalFileName?: string | null;
     lastSyncAt?: string | null;
     lastSyncStatus?: "SUCCESS" | "FAILED" | null;
+    rawFieldOrder?: string[];
+    imageFields?: string[];
+    imagePackFileName?: string | null;
 };
 
 const initialState: ImportProjectDataFormState = {};
+const initialImagePackState: ImagePackUploadState = {};
 
 export function ProjectDatasourceConsole({
     title,
@@ -53,12 +68,25 @@ export function ProjectDatasourceConsole({
     datasources: DataSourceItem[];
 }) {
     const router = useRouter();
+    const { notification } = App.useApp();
     const [state, formAction, isPending] = useActionState(
         importProjectDataAction,
         initialState,
     );
+    const [imagePackState, imagePackFormAction, isImagePackPending] =
+        useActionState(uploadDatasourceImagePackAction, initialImagePackState);
     const formRef = useRef<HTMLFormElement>(null);
+    const imagePackFormRef = useRef<HTMLFormElement>(null);
     const [open, setOpen] = useState(false);
+    const [imagePackOpen, setImagePackOpen] = useState(false);
+    const [imagePackDatasourceId, setImagePackDatasourceId] = useState("");
+    const [imageFieldOpen, setImageFieldOpen] = useState(false);
+    const [imageFieldDatasource, setImageFieldDatasource] =
+        useState<DataSourceItem | null>(null);
+    const [selectedImageFields, setSelectedImageFields] = useState<string[]>(
+        [],
+    );
+    const [isSavingImageFields, startSavingImageFields] = useTransition();
 
     useActionNotification(state, {
         successTitle: "导入成功",
@@ -76,6 +104,59 @@ export function ProjectDatasourceConsole({
             return () => cancelAnimationFrame(frame);
         }
     }, [router, state.success]);
+
+    useActionNotification(imagePackState, {
+        successTitle: "图片包上传成功",
+        errorTitle: "图片包上传失败",
+    });
+
+    useEffect(() => {
+        if (imagePackState.success) {
+            const frame = requestAnimationFrame(() => {
+                imagePackFormRef.current?.reset();
+                setImagePackOpen(false);
+                router.refresh();
+            });
+
+            return () => cancelAnimationFrame(frame);
+        }
+    }, [router, imagePackState.success]);
+
+    function openImageFieldModal(datasource: DataSourceItem) {
+        setImageFieldDatasource(datasource);
+        setSelectedImageFields(datasource.imageFields ?? []);
+        setImageFieldOpen(true);
+    }
+
+    function saveImageFields() {
+        if (!imageFieldDatasource) {
+            return;
+        }
+
+        startSavingImageFields(async () => {
+            const result = await updateDatasourceImageFieldsAction({
+                datasourceId: imageFieldDatasource.id,
+                imageFields: selectedImageFields,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "保存失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "图片字段已更新",
+                description: result.success,
+                placement: "topRight",
+            });
+            setImageFieldOpen(false);
+            router.refresh();
+        });
+    }
 
     return (
         <section className="content-surface">
@@ -125,7 +206,7 @@ export function ProjectDatasourceConsole({
                             <div>状态</div>
                             <div>题目数</div>
                             <div>原始文件</div>
-                            <div>最近导入</div>
+                            <div>操作</div>
                         </div>
 
                         {datasources.map((datasource) => (
@@ -173,19 +254,39 @@ export function ProjectDatasourceConsole({
                                 <div>{datasource.questionCount}</div>
                                 <div className="muted">
                                     {datasource.originalFileName ?? "—"}
+                                    {datasource.imagePackFileName ? (
+                                        <div style={{ marginTop: 4 }}>
+                                            <Tag color="green">
+                                                图片包:{" "}
+                                                {datasource.imagePackFileName}
+                                            </Tag>
+                                        </div>
+                                    ) : null}
                                 </div>
-                                <div className="muted">
-                                    {datasource.lastSyncAt
-                                        ? `${datasource.lastSyncAt} · ${
-                                              datasource.lastSyncStatus ===
-                                              "FAILED"
-                                                  ? "失败"
-                                                  : datasource.lastSyncStatus ===
-                                                      "SUCCESS"
-                                                    ? "成功"
-                                                    : "未记录"
-                                          }`
-                                        : "—"}
+                                <div>
+                                    <Space size={4} wrap>
+                                        <Button
+                                            size="small"
+                                            icon={<ImageIcon size={14} />}
+                                            onClick={() => {
+                                                setImagePackDatasourceId(
+                                                    datasource.id,
+                                                );
+                                                setImagePackOpen(true);
+                                            }}
+                                        >
+                                            上传图片包
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            icon={<Settings size={14} />}
+                                            onClick={() =>
+                                                openImageFieldModal(datasource)
+                                            }
+                                        >
+                                            图片字段
+                                        </Button>
+                                    </Space>
                                 </div>
                             </div>
                         ))}
@@ -292,6 +393,120 @@ export function ProjectDatasourceConsole({
                         </div>
                     </div>
                 </form>
+            </Modal>
+
+            <Modal
+                open={imagePackOpen}
+                onCancel={() => setImagePackOpen(false)}
+                footer={null}
+                width={680}
+                destroyOnHidden
+                title={
+                    <div>
+                        <div style={{ fontSize: 20, fontWeight: 700 }}>
+                            上传图片包
+                        </div>
+                        <div
+                            className="muted"
+                            style={{ marginTop: 4, fontSize: 13 }}
+                        >
+                            上传 zip 格式的图片包。支持直接包含图片，或包含嵌套
+                            zip（每个 zip 内含图片）。
+                        </div>
+                    </div>
+                }
+            >
+                <form
+                    ref={imagePackFormRef}
+                    action={imagePackFormAction}
+                    style={{ marginTop: 8 }}
+                >
+                    <input
+                        type="hidden"
+                        name="datasourceId"
+                        value={imagePackDatasourceId}
+                    />
+                    <div className="import-form-grid">
+                        <div className="import-file-field">
+                            <label
+                                className="field-label"
+                                htmlFor="image-pack-file"
+                            >
+                                选择 zip 图片包
+                            </label>
+                            <input
+                                id="image-pack-file"
+                                name="file"
+                                type="file"
+                                accept=".zip"
+                                className="field-file"
+                            />
+                        </div>
+
+                        <div className="workspace-tip">
+                            <Tag color="blue">说明</Tag>
+                            <span>
+                                上传后系统会自动解压提取所有图片文件（含嵌套
+                                zip），并建立文件名到图片的映射关系。之后需在「图片字段」中配置哪些原始字段关联图片。
+                            </span>
+                        </div>
+
+                        <div className="import-form-submit">
+                            <Button onClick={() => setImagePackOpen(false)}>
+                                取消
+                            </Button>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<FileUp size={16} />}
+                                loading={isImagePackPending}
+                            >
+                                开始上传
+                            </Button>
+                        </div>
+                    </div>
+                </form>
+            </Modal>
+
+            <Modal
+                open={imageFieldOpen}
+                onCancel={() => setImageFieldOpen(false)}
+                onOk={saveImageFields}
+                okText={isSavingImageFields ? "保存中..." : "保存"}
+                cancelText="取消"
+                confirmLoading={isSavingImageFields}
+                width={560}
+                destroyOnHidden
+                title="配置图片字段"
+            >
+                <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
+                    <div className="workspace-tip">
+                        <Tag color="blue">说明</Tag>
+                        <span>
+                            选择哪些原始字段的值对应图片。选中后，详情页会自动将该字段渲染为图片。
+                        </span>
+                    </div>
+                    <div>
+                        <div className="field-label">图片字段（可多选）</div>
+                        <Select
+                            mode="multiple"
+                            value={selectedImageFields}
+                            onChange={(value) =>
+                                setSelectedImageFields(value as string[])
+                            }
+                            options={(
+                                imageFieldDatasource?.rawFieldOrder ?? []
+                            ).map((field) => ({
+                                value: field,
+                                label: field,
+                            }))}
+                            placeholder="选择包含图片引用的字段"
+                            size="large"
+                            style={{ width: "100%" }}
+                            optionFilterProp="label"
+                        />
+                    </div>
+                </div>
             </Modal>
         </section>
     );

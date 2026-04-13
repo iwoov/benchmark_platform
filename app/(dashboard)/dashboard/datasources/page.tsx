@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db/prisma";
 import { ProjectDatasourceConsole } from "@/components/dashboard/project-datasource-console";
-import { readOriginalFileName } from "@/lib/datasources/sync-config";
+import {
+    readOriginalFileName,
+    readRawFieldOrder,
+    readImageFields,
+    readImagePackFileName,
+} from "@/lib/datasources/sync-config";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +72,9 @@ export default async function DataSourcesPage() {
                 questionCount: datasource._count.questions,
                 project: datasource.project,
                 originalFileName: readOriginalFileName(datasource.syncConfig),
+                rawFieldOrder: readRawFieldOrder(datasource.syncConfig),
+                imageFields: readImageFields(datasource.syncConfig),
+                imagePackFileName: readImagePackFileName(datasource.syncConfig),
                 lastSyncAt:
                     datasource.syncLogs[0]?.createdAt.toLocaleString("zh-CN") ??
                     null,

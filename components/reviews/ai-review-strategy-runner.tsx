@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Select, Space, Tag } from "antd";
-import { Bot, Play, RefreshCcw } from "lucide-react";
+import { App, Button, Empty, Modal, Select, Space, Tag } from "antd";
+import { Bot, Code, Play, RefreshCcw } from "lucide-react";
 import {
     runAiReviewStrategyAction,
     retryAiReviewStrategyRunItemAction,
@@ -101,6 +101,399 @@ function areRunsEqual(left: unknown, right: unknown) {
     }
 }
 
+type RawDataModalState = {
+    title: string;
+    promptInput: unknown;
+    output: unknown;
+    rawResponse: unknown;
+} | null;
+
+function getSeverityColor(severity: string) {
+    if (severity === "HIGH") return "error";
+    if (severity === "MEDIUM") return "warning";
+    return "default";
+}
+
+function getPassedColor(passed: boolean) {
+    return passed ? "success" : "error";
+}
+
+function getDecisionColor(decision: string) {
+    if (decision === "PASS") return "success";
+    if (decision === "REJECT") return "error";
+    return "warning";
+}
+
+function getMatchLevelColor(level: string) {
+    if (level === "EXACT" || level === "SEMANTIC_MATCH") return "success";
+    if (level === "PARTIAL_MATCH") return "warning";
+    if (level === "MISMATCH") return "error";
+    return "default";
+}
+
+function RenderStringList({
+    label,
+    items,
+    color,
+}: {
+    label: string;
+    items: string[];
+    color?: string;
+}) {
+    if (!items.length) return null;
+
+    return (
+        <div style={{ marginTop: 8 }}>
+            <div
+                style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    marginBottom: 4,
+                    color: "var(--color-text-secondary)",
+                }}
+            >
+                {label}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {items.map((item, index) => (
+                    <li
+                        key={index}
+                        style={{
+                            lineHeight: 1.7,
+                            fontSize: 13,
+                            color: color ?? undefined,
+                        }}
+                    >
+                        {item}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+function renderStepItemOutput(stepType: string, output: unknown) {
+    if (!output || typeof output !== "object") return null;
+    const data = output as Record<string, unknown>;
+
+    switch (stepType) {
+        case "COMPREHENSIVE_CHECK":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color={getPassedColor(data.passed as boolean)}>
+                            {data.passed ? "通过" : "未通过"}
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    {Array.isArray(data.issues) && data.issues.length > 0 ? (
+                        <div style={{ marginTop: 8 }}>
+                            <div className="step-output-section-label">
+                                问题
+                            </div>
+                            {(
+                                data.issues as Array<Record<string, unknown>>
+                            ).map((issue, i) => (
+                                <div key={i} className="step-output-issue">
+                                    <div className="step-output-issue-head">
+                                        <Tag
+                                            color={getSeverityColor(
+                                                String(issue.severity ?? ""),
+                                            )}
+                                        >
+                                            {String(issue.severity ?? "")}
+                                        </Tag>
+                                        <span style={{ fontWeight: 600 }}>
+                                            {String(issue.title ?? "")}
+                                        </span>
+                                        <span
+                                            className="muted"
+                                            style={{ fontSize: 12 }}
+                                        >
+                                            [{String(issue.category ?? "")}
+                                            &middot; {String(issue.field ?? "")}
+                                            ]
+                                        </span>
+                                    </div>
+                                    <div className="step-output-issue-detail">
+                                        {String(issue.detail ?? "")}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
+                    <RenderStringList
+                        label="警告"
+                        items={(data.warnings as string[]) ?? []}
+                    />
+                    <RenderStringList
+                        label="建议"
+                        items={(data.suggestions as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        case "QUESTION_COMPLETENESS_CHECK":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color={getPassedColor(data.passed as boolean)}>
+                            {data.passed ? "完整" : "不完整"}
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    <RenderStringList
+                        label="缺失字段"
+                        items={(data.missingFields as string[]) ?? []}
+                    />
+                    <RenderStringList
+                        label="警告"
+                        items={(data.warnings as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        case "TEXT_QUALITY_CHECK":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color={getPassedColor(data.passed as boolean)}>
+                            {data.passed ? "通过" : "未通过"}
+                        </Tag>
+                        <Tag
+                            color={getSeverityColor(
+                                String(data.severity ?? ""),
+                            )}
+                        >
+                            严重程度: {String(data.severity ?? "")}
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    {Array.isArray(data.issues) && data.issues.length > 0 ? (
+                        <div style={{ marginTop: 8 }}>
+                            <div className="step-output-section-label">
+                                问题
+                            </div>
+                            {(
+                                data.issues as Array<Record<string, unknown>>
+                            ).map((issue, i) => (
+                                <div key={i} className="step-output-issue">
+                                    <div className="step-output-issue-head">
+                                        <Tag>{String(issue.type ?? "")}</Tag>
+                                        <span
+                                            className="muted"
+                                            style={{ fontSize: 12 }}
+                                        >
+                                            字段: {String(issue.field ?? "")}
+                                        </span>
+                                    </div>
+                                    <div className="step-output-issue-detail">
+                                        {String(issue.content ?? "")}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
+                    <RenderStringList
+                        label="建议"
+                        items={(data.suggestions as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        case "TRANSLATE_TO_CHINESE":
+            return (
+                <div className="step-output-rendered">
+                    {data.sourceLanguage ? (
+                        <div className="step-output-row">
+                            <Tag>源语言: {String(data.sourceLanguage)}</Tag>
+                        </div>
+                    ) : null}
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                        <div className="step-output-section-label">
+                            翻译结果
+                        </div>
+                        <div
+                            style={{
+                                background: "var(--color-surface-2, #f5f5f5)",
+                                padding: "10px 14px",
+                                borderRadius: 6,
+                                lineHeight: 1.7,
+                                whiteSpace: "pre-wrap",
+                            }}
+                        >
+                            {String(data.translatedText ?? "")}
+                        </div>
+                    </div>
+                </div>
+            );
+
+        case "AI_SOLVE_QUESTION":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color="blue">
+                            答案:{" "}
+                            {String(data.normalizedAnswer ?? data.answer ?? "")}
+                        </Tag>
+                        {typeof data.confidence === "number" ? (
+                            <Tag
+                                color={
+                                    data.confidence >= 0.8
+                                        ? "success"
+                                        : data.confidence >= 0.5
+                                          ? "warning"
+                                          : "error"
+                                }
+                            >
+                                置信度: {(data.confidence * 100).toFixed(0)}%
+                            </Tag>
+                        ) : null}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                        <div className="step-output-section-label">
+                            推理过程
+                        </div>
+                        <div
+                            style={{
+                                background: "var(--color-surface-2, #f5f5f5)",
+                                padding: "10px 14px",
+                                borderRadius: 6,
+                                lineHeight: 1.7,
+                                whiteSpace: "pre-wrap",
+                                fontSize: 13,
+                            }}
+                        >
+                            {String(data.reasoning ?? "")}
+                        </div>
+                    </div>
+                </div>
+            );
+
+        case "ANSWER_MATCH_CHECK":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag
+                            color={getMatchLevelColor(
+                                String(data.matchLevel ?? ""),
+                            )}
+                        >
+                            匹配: {String(data.matchLevel ?? "")}
+                        </Tag>
+                        <Tag color={data.isConsistent ? "success" : "error"}>
+                            {data.isConsistent ? "一致" : "不一致"}
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    {data.difference ? (
+                        <div style={{ marginTop: 8 }}>
+                            <div className="step-output-section-label">
+                                差异说明
+                            </div>
+                            <div className="step-output-issue-detail">
+                                {String(data.difference)}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            );
+
+        case "REASONING_COMPARE":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color={data.isConsistent ? "success" : "error"}>
+                            {data.isConsistent ? "推理一致" : "推理不一致"}
+                        </Tag>
+                        <Tag
+                            color={getSeverityColor(
+                                String(data.riskLevel ?? ""),
+                            )}
+                        >
+                            风险: {String(data.riskLevel ?? "")}
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    <RenderStringList
+                        label="缺失要点"
+                        items={(data.missingPoints as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        case "DIFFICULTY_EVALUATION":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color="blue">
+                            难度: {String(data.difficultyLevel ?? "")}
+                        </Tag>
+                        {typeof data.score === "number" ? (
+                            <Tag>评分: {data.score}/5</Tag>
+                        ) : null}
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    <RenderStringList
+                        label="依据"
+                        items={(data.evidence as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        case "REVIEW_SUMMARY":
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        {data.recommendedDecision ? (
+                            <Tag
+                                color={getDecisionColor(
+                                    String(data.recommendedDecision),
+                                )}
+                            >
+                                建议: {String(data.recommendedDecision)}
+                            </Tag>
+                        ) : null}
+                        {data.riskLevel ? (
+                            <Tag
+                                color={getSeverityColor(String(data.riskLevel))}
+                            >
+                                风险: {String(data.riskLevel)}
+                            </Tag>
+                        ) : null}
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    <RenderStringList
+                        label="关键问题"
+                        items={(data.keyIssues as string[]) ?? []}
+                    />
+                </div>
+            );
+
+        default:
+            return (
+                <pre className="strategy-json-block">{formatJson(output)}</pre>
+            );
+    }
+}
+
 export function AiReviewStrategyRunner({
     questionId,
     strategies,
@@ -130,6 +523,7 @@ export function AiReviewStrategyRunner({
     const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>(
         {},
     );
+    const [rawDataModal, setRawDataModal] = useState<RawDataModalState>(null);
     const [, startRetryTransition] = useTransition();
     const effectiveSelectedStrategyId = strategies.some(
         (strategy) => strategy.id === selectedStrategyId,
@@ -480,38 +874,20 @@ export function AiReviewStrategyRunner({
                                         className="strategy-run-card"
                                     >
                                         <div className="strategy-run-head">
-                                            <div>
-                                                <div className="strategy-title-row">
-                                                    <h4
-                                                        style={{
-                                                            margin: 0,
-                                                            fontSize: 17,
-                                                        }}
-                                                    >
-                                                        {run.strategy.name}
-                                                    </h4>
-                                                    <Tag>
-                                                        {run.strategy.code}
-                                                    </Tag>
-                                                    <Tag
-                                                        color={
-                                                            runStatusMeta.color
-                                                        }
-                                                    >
-                                                        {runStatusMeta.label}
-                                                    </Tag>
-                                                </div>
-                                                <div
-                                                    className="muted"
-                                                    style={{ marginTop: 8 }}
+                                            <div className="strategy-title-row">
+                                                <h4
+                                                    style={{
+                                                        margin: 0,
+                                                        fontSize: 17,
+                                                    }}
                                                 >
-                                                    执行人：
-                                                    {run.triggeredByName} ·
-                                                    发起时间{" "}
-                                                    {new Date(
-                                                        run.createdAt,
-                                                    ).toLocaleString("zh-CN")}
-                                                </div>
+                                                    {run.strategy.name}
+                                                </h4>
+                                                <Tag
+                                                    color={runStatusMeta.color}
+                                                >
+                                                    {runStatusMeta.label}
+                                                </Tag>
                                             </div>
                                         </div>
 
@@ -681,11 +1057,6 @@ export function AiReviewStrategyRunner({
                                                                     {
                                                                         step.stepName
                                                                     }
-                                                                    <Tag>
-                                                                        {
-                                                                            step.stepType
-                                                                        }
-                                                                    </Tag>
                                                                     <Tag
                                                                         color={getStepStatusColor(
                                                                             step.status,
@@ -703,53 +1074,6 @@ export function AiReviewStrategyRunner({
                                                                         </Tag>
                                                                     ) : null}
                                                                 </div>
-                                                                <div className="muted strategy-step-copy">
-                                                                    {
-                                                                        step.summary
-                                                                    }
-                                                                </div>
-                                                                {step.metrics ? (
-                                                                    <div
-                                                                        className="strategy-tag-wrap"
-                                                                        style={{
-                                                                            marginTop: 8,
-                                                                        }}
-                                                                    >
-                                                                        {Object.entries(
-                                                                            step.metrics,
-                                                                        ).map(
-                                                                            ([
-                                                                                key,
-                                                                                value,
-                                                                            ]) => (
-                                                                                <Tag
-                                                                                    key={
-                                                                                        key
-                                                                                    }
-                                                                                >
-                                                                                    {
-                                                                                        key
-                                                                                    }
-
-                                                                                    :{" "}
-                                                                                    {typeof value ===
-                                                                                    "number"
-                                                                                        ? value
-                                                                                              .toFixed(
-                                                                                                  4,
-                                                                                              )
-                                                                                              .replace(
-                                                                                                  /\.?0+$/,
-                                                                                                  "",
-                                                                                              )
-                                                                                        : String(
-                                                                                              value,
-                                                                                          )}
-                                                                                </Tag>
-                                                                            ),
-                                                                        )}
-                                                                    </div>
-                                                                ) : null}
                                                                 {step.items.some(
                                                                     (item) =>
                                                                         item.error,
@@ -791,42 +1115,65 @@ export function AiReviewStrategyRunner({
                                                                             (
                                                                                 item,
                                                                             ) => (
-                                                                                <details
+                                                                                <div
                                                                                     key={`${step.stepId}-${item.index}`}
-                                                                                    className="strategy-step-item-detail"
+                                                                                    className="strategy-step-item-card"
                                                                                 >
-                                                                                    <summary className="strategy-step-item-summary">
-                                                                                        <span>
-                                                                                            第{" "}
-                                                                                            {
-                                                                                                item.index
-                                                                                            }{" "}
-                                                                                            次
-                                                                                        </span>
+                                                                                    <div className="strategy-step-item-head">
+                                                                                        <div className="strategy-step-item-head-left">
+                                                                                            <span>
+                                                                                                第{" "}
+                                                                                                {
+                                                                                                    item.index
+                                                                                                }{" "}
+                                                                                                次
+                                                                                            </span>
+                                                                                            {item.status ===
+                                                                                            "FAILED" ? (
+                                                                                                <Tag color="error">
+                                                                                                    FAILED
+                                                                                                </Tag>
+                                                                                            ) : null}
+                                                                                        </div>
                                                                                         <Space
                                                                                             size={
-                                                                                                8
+                                                                                                4
                                                                                             }
                                                                                         >
-                                                                                            <Tag
-                                                                                                color={
-                                                                                                    item.status ===
-                                                                                                    "SUCCESS"
-                                                                                                        ? "success"
-                                                                                                        : "error"
+                                                                                            <Button
+                                                                                                size="small"
+                                                                                                type="text"
+                                                                                                icon={
+                                                                                                    <Code
+                                                                                                        size={
+                                                                                                            14
+                                                                                                        }
+                                                                                                    />
+                                                                                                }
+                                                                                                onClick={() =>
+                                                                                                    setRawDataModal(
+                                                                                                        {
+                                                                                                            title: `${step.stepName} · 第 ${item.index} 次 · 原始数据`,
+                                                                                                            promptInput:
+                                                                                                                item.promptInput,
+                                                                                                            output: item.output,
+                                                                                                            rawResponse:
+                                                                                                                item.rawResponse,
+                                                                                                        },
+                                                                                                    )
                                                                                                 }
                                                                                             >
-                                                                                                {
-                                                                                                    item.status
-                                                                                                }
-                                                                                            </Tag>
-                                                                                            {run.status !==
+                                                                                                原始数据
+                                                                                            </Button>
+                                                                                            {item.status ===
+                                                                                                "FAILED" &&
+                                                                                            run.status !==
                                                                                                 "RUNNING" &&
                                                                                             run.status !==
                                                                                                 "PENDING" ? (
                                                                                                 <Button
                                                                                                     size="small"
-                                                                                                    type="link"
+                                                                                                    type="text"
                                                                                                     icon={
                                                                                                         <RefreshCcw
                                                                                                             size={
@@ -843,222 +1190,35 @@ export function AiReviewStrategyRunner({
                                                                                                             )
                                                                                                         ]
                                                                                                     }
-                                                                                                    onClick={(
-                                                                                                        event,
-                                                                                                    ) => {
-                                                                                                        event.preventDefault();
-                                                                                                        event.stopPropagation();
+                                                                                                    onClick={() =>
                                                                                                         retryRunItem(
                                                                                                             run.id,
                                                                                                             step.stepId,
                                                                                                             item.index,
-                                                                                                        );
-                                                                                                    }}
+                                                                                                        )
+                                                                                                    }
                                                                                                 >
-                                                                                                    重试这次
+                                                                                                    重试
                                                                                                 </Button>
                                                                                             ) : null}
                                                                                         </Space>
-                                                                                    </summary>
-                                                                                    <div className="strategy-step-item-body">
-                                                                                        {item.requestMeta ? (
-                                                                                            <div>
-                                                                                                <div className="strategy-run-summary-title">
-                                                                                                    调用信息
-                                                                                                </div>
-                                                                                                <div
-                                                                                                    className="strategy-tag-wrap"
-                                                                                                    style={{
-                                                                                                        marginTop: 10,
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <Tag>
-                                                                                                        模型:{" "}
-                                                                                                        {
-                                                                                                            item
-                                                                                                                .requestMeta
-                                                                                                                .modelCode
-                                                                                                        }
-                                                                                                    </Tag>
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .protocol ? (
-                                                                                                        <Tag>
-                                                                                                            协议:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .protocol
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .providerName ? (
-                                                                                                        <Tag>
-                                                                                                            提供商:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .providerName
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .providerCode ? (
-                                                                                                        <Tag>
-                                                                                                            Provider
-                                                                                                            Code:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .providerCode
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .endpointLabel ? (
-                                                                                                        <Tag>
-                                                                                                            路由:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .endpointLabel
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .endpointCode ? (
-                                                                                                        <Tag>
-                                                                                                            Endpoint
-                                                                                                            Code:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .endpointCode
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                    {item
-                                                                                                        .requestMeta
-                                                                                                        .reasoningLevel ? (
-                                                                                                        <Tag>
-                                                                                                            推理:{" "}
-                                                                                                            {
-                                                                                                                item
-                                                                                                                    .requestMeta
-                                                                                                                    .reasoningLevel
-                                                                                                            }
-                                                                                                        </Tag>
-                                                                                                    ) : null}
-                                                                                                </div>
-                                                                                                {item
-                                                                                                    .requestMeta
-                                                                                                    .baseUrl ? (
-                                                                                                    <pre className="strategy-json-block">
-                                                                                                        {
-                                                                                                            item
-                                                                                                                .requestMeta
-                                                                                                                .baseUrl
-                                                                                                        }
-                                                                                                    </pre>
-                                                                                                ) : null}
-                                                                                            </div>
-                                                                                        ) : null}
-
-                                                                                        {item.derived &&
-                                                                                        Object.keys(
-                                                                                            item.derived,
-                                                                                        )
-                                                                                            .length ? (
-                                                                                            <div className="strategy-tag-wrap">
-                                                                                                {Object.entries(
-                                                                                                    item.derived,
-                                                                                                ).map(
-                                                                                                    ([
-                                                                                                        key,
-                                                                                                        value,
-                                                                                                    ]) => (
-                                                                                                        <Tag
-                                                                                                            key={
-                                                                                                                key
-                                                                                                            }
-                                                                                                        >
-                                                                                                            {
-                                                                                                                key
-                                                                                                            }
-
-                                                                                                            :{" "}
-                                                                                                            {typeof value ===
-                                                                                                            "number"
-                                                                                                                ? value
-                                                                                                                      .toFixed(
-                                                                                                                          4,
-                                                                                                                      )
-                                                                                                                      .replace(
-                                                                                                                          /\.?0+$/,
-                                                                                                                          "",
-                                                                                                                      )
-                                                                                                                : String(
-                                                                                                                      value,
-                                                                                                                  )}
-                                                                                                        </Tag>
-                                                                                                    ),
-                                                                                                )}
-                                                                                            </div>
-                                                                                        ) : null}
-
-                                                                                        {item.promptInput ? (
-                                                                                            <div>
-                                                                                                <div className="strategy-run-summary-title">
-                                                                                                    请求输入
-                                                                                                </div>
-                                                                                                <pre className="strategy-json-block">
-                                                                                                    {formatJson(
-                                                                                                        item.promptInput,
-                                                                                                    )}
-                                                                                                </pre>
-                                                                                            </div>
-                                                                                        ) : null}
-
-                                                                                        {item.output ? (
-                                                                                            <div>
-                                                                                                <div className="strategy-run-summary-title">
-                                                                                                    结构化输出
-                                                                                                </div>
-                                                                                                <pre className="strategy-json-block">
-                                                                                                    {formatJson(
-                                                                                                        item.output,
-                                                                                                    )}
-                                                                                                </pre>
-                                                                                            </div>
-                                                                                        ) : null}
-
-                                                                                        {item.rawResponse ? (
-                                                                                            <div>
-                                                                                                <div className="strategy-run-summary-title">
-                                                                                                    原始响应
-                                                                                                </div>
-                                                                                                <pre className="strategy-json-block">
-                                                                                                    {formatJson(
-                                                                                                        item.rawResponse,
-                                                                                                    )}
-                                                                                                </pre>
-                                                                                            </div>
-                                                                                        ) : null}
-
-                                                                                        {item.error ? (
-                                                                                            <div className="strategy-run-error">
-                                                                                                {
-                                                                                                    item.error
-                                                                                                }
-                                                                                            </div>
-                                                                                        ) : null}
                                                                                     </div>
-                                                                                </details>
+
+                                                                                    {item.output
+                                                                                        ? renderStepItemOutput(
+                                                                                              step.stepType,
+                                                                                              item.output,
+                                                                                          )
+                                                                                        : null}
+
+                                                                                    {item.error ? (
+                                                                                        <div className="strategy-run-error">
+                                                                                            {
+                                                                                                item.error
+                                                                                            }
+                                                                                        </div>
+                                                                                    ) : null}
+                                                                                </div>
                                                                             ),
                                                                         )}
                                                                     </div>
@@ -1078,6 +1238,44 @@ export function AiReviewStrategyRunner({
                     )}
                 </div>
             )}
+
+            <Modal
+                title={rawDataModal?.title ?? "原始数据"}
+                open={!!rawDataModal}
+                onCancel={() => setRawDataModal(null)}
+                footer={null}
+                width={800}
+                styles={{ body: { maxHeight: "70vh", overflow: "auto" } }}
+            >
+                {rawDataModal ? (
+                    <div style={{ display: "grid", gap: 16 }}>
+                        <div>
+                            <div className="step-output-section-label">
+                                请求输入 (promptInput)
+                            </div>
+                            <pre className="strategy-json-block">
+                                {formatJson(rawDataModal.promptInput)}
+                            </pre>
+                        </div>
+                        <div>
+                            <div className="step-output-section-label">
+                                输出 (output)
+                            </div>
+                            <pre className="strategy-json-block">
+                                {formatJson(rawDataModal.output)}
+                            </pre>
+                        </div>
+                        <div>
+                            <div className="step-output-section-label">
+                                原始响应 (rawResponse)
+                            </div>
+                            <pre className="strategy-json-block">
+                                {formatJson(rawDataModal.rawResponse)}
+                            </pre>
+                        </div>
+                    </div>
+                ) : null}
+            </Modal>
         </section>
     );
 }

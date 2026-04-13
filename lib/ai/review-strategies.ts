@@ -1,6 +1,12 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { invokeAiModel, resolveAiInvocationText } from "@/lib/ai/invoke";
+import {
+    invokeAiModel,
+    resolveAiInvocationText,
+    type AiMessagePart,
+} from "@/lib/ai/invoke";
 import {
     aiReviewOutputSchemas,
     aiReviewStrategyDefinitionSchema,
@@ -11,6 +17,11 @@ import {
     type AiReviewRuleStep,
     type AiReviewStrategyDefinition,
 } from "@/lib/ai/review-strategy-schema";
+import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
+import {
+    resolveUploadPath,
+    UPLOAD_URL_PREFIX,
+} from "@/lib/import/file-storage";
 import {
     getReviewQuestionDetail,
     type ReviewQuestionDetail,
@@ -449,6 +460,111 @@ function selectFields(
     return payload;
 }
 
+const IMAGE_MIME_TYPES: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+};
+
+function normalizeForImageMatch(value: string) {
+    return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
+}
+
+function lookupImageUrlsFromMap(
+    value: string,
+    imageMap: Record<string, string[]>,
+): string[] | null {
+    const exact = imageMap[value];
+    if (exact?.length) return exact;
+
+    const normalized = normalizeForImageMatch(value);
+    for (const [key, urls] of Object.entries(imageMap)) {
+        if (normalizeForImageMatch(key) === normalized && urls.length) {
+            return urls;
+        }
+    }
+
+    return null;
+}
+
+async function readImageAsBase64(
+    url: string,
+): Promise<{ base64: string; mimeType: string } | null> {
+    if (!url.startsWith(UPLOAD_URL_PREFIX)) return null;
+
+    const relativePath = url.slice(UPLOAD_URL_PREFIX.length);
+    const absolutePath = await resolveUploadPath(relativePath);
+    if (!absolutePath) return null;
+
+    const ext = path.extname(absolutePath).toLowerCase();
+    const mimeType = IMAGE_MIME_TYPES[ext];
+    if (!mimeType) return null;
+
+    const buffer = await fs.readFile(absolutePath);
+    return { base64: buffer.toString("base64"), mimeType };
+}
+
+/**
+ * Resolve image fields in the selected fields to base64 AiMessageParts.
+ * Returns image parts and a modified selectedFields where image fields
+ * are replaced with a placeholder.
+ */
+async function resolveImageParts(
+    selectedFields: Record<string, unknown>,
+    question: ReviewQuestionDetail,
+): Promise<{
+    imageParts: AiMessagePart[];
+    fieldsWithPlaceholders: Record<string, unknown>;
+}> {
+    const imageFieldSet = new Set(question.imageFields ?? []);
+    const imageMap = question.imageMap ?? {};
+    const imageParts: AiMessagePart[] = [];
+    const fieldsWithPlaceholders: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(selectedFields)) {
+        if (!imageFieldSet.has(key)) {
+            fieldsWithPlaceholders[key] = value;
+            continue;
+        }
+
+        // Mark null/empty image fields as null — still visible in promptInput
+        // but excluded from the AI message text by buildUserPrompt
+        if (value == null || (typeof value === "string" && !value.trim())) {
+            fieldsWithPlaceholders[key] = null;
+            continue;
+        }
+
+        const strValue = String(value).trim();
+        const urls = lookupImageUrlsFromMap(strValue, imageMap);
+
+        if (!urls?.length) {
+            // No matching images — include as text so AI knows the field exists
+            fieldsWithPlaceholders[key] = strValue;
+            continue;
+        }
+
+        fieldsWithPlaceholders[key] = `[图片: ${strValue}]`;
+
+        for (const url of urls) {
+            const imageData = await readImageAsBase64(url);
+            if (imageData) {
+                imageParts.push({
+                    type: "image_base64",
+                    base64: imageData.base64,
+                    mimeType: imageData.mimeType,
+                });
+            }
+        }
+    }
+
+    return { imageParts, fieldsWithPlaceholders };
+}
+
 function getToolContract(type: AiReviewAiToolType) {
     switch (type) {
         case "COMPREHENSIVE_CHECK":
@@ -494,6 +610,11 @@ function buildUserPrompt(
     sourceOutput: unknown,
     previousResults: StepExecutionResult[],
 ) {
+    // Filter out null image fields so they don't appear in the AI prompt
+    const filteredFields = Object.fromEntries(
+        Object.entries(selectedFields).filter(([, v]) => v != null),
+    );
+
     const payload: Record<string, unknown> = {
         task: aiReviewToolLabels[step.toolType],
         additionalInstruction: step.promptTemplate,
@@ -505,7 +626,7 @@ function buildUserPrompt(
             questionType: question.questionType,
             difficulty: question.difficulty,
         },
-        selectedFields,
+        selectedFields: filteredFields,
     };
 
     if (sourceOutput) {
@@ -705,8 +826,7 @@ function coerceAiOutput(
     payload.summary = toLooseString(payload.summary) ?? "";
 
     if (toolType === "AI_SOLVE_QUESTION") {
-        const answer =
-            toLooseString(payload.answer) ?? "";
+        const answer = toLooseString(payload.answer) ?? "";
         if (!payload.normalizedAnswer && answer) {
             payload.normalizedAnswer = normalizeAnswer(answer);
         }
@@ -860,11 +980,34 @@ async function executeAiToolItem(
     runIndex: number,
 ) {
     const selectedFields = selectFields(question, step.fieldKeys);
-    const promptInput = {
+
+    // Resolve image fields to base64 parts for multimodal AI invocation
+    const { imageParts, fieldsWithPlaceholders } = await resolveImageParts(
         selectedFields,
-        sourceOutput: sourceItem?.output ?? null,
+        question,
+    );
+
+    const promptInput = {
         runIndex,
+        sourceOutput: sourceItem?.output ?? null,
+        selectedFields: fieldsWithPlaceholders,
+        originalSelectedFields: selectedFields,
     };
+
+    const userPromptText = buildUserPrompt(
+        step,
+        question,
+        fieldsWithPlaceholders,
+        sourceItem?.output,
+        previousResults,
+    );
+
+    // Build user message: text + optional image parts
+    const userContent: AiMessagePart[] = [
+        { type: "text", text: userPromptText },
+        ...imageParts,
+    ];
+
     const response = await invokeAiModel({
         modelCode: step.modelCode,
         stream: true,
@@ -876,13 +1019,7 @@ async function executeAiToolItem(
             },
             {
                 role: "user",
-                content: buildUserPrompt(
-                    step,
-                    question,
-                    selectedFields,
-                    sourceItem?.output,
-                    previousResults,
-                ),
+                content: imageParts.length > 0 ? userContent : userPromptText,
             },
         ],
     });
