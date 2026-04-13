@@ -476,8 +476,15 @@ export function QuestionReviewDetail({
         <div style={{ display: "grid", gap: 16 }}>
             <section className="content-surface">
                 <div className="section-head">
-                    <div>
-                        <Space size={8} style={{ marginBottom: 14 }} wrap>
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            flexWrap: "wrap",
+                        }}
+                    >
+                        <Space size={8} wrap>
                             <Button
                                 icon={<ArrowLeft size={16} />}
                                 onClick={goBackToList}
@@ -504,42 +511,23 @@ export function QuestionReviewDetail({
                         >
                             {question.title}
                         </h2>
-                    </div>
-                    <Space size={8} wrap>
-                        <Tag color={questionStatusMeta[question.status].color}>
-                            {questionStatusMeta[question.status].label}
-                        </Tag>
-                        <Tag>{question.project.code}</Tag>
-                        <Tag>{question.datasource.name}</Tag>
-                    </Space>
-                </div>
-
-                <div className="detail-meta-grid">
-                    <div className="detail-meta-card">
-                        <div className="detail-meta-label">外部记录 ID</div>
-                        <div className="detail-meta-value">
-                            {question.externalRecordId}
-                        </div>
-                    </div>
-                    <div className="detail-meta-card">
-                        <div className="detail-meta-label">项目</div>
-                        <div className="detail-meta-value">
-                            {question.project.name} ({question.project.code})
-                        </div>
-                    </div>
-                    <div className="detail-meta-card">
-                        <div className="detail-meta-label">数据源</div>
-                        <div className="detail-meta-value">
-                            {question.datasource.name}
-                        </div>
-                    </div>
-                    <div className="detail-meta-card">
-                        <div className="detail-meta-label">更新时间</div>
-                        <div className="detail-meta-value">
-                            {new Date(question.updatedAt).toLocaleString(
-                                "zh-CN",
-                            )}
-                        </div>
+                        <Space size={8} wrap>
+                            <Tag
+                                color={
+                                    questionStatusMeta[question.status].color
+                                }
+                            >
+                                {questionStatusMeta[question.status].label}
+                            </Tag>
+                            <Tag>{question.externalRecordId}</Tag>
+                            <Tag>{question.project.code}</Tag>
+                            <Tag>{question.datasource.name}</Tag>
+                            <span className="muted" style={{ fontSize: 13 }}>
+                                {new Date(question.updatedAt).toLocaleString(
+                                    "zh-CN",
+                                )}
+                            </span>
+                        </Space>
                     </div>
                 </div>
             </section>

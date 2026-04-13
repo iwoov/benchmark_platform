@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button, Empty, Modal, Select, Space, Tag } from "antd";
-import { Bot, Code, Play, RefreshCcw } from "lucide-react";
+import { Bot, ChevronDown, Code, Play, RefreshCcw } from "lucide-react";
 import {
     runAiReviewStrategyAction,
     retryAiReviewStrategyRunItemAction,
@@ -170,6 +170,149 @@ function RenderStringList({
             </ul>
         </div>
     );
+}
+
+function getStepItemInlineTags(
+    stepType: string,
+    output: unknown,
+): Array<{ label: string; color: string }> {
+    if (!output || typeof output !== "object") return [];
+    const data = output as Record<string, unknown>;
+
+    switch (stepType) {
+        case "COMPREHENSIVE_CHECK":
+            return [
+                {
+                    label: data.passed ? "通过" : "未通过",
+                    color: data.passed ? "success" : "error",
+                },
+            ];
+
+        case "QUESTION_COMPLETENESS_CHECK":
+            return [
+                {
+                    label: data.passed ? "完整" : "不完整",
+                    color: data.passed ? "success" : "error",
+                },
+            ];
+
+        case "TEXT_QUALITY_CHECK":
+            return [
+                {
+                    label: data.passed ? "通过" : "未通过",
+                    color: data.passed ? "success" : "error",
+                },
+                ...(data.severity
+                    ? [
+                          {
+                              label: String(data.severity),
+                              color: getSeverityColor(String(data.severity)),
+                          },
+                      ]
+                    : []),
+            ];
+
+        case "TRANSLATE_TO_CHINESE":
+            return data.sourceLanguage
+                ? [
+                      {
+                          label: `源语言: ${String(data.sourceLanguage)}`,
+                          color: "default",
+                      },
+                  ]
+                : [];
+
+        case "AI_SOLVE_QUESTION": {
+            const tags: Array<{ label: string; color: string }> = [];
+            const answer = data.normalizedAnswer ?? data.answer;
+            if (answer) {
+                tags.push({
+                    label: `答案: ${String(answer)}`,
+                    color: "blue",
+                });
+            }
+            if (typeof data.confidence === "number") {
+                tags.push({
+                    label: `置信度: ${(data.confidence * 100).toFixed(0)}%`,
+                    color:
+                        data.confidence >= 0.8
+                            ? "success"
+                            : data.confidence >= 0.5
+                              ? "warning"
+                              : "error",
+                });
+            }
+            return tags;
+        }
+
+        case "ANSWER_MATCH_CHECK":
+            return [
+                {
+                    label: String(data.matchLevel ?? ""),
+                    color: getMatchLevelColor(String(data.matchLevel ?? "")),
+                },
+                {
+                    label: data.isConsistent ? "一致" : "不一致",
+                    color: data.isConsistent ? "success" : "error",
+                },
+            ];
+
+        case "REASONING_COMPARE":
+            return [
+                {
+                    label: data.isConsistent ? "推理一致" : "推理不一致",
+                    color: data.isConsistent ? "success" : "error",
+                },
+                ...(data.riskLevel
+                    ? [
+                          {
+                              label: `风险: ${String(data.riskLevel)}`,
+                              color: getSeverityColor(String(data.riskLevel)),
+                          },
+                      ]
+                    : []),
+            ];
+
+        case "DIFFICULTY_EVALUATION":
+            return [
+                ...(data.difficultyLevel
+                    ? [
+                          {
+                              label: `难度: ${String(data.difficultyLevel)}`,
+                              color: "blue",
+                          },
+                      ]
+                    : []),
+                ...(typeof data.score === "number"
+                    ? [{ label: `${data.score}/5`, color: "default" }]
+                    : []),
+            ];
+
+        case "REVIEW_SUMMARY":
+            return [
+                ...(data.recommendedDecision
+                    ? [
+                          {
+                              label: String(data.recommendedDecision),
+                              color: getDecisionColor(
+                                  String(data.recommendedDecision),
+                              ),
+                          },
+                      ]
+                    : []),
+                ...(data.riskLevel
+                    ? [
+                          {
+                              label: `风险: ${String(data.riskLevel)}`,
+                              color: getSeverityColor(String(data.riskLevel)),
+                          },
+                      ]
+                    : []),
+            ];
+
+        default:
+            return [];
+    }
 }
 
 function renderStepItemOutput(stepType: string, output: unknown) {
@@ -891,144 +1034,6 @@ export function AiReviewStrategyRunner({
                                             </div>
                                         </div>
 
-                                        {run.parsedResult
-                                            ?.finalRecommendation ? (
-                                            <div className="strategy-run-summary">
-                                                <div className="strategy-run-summary-title">
-                                                    审核建议
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        gap: 8,
-                                                        flexWrap: "wrap",
-                                                        marginTop: 8,
-                                                    }}
-                                                >
-                                                    {run.parsedResult
-                                                        .finalRecommendation
-                                                        .decision ? (
-                                                        <Tag color="blue">
-                                                            {
-                                                                run.parsedResult
-                                                                    .finalRecommendation
-                                                                    .decision
-                                                            }
-                                                        </Tag>
-                                                    ) : null}
-                                                    {run.parsedResult
-                                                        .finalRecommendation
-                                                        .riskLevel ? (
-                                                        <Tag color="orange">
-                                                            风险{" "}
-                                                            {
-                                                                run.parsedResult
-                                                                    .finalRecommendation
-                                                                    .riskLevel
-                                                            }
-                                                        </Tag>
-                                                    ) : null}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        marginTop: 10,
-                                                        lineHeight: 1.7,
-                                                    }}
-                                                >
-                                                    {
-                                                        run.parsedResult
-                                                            .finalRecommendation
-                                                            .summary
-                                                    }
-                                                </div>
-                                            </div>
-                                        ) : null}
-
-                                        {run.parsedResult?.reviewPersistence ? (
-                                            <div className="strategy-run-summary">
-                                                <div className="strategy-run-summary-title">
-                                                    自动审核回填
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        gap: 8,
-                                                        flexWrap: "wrap",
-                                                        marginTop: 8,
-                                                    }}
-                                                >
-                                                    <Tag
-                                                        color={
-                                                            run.parsedResult
-                                                                .reviewPersistence
-                                                                .status ===
-                                                            "SAVED"
-                                                                ? "success"
-                                                                : run
-                                                                        .parsedResult
-                                                                        .reviewPersistence
-                                                                        .status ===
-                                                                    "FAILED"
-                                                                  ? "error"
-                                                                  : "default"
-                                                        }
-                                                    >
-                                                        {
-                                                            run.parsedResult
-                                                                .reviewPersistence
-                                                                .status
-                                                        }
-                                                    </Tag>
-                                                    {run.parsedResult
-                                                        .reviewPersistence
-                                                        .decision ? (
-                                                        <Tag color="blue">
-                                                            {
-                                                                run.parsedResult
-                                                                    .reviewPersistence
-                                                                    .decision
-                                                            }
-                                                        </Tag>
-                                                    ) : null}
-                                                    {run.parsedResult
-                                                        .reviewPersistence
-                                                        .questionStatus ? (
-                                                        <Tag color="purple">
-                                                            题目状态{" "}
-                                                            {
-                                                                run.parsedResult
-                                                                    .reviewPersistence
-                                                                    .questionStatus
-                                                            }
-                                                        </Tag>
-                                                    ) : null}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        marginTop: 10,
-                                                        lineHeight: 1.7,
-                                                    }}
-                                                >
-                                                    {
-                                                        run.parsedResult
-                                                            .reviewPersistence
-                                                            .message
-                                                    }
-                                                </div>
-                                                {run.parsedResult
-                                                    .reviewPersistence
-                                                    .comment ? (
-                                                    <pre className="strategy-json-block">
-                                                        {
-                                                            run.parsedResult
-                                                                .reviewPersistence
-                                                                .comment
-                                                        }
-                                                    </pre>
-                                                ) : null}
-                                            </div>
-                                        ) : null}
-
                                         {run.errorMessage ? (
                                             <div className="strategy-run-error">
                                                 {run.errorMessage}
@@ -1037,196 +1042,458 @@ export function AiReviewStrategyRunner({
 
                                         {run.parsedResult?.stepResults
                                             ?.length ? (
-                                            <div className="strategy-step-stack">
-                                                {run.parsedResult.stepResults.map(
-                                                    (step, index) => (
-                                                        <div
-                                                            key={`${run.id}-${step.stepId}`}
-                                                            className="strategy-step-preview"
-                                                        >
-                                                            <div className="strategy-step-index">
-                                                                {index + 1}
-                                                            </div>
+                                            <div className="strategy-stage-section">
+                                                <div className="strategy-stage-header">
+                                                    <div className="strategy-stage-badge">
+                                                        1
+                                                    </div>
+                                                    <div>
+                                                        <div className="strategy-stage-title">
+                                                            步骤执行
+                                                        </div>
+                                                        <div className="strategy-stage-desc">
+                                                            AI
+                                                            按策略配置逐步执行各项检查，每步独立产出结构化结果
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="strategy-step-stack">
+                                                    {run.parsedResult.stepResults.map(
+                                                        (step, index) => (
                                                             <div
-                                                                style={{
-                                                                    minWidth: 0,
-                                                                    flex: 1,
-                                                                }}
+                                                                key={`${run.id}-${step.stepId}`}
+                                                                className="strategy-step-preview"
                                                             >
-                                                                <div className="strategy-step-title">
-                                                                    {
-                                                                        step.stepName
-                                                                    }
-                                                                    <Tag
-                                                                        color={getStepStatusColor(
-                                                                            step.status,
-                                                                        )}
-                                                                    >
+                                                                <div className="strategy-step-index">
+                                                                    {index + 1}
+                                                                </div>
+                                                                <div
+                                                                    style={{
+                                                                        minWidth: 0,
+                                                                        flex: 1,
+                                                                    }}
+                                                                >
+                                                                    <div className="strategy-step-title">
                                                                         {
-                                                                            step.status
+                                                                            step.stepName
                                                                         }
-                                                                    </Tag>
-                                                                    {step.outcomeLabel ? (
-                                                                        <Tag color="gold">
+                                                                        <Tag
+                                                                            color={getStepStatusColor(
+                                                                                step.status,
+                                                                            )}
+                                                                        >
                                                                             {
-                                                                                step.outcomeLabel
+                                                                                step.status
                                                                             }
                                                                         </Tag>
-                                                                    ) : null}
-                                                                </div>
-                                                                {step.items.some(
-                                                                    (item) =>
-                                                                        item.error,
-                                                                ) ? (
-                                                                    <div className="strategy-run-inline-errors">
-                                                                        {step.items
-                                                                            .filter(
-                                                                                (
-                                                                                    item,
-                                                                                ) =>
-                                                                                    item.error,
-                                                                            )
-                                                                            .map(
-                                                                                (
-                                                                                    item,
-                                                                                ) => (
-                                                                                    <div
-                                                                                        key={`${step.stepId}-${item.index}`}
-                                                                                        className="muted"
-                                                                                    >
-                                                                                        第{" "}
-                                                                                        {
-                                                                                            item.index
-                                                                                        }{" "}
-                                                                                        次执行失败：
-                                                                                        {
-                                                                                            item.error
-                                                                                        }
-                                                                                    </div>
-                                                                                ),
-                                                                            )}
+                                                                        {step.outcomeLabel ? (
+                                                                            <Tag color="gold">
+                                                                                {
+                                                                                    step.outcomeLabel
+                                                                                }
+                                                                            </Tag>
+                                                                        ) : null}
                                                                     </div>
-                                                                ) : null}
-
-                                                                {step.items
-                                                                    .length ? (
-                                                                    <div className="strategy-step-item-list">
-                                                                        {step.items.map(
-                                                                            (
-                                                                                item,
-                                                                            ) => (
-                                                                                <div
-                                                                                    key={`${step.stepId}-${item.index}`}
-                                                                                    className="strategy-step-item-card"
-                                                                                >
-                                                                                    <div className="strategy-step-item-head">
-                                                                                        <div className="strategy-step-item-head-left">
-                                                                                            <span>
-                                                                                                第{" "}
-                                                                                                {
-                                                                                                    item.index
-                                                                                                }{" "}
-                                                                                                次
-                                                                                            </span>
-                                                                                            {item.status ===
-                                                                                            "FAILED" ? (
-                                                                                                <Tag color="error">
-                                                                                                    FAILED
-                                                                                                </Tag>
-                                                                                            ) : null}
-                                                                                        </div>
-                                                                                        <Space
-                                                                                            size={
-                                                                                                4
-                                                                                            }
+                                                                    {step.items.some(
+                                                                        (
+                                                                            item,
+                                                                        ) =>
+                                                                            item.error,
+                                                                    ) ? (
+                                                                        <div className="strategy-run-inline-errors">
+                                                                            {step.items
+                                                                                .filter(
+                                                                                    (
+                                                                                        item,
+                                                                                    ) =>
+                                                                                        item.error,
+                                                                                )
+                                                                                .map(
+                                                                                    (
+                                                                                        item,
+                                                                                    ) => (
+                                                                                        <div
+                                                                                            key={`${step.stepId}-${item.index}`}
+                                                                                            className="muted"
                                                                                         >
-                                                                                            <Button
-                                                                                                size="small"
-                                                                                                type="text"
-                                                                                                icon={
-                                                                                                    <Code
-                                                                                                        size={
-                                                                                                            14
-                                                                                                        }
-                                                                                                    />
-                                                                                                }
-                                                                                                onClick={() =>
-                                                                                                    setRawDataModal(
-                                                                                                        {
-                                                                                                            title: `${step.stepName} · 第 ${item.index} 次 · 原始数据`,
-                                                                                                            promptInput:
-                                                                                                                item.promptInput,
-                                                                                                            output: item.output,
-                                                                                                            rawResponse:
-                                                                                                                item.rawResponse,
-                                                                                                        },
-                                                                                                    )
-                                                                                                }
-                                                                                            >
-                                                                                                原始数据
-                                                                                            </Button>
-                                                                                            {item.status ===
-                                                                                                "FAILED" &&
-                                                                                            run.status !==
-                                                                                                "RUNNING" &&
-                                                                                            run.status !==
-                                                                                                "PENDING" ? (
-                                                                                                <Button
-                                                                                                    size="small"
-                                                                                                    type="text"
-                                                                                                    icon={
-                                                                                                        <RefreshCcw
-                                                                                                            size={
-                                                                                                                14
-                                                                                                            }
-                                                                                                        />
-                                                                                                    }
-                                                                                                    loading={
-                                                                                                        retryingKeys[
-                                                                                                            buildRetryKey(
-                                                                                                                run.id,
-                                                                                                                step.stepId,
-                                                                                                                item.index,
-                                                                                                            )
-                                                                                                        ]
-                                                                                                    }
-                                                                                                    onClick={() =>
-                                                                                                        retryRunItem(
-                                                                                                            run.id,
-                                                                                                            step.stepId,
-                                                                                                            item.index,
-                                                                                                        )
-                                                                                                    }
-                                                                                                >
-                                                                                                    重试
-                                                                                                </Button>
-                                                                                            ) : null}
-                                                                                        </Space>
-                                                                                    </div>
-
-                                                                                    {item.output
-                                                                                        ? renderStepItemOutput(
-                                                                                              step.stepType,
-                                                                                              item.output,
-                                                                                          )
-                                                                                        : null}
-
-                                                                                    {item.error ? (
-                                                                                        <div className="strategy-run-error">
+                                                                                            第{" "}
+                                                                                            {
+                                                                                                item.index
+                                                                                            }{" "}
+                                                                                            次执行失败：
                                                                                             {
                                                                                                 item.error
                                                                                             }
                                                                                         </div>
-                                                                                    ) : null}
-                                                                                </div>
-                                                                            ),
-                                                                        )}
-                                                                    </div>
-                                                                ) : null}
+                                                                                    ),
+                                                                                )}
+                                                                        </div>
+                                                                    ) : null}
+
+                                                                    {step.items
+                                                                        .length ? (
+                                                                        <div className="strategy-step-item-list">
+                                                                            {step.items.map(
+                                                                                (
+                                                                                    item,
+                                                                                ) => {
+                                                                                    const inlineTags =
+                                                                                        getStepItemInlineTags(
+                                                                                            step.stepType,
+                                                                                            item.output,
+                                                                                        );
+                                                                                    const hasDetail =
+                                                                                        !!item.output ||
+                                                                                        !!item.error;
+
+                                                                                    return (
+                                                                                        <details
+                                                                                            key={`${step.stepId}-${item.index}`}
+                                                                                            className="strategy-step-item-card strategy-step-item-collapsible"
+                                                                                        >
+                                                                                            <summary className="strategy-step-item-head strategy-step-item-toggle">
+                                                                                                <div className="strategy-step-item-head-left">
+                                                                                                    {hasDetail ? (
+                                                                                                        <ChevronDown
+                                                                                                            size={
+                                                                                                                14
+                                                                                                            }
+                                                                                                            className="strategy-step-item-chevron"
+                                                                                                        />
+                                                                                                    ) : null}
+                                                                                                    <span>
+                                                                                                        第{" "}
+                                                                                                        {
+                                                                                                            item.index
+                                                                                                        }{" "}
+                                                                                                        次
+                                                                                                    </span>
+                                                                                                    {item.status ===
+                                                                                                    "FAILED" ? (
+                                                                                                        <Tag color="error">
+                                                                                                            FAILED
+                                                                                                        </Tag>
+                                                                                                    ) : null}
+                                                                                                </div>
+                                                                                                <div className="strategy-step-item-head-right">
+                                                                                                    {inlineTags.map(
+                                                                                                        (
+                                                                                                            tag,
+                                                                                                            i,
+                                                                                                        ) => (
+                                                                                                            <Tag
+                                                                                                                key={
+                                                                                                                    i
+                                                                                                                }
+                                                                                                                color={
+                                                                                                                    tag.color
+                                                                                                                }
+                                                                                                            >
+                                                                                                                {
+                                                                                                                    tag.label
+                                                                                                                }
+                                                                                                            </Tag>
+                                                                                                        ),
+                                                                                                    )}
+                                                                                                    <Space
+                                                                                                        size={
+                                                                                                            4
+                                                                                                        }
+                                                                                                        onClick={(
+                                                                                                            e,
+                                                                                                        ) =>
+                                                                                                            e.stopPropagation()
+                                                                                                        }
+                                                                                                    >
+                                                                                                        <Button
+                                                                                                            size="small"
+                                                                                                            type="text"
+                                                                                                            icon={
+                                                                                                                <Code
+                                                                                                                    size={
+                                                                                                                        14
+                                                                                                                    }
+                                                                                                                />
+                                                                                                            }
+                                                                                                            onClick={() =>
+                                                                                                                setRawDataModal(
+                                                                                                                    {
+                                                                                                                        title: `${step.stepName} · 第 ${item.index} 次 · 原始数据`,
+                                                                                                                        promptInput:
+                                                                                                                            item.promptInput,
+                                                                                                                        output: item.output,
+                                                                                                                        rawResponse:
+                                                                                                                            item.rawResponse,
+                                                                                                                    },
+                                                                                                                )
+                                                                                                            }
+                                                                                                        >
+                                                                                                            原始数据
+                                                                                                        </Button>
+                                                                                                        {item.status ===
+                                                                                                            "FAILED" &&
+                                                                                                        run.status !==
+                                                                                                            "RUNNING" &&
+                                                                                                        run.status !==
+                                                                                                            "PENDING" ? (
+                                                                                                            <Button
+                                                                                                                size="small"
+                                                                                                                type="text"
+                                                                                                                icon={
+                                                                                                                    <RefreshCcw
+                                                                                                                        size={
+                                                                                                                            14
+                                                                                                                        }
+                                                                                                                    />
+                                                                                                                }
+                                                                                                                loading={
+                                                                                                                    retryingKeys[
+                                                                                                                        buildRetryKey(
+                                                                                                                            run.id,
+                                                                                                                            step.stepId,
+                                                                                                                            item.index,
+                                                                                                                        )
+                                                                                                                    ]
+                                                                                                                }
+                                                                                                                onClick={() =>
+                                                                                                                    retryRunItem(
+                                                                                                                        run.id,
+                                                                                                                        step.stepId,
+                                                                                                                        item.index,
+                                                                                                                    )
+                                                                                                                }
+                                                                                                            >
+                                                                                                                重试
+                                                                                                            </Button>
+                                                                                                        ) : null}
+                                                                                                    </Space>
+                                                                                                </div>
+                                                                                            </summary>
+
+                                                                                            {hasDetail ? (
+                                                                                                <div className="strategy-step-item-body-inner">
+                                                                                                    {item.output
+                                                                                                        ? renderStepItemOutput(
+                                                                                                              step.stepType,
+                                                                                                              item.output,
+                                                                                                          )
+                                                                                                        : null}
+
+                                                                                                    {item.error ? (
+                                                                                                        <div className="strategy-run-error">
+                                                                                                            {
+                                                                                                                item.error
+                                                                                                            }
+                                                                                                        </div>
+                                                                                                    ) : null}
+                                                                                                </div>
+                                                                                            ) : null}
+                                                                                        </details>
+                                                                                    );
+                                                                                },
+                                                                            )}
+                                                                        </div>
+                                                                    ) : null}
+                                                                </div>
                                                             </div>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {run.parsedResult
+                                            ?.finalRecommendation ? (
+                                            <div className="strategy-stage-section">
+                                                <div className="strategy-stage-header">
+                                                    <div className="strategy-stage-badge">
+                                                        2
+                                                    </div>
+                                                    <div>
+                                                        <div className="strategy-stage-title">
+                                                            审核建议
                                                         </div>
-                                                    ),
-                                                )}
+                                                        <div className="strategy-stage-desc">
+                                                            综合所有步骤结果，AI
+                                                            给出整体审核建议与风险评估
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="strategy-stage-body">
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 8,
+                                                            flexWrap: "wrap",
+                                                        }}
+                                                    >
+                                                        {run.parsedResult
+                                                            .finalRecommendation
+                                                            .decision ? (
+                                                            <Tag
+                                                                color={getDecisionColor(
+                                                                    run
+                                                                        .parsedResult
+                                                                        .finalRecommendation
+                                                                        .decision,
+                                                                )}
+                                                            >
+                                                                决定:{" "}
+                                                                {
+                                                                    run
+                                                                        .parsedResult
+                                                                        .finalRecommendation
+                                                                        .decision
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                        {run.parsedResult
+                                                            .finalRecommendation
+                                                            .riskLevel ? (
+                                                            <Tag
+                                                                color={getSeverityColor(
+                                                                    run
+                                                                        .parsedResult
+                                                                        .finalRecommendation
+                                                                        .riskLevel,
+                                                                )}
+                                                            >
+                                                                风险:{" "}
+                                                                {
+                                                                    run
+                                                                        .parsedResult
+                                                                        .finalRecommendation
+                                                                        .riskLevel
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            marginTop: 10,
+                                                            lineHeight: 1.7,
+                                                        }}
+                                                    >
+                                                        {
+                                                            run.parsedResult
+                                                                .finalRecommendation
+                                                                .summary
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {run.parsedResult?.reviewPersistence ? (
+                                            <div className="strategy-stage-section">
+                                                <div className="strategy-stage-header">
+                                                    <div className="strategy-stage-badge">
+                                                        3
+                                                    </div>
+                                                    <div>
+                                                        <div className="strategy-stage-title">
+                                                            审核回填
+                                                        </div>
+                                                        <div className="strategy-stage-desc">
+                                                            将审核建议自动回填至系统，更新题目审核状态
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="strategy-stage-body">
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 8,
+                                                            flexWrap: "wrap",
+                                                        }}
+                                                    >
+                                                        <Tag
+                                                            color={
+                                                                run.parsedResult
+                                                                    .reviewPersistence
+                                                                    .status ===
+                                                                "SAVED"
+                                                                    ? "success"
+                                                                    : run
+                                                                            .parsedResult
+                                                                            .reviewPersistence
+                                                                            .status ===
+                                                                        "FAILED"
+                                                                      ? "error"
+                                                                      : "default"
+                                                            }
+                                                        >
+                                                            {run.parsedResult
+                                                                .reviewPersistence
+                                                                .status ===
+                                                            "SAVED"
+                                                                ? "已保存"
+                                                                : run
+                                                                        .parsedResult
+                                                                        .reviewPersistence
+                                                                        .status ===
+                                                                    "FAILED"
+                                                                  ? "保存失败"
+                                                                  : "已跳过"}
+                                                        </Tag>
+                                                        {run.parsedResult
+                                                            .reviewPersistence
+                                                            .decision ? (
+                                                            <Tag
+                                                                color={getDecisionColor(
+                                                                    run
+                                                                        .parsedResult
+                                                                        .reviewPersistence
+                                                                        .decision,
+                                                                )}
+                                                            >
+                                                                决定:{" "}
+                                                                {
+                                                                    run
+                                                                        .parsedResult
+                                                                        .reviewPersistence
+                                                                        .decision
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                        {run.parsedResult
+                                                            .reviewPersistence
+                                                            .questionStatus ? (
+                                                            <Tag color="purple">
+                                                                题目状态:{" "}
+                                                                {
+                                                                    run
+                                                                        .parsedResult
+                                                                        .reviewPersistence
+                                                                        .questionStatus
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            marginTop: 10,
+                                                            lineHeight: 1.7,
+                                                        }}
+                                                    >
+                                                        {
+                                                            run.parsedResult
+                                                                .reviewPersistence
+                                                                .message
+                                                        }
+                                                    </div>
+                                                    {run.parsedResult
+                                                        .reviewPersistence
+                                                        .comment ? (
+                                                        <pre className="strategy-json-block">
+                                                            {
+                                                                run.parsedResult
+                                                                    .reviewPersistence
+                                                                    .comment
+                                                            }
+                                                        </pre>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                         ) : null}
                                     </div>
