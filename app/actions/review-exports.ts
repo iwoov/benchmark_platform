@@ -5,11 +5,18 @@ import * as XLSX from "xlsx";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    buildReviewCompositeKey,
+    getLatestReviewSummaryMap,
+    toReviewStatusValue,
+} from "@/lib/reviews/review-summary";
 
 const exportFormatSchema = z.enum(["excel", "json", "markdown"]);
 const exportScopeSchema = z.enum(["selected", "filteredAll"]);
 const filterFieldKeySchema = z.union([
     z.literal("status"),
+    z.literal("aiReviewStatus"),
+    z.literal("manualReviewStatus"),
     z.literal("datasourceId"),
     z.literal("sourceRowNumber"),
     z.string().regex(/^raw:.+$/),
@@ -46,6 +53,8 @@ const baseFieldLabels: Record<string, string> = {
     externalRecordId: "外部记录 ID",
     title: "题目标题",
     status: "题目状态",
+    aiReviewStatus: "AI审核状态",
+    manualReviewStatus: "人工审核状态",
     updatedAt: "题目更新时间",
     projectName: "项目名称",
     projectCode: "项目编码",
@@ -71,6 +80,13 @@ const reviewDecisionLabelMap: Record<string, string> = {
     NEEDS_REVISION: "退回修改",
 };
 
+const reviewStatusLabelMap: Record<string, string> = {
+    NONE: "未审核",
+    PASS: "通过",
+    REJECT: "驳回",
+    NEEDS_REVISION: "退回修改",
+};
+
 function normalizeRawRecord(metadata: unknown) {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
         return {} as Record<string, string>;
@@ -78,15 +94,18 @@ function normalizeRawRecord(metadata: unknown) {
 
     const rawRecord = (metadata as Record<string, unknown>).rawRecord;
 
-    if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
+    if (
+        !rawRecord ||
+        typeof rawRecord !== "object" ||
+        Array.isArray(rawRecord)
+    ) {
         return {} as Record<string, string>;
     }
 
     return Object.fromEntries(
-        Object.entries(rawRecord as Record<string, unknown>).map(([key, value]) => [
-            key,
-            value == null ? "" : String(value),
-        ]),
+        Object.entries(rawRecord as Record<string, unknown>).map(
+            ([key, value]) => [key, value == null ? "" : String(value)],
+        ),
     );
 }
 
@@ -95,7 +114,8 @@ function extractSourceRowNumber(metadata: unknown) {
         return null;
     }
 
-    const sourceRowNumber = (metadata as Record<string, unknown>).sourceRowNumber;
+    const sourceRowNumber = (metadata as Record<string, unknown>)
+        .sourceRowNumber;
 
     return typeof sourceRowNumber === "number" ? sourceRowNumber : null;
 }
@@ -241,22 +261,46 @@ export async function exportReviewQuestionsAction(
             },
         },
     });
+    const reviewSummaryMap = await getLatestReviewSummaryMap(
+        questions.map((question) => ({
+            projectId: parsed.data.projectId,
+            datasourceId: question.datasource.id,
+            externalRecordId: question.externalRecordId,
+        })),
+    );
     const filteredQuestions = questions.filter((question) => {
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
+        const reviewSummary = reviewSummaryMap.get(
+            buildReviewCompositeKey({
+                projectId: parsed.data.projectId,
+                datasourceId: question.datasource.id,
+                externalRecordId: question.externalRecordId,
+            }),
+        ) ?? {
+            latestReview: null,
+            aiReview: null,
+            manualReview: null,
+        };
 
         return parsed.data.filters.every((condition) => {
             const fieldValue =
                 condition.fieldKey === "status"
                     ? question.status
-                    : condition.fieldKey === "datasourceId"
-                      ? question.datasource.id
-                      : condition.fieldKey === "sourceRowNumber"
-                        ? sourceRowNumber
-                        : (rawRecord[condition.fieldKey.slice(4)] ?? "");
+                    : condition.fieldKey === "aiReviewStatus"
+                      ? toReviewStatusValue(reviewSummary.aiReview)
+                      : condition.fieldKey === "manualReviewStatus"
+                        ? toReviewStatusValue(reviewSummary.manualReview)
+                        : condition.fieldKey === "datasourceId"
+                          ? question.datasource.id
+                          : condition.fieldKey === "sourceRowNumber"
+                            ? sourceRowNumber
+                            : (rawRecord[condition.fieldKey.slice(4)] ?? "");
 
             if (
                 condition.fieldKey === "status" ||
+                condition.fieldKey === "aiReviewStatus" ||
+                condition.fieldKey === "manualReviewStatus" ||
                 condition.fieldKey === "datasourceId"
             ) {
                 if (condition.operator === "equals") {
@@ -273,7 +317,10 @@ export async function exportReviewQuestionsAction(
             if (condition.fieldKey === "sourceRowNumber") {
                 const targetValue = Number(condition.value);
 
-                if (Number.isNaN(targetValue) || typeof fieldValue !== "number") {
+                if (
+                    Number.isNaN(targetValue) ||
+                    typeof fieldValue !== "number"
+                ) {
                     return false;
                 }
 
@@ -292,7 +339,9 @@ export async function exportReviewQuestionsAction(
                 return true;
             }
 
-            const normalizedFieldValue = String(fieldValue).trim().toLowerCase();
+            const normalizedFieldValue = String(fieldValue)
+                .trim()
+                .toLowerCase();
             const normalizedCompareValue = condition.value.trim().toLowerCase();
 
             if (condition.operator === "isEmpty") {
@@ -336,68 +385,28 @@ export async function exportReviewQuestionsAction(
             ? uniqueQuestionIds
                   .map((questionId) => questionById.get(questionId))
                   .filter(
-                      (
-                          question,
-                      ): question is NonNullable<typeof question> =>
+                      (question): question is NonNullable<typeof question> =>
                           Boolean(question),
                   )
             : filteredQuestions.sort((left, right) =>
                   left.externalRecordId.localeCompare(right.externalRecordId),
               );
 
-    const reviewOrWhere = orderedQuestions.map((question) => ({
-        projectId: parsed.data.projectId,
-        datasourceId: question.datasource.id,
-        externalRecordId: question.externalRecordId,
-    }));
-    const reviews = reviewOrWhere.length
-        ? await prisma.review.findMany({
-              where: {
-                  OR: reviewOrWhere,
-              },
-              orderBy: [{ updatedAt: "desc" }],
-              select: {
-                  projectId: true,
-                  datasourceId: true,
-                  externalRecordId: true,
-                  decision: true,
-                  comment: true,
-                  updatedAt: true,
-                  reviewer: {
-                      select: {
-                          name: true,
-                      },
-                  },
-              },
-          })
-        : [];
-    const latestReviewByCompositeKey = new Map<
-        string,
-        {
-            decision: string;
-            comment: string;
-            updatedAt: Date;
-            reviewerName: string;
-        }
-    >();
-
-    for (const review of reviews) {
-        const key = `${review.projectId}::${review.datasourceId}::${review.externalRecordId}`;
-        if (!latestReviewByCompositeKey.has(key)) {
-            latestReviewByCompositeKey.set(key, {
-                decision: review.decision,
-                comment: review.comment,
-                updatedAt: review.updatedAt,
-                reviewerName: review.reviewer.name ?? "",
-            });
-        }
-    }
-
     const rows = orderedQuestions.map((question) => {
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
-        const reviewKey = `${parsed.data.projectId}::${question.datasource.id}::${question.externalRecordId}`;
-        const latestReview = latestReviewByCompositeKey.get(reviewKey);
+        const reviewSummary = reviewSummaryMap.get(
+            buildReviewCompositeKey({
+                projectId: parsed.data.projectId,
+                datasourceId: question.datasource.id,
+                externalRecordId: question.externalRecordId,
+            }),
+        ) ?? {
+            latestReview: null,
+            aiReview: null,
+            manualReview: null,
+        };
+        const latestReview = reviewSummary.latestReview;
 
         const record = Object.fromEntries(
             parsed.data.fieldKeys.map((fieldKey) => {
@@ -417,12 +426,34 @@ export async function exportReviewQuestionsAction(
                 if (fieldKey === "status") {
                     return [
                         fieldLabel(fieldKey),
-                        questionStatusLabelMap[question.status] ?? question.status,
+                        questionStatusLabelMap[question.status] ??
+                            question.status,
+                    ];
+                }
+
+                if (fieldKey === "aiReviewStatus") {
+                    const status = toReviewStatusValue(reviewSummary.aiReview);
+                    return [
+                        fieldLabel(fieldKey),
+                        reviewStatusLabelMap[status] ?? status,
+                    ];
+                }
+
+                if (fieldKey === "manualReviewStatus") {
+                    const status = toReviewStatusValue(
+                        reviewSummary.manualReview,
+                    );
+                    return [
+                        fieldLabel(fieldKey),
+                        reviewStatusLabelMap[status] ?? status,
                     ];
                 }
 
                 if (fieldKey === "updatedAt") {
-                    return [fieldLabel(fieldKey), question.updatedAt.toLocaleString("zh-CN")];
+                    return [
+                        fieldLabel(fieldKey),
+                        question.updatedAt.toLocaleString("zh-CN"),
+                    ];
                 }
 
                 if (fieldKey === "projectName") {
@@ -445,7 +476,8 @@ export async function exportReviewQuestionsAction(
                     return [
                         fieldLabel(fieldKey),
                         latestReview
-                            ? reviewDecisionLabelMap[latestReview.decision] ?? latestReview.decision
+                            ? (reviewDecisionLabelMap[latestReview.decision] ??
+                              latestReview.decision)
                             : "",
                     ];
                 }
@@ -455,14 +487,19 @@ export async function exportReviewQuestionsAction(
                 }
 
                 if (fieldKey === "reviewReviewer") {
-                    return [fieldLabel(fieldKey), latestReview?.reviewerName ?? ""];
+                    return [
+                        fieldLabel(fieldKey),
+                        latestReview?.reviewerName ?? "",
+                    ];
                 }
 
                 if (fieldKey === "reviewUpdatedAt") {
                     return [
                         fieldLabel(fieldKey),
                         latestReview?.updatedAt
-                            ? latestReview.updatedAt.toLocaleString("zh-CN")
+                            ? new Date(latestReview.updatedAt).toLocaleString(
+                                  "zh-CN",
+                              )
                             : "",
                     ];
                 }
@@ -491,7 +528,9 @@ export async function exportReviewQuestionsAction(
     }
 
     if (format === "markdown") {
-        const headers = parsed.data.fieldKeys.map((fieldKey) => fieldLabel(fieldKey));
+        const headers = parsed.data.fieldKeys.map((fieldKey) =>
+            fieldLabel(fieldKey),
+        );
         const lines = [
             `| ${headers.join(" | ")} |`,
             `| ${headers.map(() => "---").join(" | ")} |`,

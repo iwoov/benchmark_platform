@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/db/prisma";
 import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
+import {
+    buildReviewCompositeKey,
+    getLatestReviewSummaryMap,
+    toReviewStatusValue,
+    type ReviewSummary,
+    type ReviewStatusValue,
+} from "@/lib/reviews/review-summary";
 
 function normalizeRawValue(value: unknown): string {
     if (value === null || value === undefined) {
@@ -105,6 +112,8 @@ export type ReviewQuestionListItem = {
     externalRecordId: string;
     title: string;
     status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
+    aiReview: ReviewSummary | null;
+    manualReview: ReviewSummary | null;
     updatedAt: string;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
@@ -135,6 +144,139 @@ export type ReviewQuestionDetail = {
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
 };
+
+type ReviewAwareQuestionRecord = {
+    status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
+    datasourceId: string;
+    sourceRowNumber: number | null;
+    rawRecord: Record<string, string>;
+    aiReview: ReviewSummary | null;
+    manualReview: ReviewSummary | null;
+};
+
+function toReviewAwareQuestionRecord(input: {
+    status: ReviewAwareQuestionRecord["status"];
+    datasourceId: string;
+    metadata: unknown;
+    aiReview: ReviewSummary | null;
+    manualReview: ReviewSummary | null;
+}) {
+    return {
+        status: input.status,
+        datasourceId: input.datasourceId,
+        sourceRowNumber: extractSourceRowNumber(input.metadata),
+        rawRecord: extractRawRecord(input.metadata),
+        aiReview: input.aiReview,
+        manualReview: input.manualReview,
+    } satisfies ReviewAwareQuestionRecord;
+}
+
+function isValidReviewStatusValue(value: string): value is ReviewStatusValue {
+    return (
+        value === "PASS" ||
+        value === "REJECT" ||
+        value === "NEEDS_REVISION" ||
+        value === "NONE"
+    );
+}
+
+function getConditionFieldValue(
+    question: ReviewAwareQuestionRecord,
+    condition: ReviewQuestionFilterCondition,
+) {
+    if (condition.fieldKey === "status") {
+        return question.status;
+    }
+
+    if (condition.fieldKey === "aiReviewStatus") {
+        return toReviewStatusValue(question.aiReview);
+    }
+
+    if (condition.fieldKey === "manualReviewStatus") {
+        return toReviewStatusValue(question.manualReview);
+    }
+
+    if (condition.fieldKey === "datasourceId") {
+        return question.datasourceId;
+    }
+
+    if (condition.fieldKey === "sourceRowNumber") {
+        return question.sourceRowNumber;
+    }
+
+    return question.rawRecord[condition.fieldKey.slice(4)] ?? "";
+}
+
+function matchesQuestionCondition(
+    question: ReviewAwareQuestionRecord,
+    condition: ReviewQuestionFilterCondition,
+) {
+    const fieldValue = getConditionFieldValue(question, condition);
+
+    if (
+        condition.fieldKey === "status" ||
+        condition.fieldKey === "aiReviewStatus" ||
+        condition.fieldKey === "manualReviewStatus" ||
+        condition.fieldKey === "datasourceId"
+    ) {
+        if (condition.operator === "equals") {
+            return fieldValue === condition.value;
+        }
+
+        if (condition.operator === "notEquals") {
+            return fieldValue !== condition.value;
+        }
+
+        return true;
+    }
+
+    if (condition.fieldKey === "sourceRowNumber") {
+        const targetValue = Number(condition.value);
+
+        if (Number.isNaN(targetValue) || typeof fieldValue !== "number") {
+            return false;
+        }
+
+        if (condition.operator === "equals") {
+            return fieldValue === targetValue;
+        }
+
+        if (condition.operator === "gt") {
+            return fieldValue > targetValue;
+        }
+
+        if (condition.operator === "lt") {
+            return fieldValue < targetValue;
+        }
+
+        return true;
+    }
+
+    const normalizedFieldValue = String(fieldValue).trim().toLowerCase();
+    const normalizedCompareValue = condition.value.trim().toLowerCase();
+
+    if (condition.operator === "isEmpty") {
+        return !normalizedFieldValue;
+    }
+
+    if (condition.operator === "isNotEmpty") {
+        return Boolean(normalizedFieldValue);
+    }
+
+    if (condition.operator === "equals") {
+        return normalizedFieldValue === normalizedCompareValue;
+    }
+
+    if (condition.operator === "notEquals") {
+        return normalizedFieldValue !== normalizedCompareValue;
+    }
+
+    if (condition.operator === "notContains") {
+        return !normalizedFieldValue.includes(normalizedCompareValue);
+    }
+
+    return normalizedFieldValue.includes(normalizedCompareValue);
+}
 
 export type ReviewQuestionNavigation = {
     previousQuestionId: string | null;
@@ -203,6 +345,13 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
         },
         orderBy: [{ createdAt: "asc" }],
     });
+    const reviewSummaryMap = await getLatestReviewSummaryMap(
+        rows.map((question) => ({
+            projectId: question.project.id,
+            datasourceId: question.datasource.id,
+            externalRecordId: question.externalRecordId,
+        })),
+    );
 
     return rows
         .sort((left, right) => {
@@ -216,21 +365,39 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
 
             return left.externalRecordId.localeCompare(right.externalRecordId);
         })
-        .map<ReviewQuestionListItem>((question) => ({
-            id: question.id,
-            projectId: question.project.id,
-            projectName: question.project.name,
-            projectCode: question.project.code,
-            datasourceId: question.datasource.id,
-            datasourceName: question.datasource.name,
-            externalRecordId: question.externalRecordId,
-            title: question.title,
-            status: question.status,
-            updatedAt: question.updatedAt.toISOString(),
-            sourceRowNumber: extractSourceRowNumber(question.metadata),
-            rawRecord: extractRawRecord(question.metadata),
-            rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
-        }));
+        .map<ReviewQuestionListItem>((question) => {
+            const reviewSummary = reviewSummaryMap.get(
+                buildReviewCompositeKey({
+                    projectId: question.project.id,
+                    datasourceId: question.datasource.id,
+                    externalRecordId: question.externalRecordId,
+                }),
+            ) ?? {
+                latestReview: null,
+                aiReview: null,
+                manualReview: null,
+            };
+
+            return {
+                id: question.id,
+                projectId: question.project.id,
+                projectName: question.project.name,
+                projectCode: question.project.code,
+                datasourceId: question.datasource.id,
+                datasourceName: question.datasource.name,
+                externalRecordId: question.externalRecordId,
+                title: question.title,
+                status: question.status,
+                aiReview: reviewSummary.aiReview,
+                manualReview: reviewSummary.manualReview,
+                updatedAt: question.updatedAt.toISOString(),
+                sourceRowNumber: extractSourceRowNumber(question.metadata),
+                rawRecord: extractRawRecord(question.metadata),
+                rawFieldOrder: extractRawFieldOrder(
+                    question.datasource.syncConfig,
+                ),
+            };
+        });
 }
 
 export async function getReviewQuestionListPageData({
@@ -260,6 +427,12 @@ export async function getReviewQuestionListPageData({
     const datasourceCondition = conditions.find(
         (condition) => condition.fieldKey === "datasourceId",
     );
+    const aiReviewStatusCondition = conditions.find(
+        (condition) => condition.fieldKey === "aiReviewStatus",
+    );
+    const manualReviewStatusCondition = conditions.find(
+        (condition) => condition.fieldKey === "manualReviewStatus",
+    );
     const validStatusValue =
         statusCondition?.value === "DRAFT" ||
         statusCondition?.value === "SUBMITTED" ||
@@ -268,6 +441,16 @@ export async function getReviewQuestionListPageData({
         statusCondition?.value === "REJECTED"
             ? statusCondition.value
             : null;
+    const validAiReviewStatusValue = aiReviewStatusCondition?.value
+        ? isValidReviewStatusValue(aiReviewStatusCondition.value)
+            ? aiReviewStatusCondition.value
+            : null
+        : null;
+    const validManualReviewStatusValue = manualReviewStatusCondition?.value
+        ? isValidReviewStatusValue(manualReviewStatusCondition.value)
+            ? manualReviewStatusCondition.value
+            : null
+        : null;
     const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
@@ -316,107 +499,88 @@ export async function getReviewQuestionListPageData({
             },
         },
     });
-    const sortedRows = candidateRows
-        .map<ReviewQuestionListItem>((question) => ({
-            id: question.id,
+    const reviewSummaryMap = await getLatestReviewSummaryMap(
+        candidateRows.map((question) => ({
             projectId: question.project.id,
-            projectName: question.project.name,
-            projectCode: question.project.code,
             datasourceId: question.datasource.id,
-            datasourceName: question.datasource.name,
             externalRecordId: question.externalRecordId,
-            title: question.title,
-            status: question.status,
-            updatedAt: question.updatedAt.toISOString(),
-            sourceRowNumber: extractSourceRowNumber(question.metadata),
-            rawRecord: extractRawRecord(question.metadata),
-            rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
-        }))
-        .filter((question) =>
-            conditions.every((condition) => {
-                const fieldValue =
-                    condition.fieldKey === "status"
-                        ? question.status
-                        : condition.fieldKey === "datasourceId"
-                          ? question.datasourceId
-                          : condition.fieldKey === "sourceRowNumber"
-                            ? question.sourceRowNumber
-                            : (question.rawRecord[
-                                  condition.fieldKey.slice(4)
-                              ] ?? "");
+        })),
+    );
+    const sortedRows = candidateRows
+        .map<ReviewQuestionListItem>((question) => {
+            const reviewSummary = reviewSummaryMap.get(
+                buildReviewCompositeKey({
+                    projectId: question.project.id,
+                    datasourceId: question.datasource.id,
+                    externalRecordId: question.externalRecordId,
+                }),
+            ) ?? {
+                latestReview: null,
+                aiReview: null,
+                manualReview: null,
+            };
 
-                if (
-                    condition.fieldKey === "status" ||
-                    condition.fieldKey === "datasourceId"
-                ) {
-                    if (condition.operator === "equals") {
-                        return fieldValue === condition.value;
-                    }
+            return {
+                id: question.id,
+                projectId: question.project.id,
+                projectName: question.project.name,
+                projectCode: question.project.code,
+                datasourceId: question.datasource.id,
+                datasourceName: question.datasource.name,
+                externalRecordId: question.externalRecordId,
+                title: question.title,
+                status: question.status,
+                aiReview: reviewSummary.aiReview,
+                manualReview: reviewSummary.manualReview,
+                updatedAt: question.updatedAt.toISOString(),
+                sourceRowNumber: extractSourceRowNumber(question.metadata),
+                rawRecord: extractRawRecord(question.metadata),
+                rawFieldOrder: extractRawFieldOrder(
+                    question.datasource.syncConfig,
+                ),
+            };
+        })
+        .filter((question) => {
+            if (
+                aiReviewStatusCondition?.operator === "equals" &&
+                validAiReviewStatusValue &&
+                toReviewStatusValue(question.aiReview) !==
+                    validAiReviewStatusValue
+            ) {
+                return false;
+            }
 
-                    if (condition.operator === "notEquals") {
-                        return fieldValue !== condition.value;
-                    }
+            if (
+                aiReviewStatusCondition?.operator === "notEquals" &&
+                validAiReviewStatusValue &&
+                toReviewStatusValue(question.aiReview) ===
+                    validAiReviewStatusValue
+            ) {
+                return false;
+            }
 
-                    return true;
-                }
+            if (
+                manualReviewStatusCondition?.operator === "equals" &&
+                validManualReviewStatusValue &&
+                toReviewStatusValue(question.manualReview) !==
+                    validManualReviewStatusValue
+            ) {
+                return false;
+            }
 
-                if (condition.fieldKey === "sourceRowNumber") {
-                    const targetValue = Number(condition.value);
+            if (
+                manualReviewStatusCondition?.operator === "notEquals" &&
+                validManualReviewStatusValue &&
+                toReviewStatusValue(question.manualReview) ===
+                    validManualReviewStatusValue
+            ) {
+                return false;
+            }
 
-                    if (
-                        Number.isNaN(targetValue) ||
-                        typeof fieldValue !== "number"
-                    ) {
-                        return false;
-                    }
-
-                    if (condition.operator === "equals") {
-                        return fieldValue === targetValue;
-                    }
-
-                    if (condition.operator === "gt") {
-                        return fieldValue > targetValue;
-                    }
-
-                    if (condition.operator === "lt") {
-                        return fieldValue < targetValue;
-                    }
-
-                    return true;
-                }
-
-                const normalizedFieldValue = String(fieldValue)
-                    .trim()
-                    .toLowerCase();
-                const normalizedCompareValue = condition.value
-                    .trim()
-                    .toLowerCase();
-
-                if (condition.operator === "isEmpty") {
-                    return !normalizedFieldValue;
-                }
-
-                if (condition.operator === "isNotEmpty") {
-                    return Boolean(normalizedFieldValue);
-                }
-
-                if (condition.operator === "equals") {
-                    return normalizedFieldValue === normalizedCompareValue;
-                }
-
-                if (condition.operator === "notEquals") {
-                    return normalizedFieldValue !== normalizedCompareValue;
-                }
-
-                if (condition.operator === "notContains") {
-                    return !normalizedFieldValue.includes(
-                        normalizedCompareValue,
-                    );
-                }
-
-                return normalizedFieldValue.includes(normalizedCompareValue);
-            }),
-        )
+            return conditions.every((condition) =>
+                matchesQuestionCondition(question, condition),
+            );
+        })
         .sort((left, right) => {
             const externalOrderDiff =
                 parseExternalRecordOrder(left.externalRecordId) -
@@ -640,91 +804,41 @@ export async function getReviewQuestionNavigation({
             externalRecordId: true,
         },
     });
+    const reviewSummaryMap = await getLatestReviewSummaryMap(
+        orderedQuestions.map((question) => ({
+            projectId: scopedProjectId,
+            datasourceId: question.datasourceId,
+            externalRecordId: question.externalRecordId,
+        })),
+    );
     const filteredOrderedQuestions = orderedQuestions
         .filter((question) =>
-            conditions.every((condition) => {
-                const fieldValue =
-                    condition.fieldKey === "status"
-                        ? question.status
-                        : condition.fieldKey === "datasourceId"
-                          ? question.datasourceId
-                          : condition.fieldKey === "sourceRowNumber"
-                            ? extractSourceRowNumber(question.metadata)
-                            : (extractRawRecord(question.metadata)[
-                                  condition.fieldKey.slice(4)
-                              ] ?? "");
-
-                if (
-                    condition.fieldKey === "status" ||
-                    condition.fieldKey === "datasourceId"
-                ) {
-                    if (condition.operator === "equals") {
-                        return fieldValue === condition.value;
-                    }
-
-                    if (condition.operator === "notEquals") {
-                        return fieldValue !== condition.value;
-                    }
-
-                    return true;
-                }
-
-                if (condition.fieldKey === "sourceRowNumber") {
-                    const targetValue = Number(condition.value);
-
-                    if (
-                        Number.isNaN(targetValue) ||
-                        typeof fieldValue !== "number"
-                    ) {
-                        return false;
-                    }
-
-                    if (condition.operator === "equals") {
-                        return fieldValue === targetValue;
-                    }
-
-                    if (condition.operator === "gt") {
-                        return fieldValue > targetValue;
-                    }
-
-                    if (condition.operator === "lt") {
-                        return fieldValue < targetValue;
-                    }
-
-                    return true;
-                }
-
-                const normalizedFieldValue = String(fieldValue)
-                    .trim()
-                    .toLowerCase();
-                const normalizedCompareValue = condition.value
-                    .trim()
-                    .toLowerCase();
-
-                if (condition.operator === "isEmpty") {
-                    return !normalizedFieldValue;
-                }
-
-                if (condition.operator === "isNotEmpty") {
-                    return Boolean(normalizedFieldValue);
-                }
-
-                if (condition.operator === "equals") {
-                    return normalizedFieldValue === normalizedCompareValue;
-                }
-
-                if (condition.operator === "notEquals") {
-                    return normalizedFieldValue !== normalizedCompareValue;
-                }
-
-                if (condition.operator === "notContains") {
-                    return !normalizedFieldValue.includes(
-                        normalizedCompareValue,
-                    );
-                }
-
-                return normalizedFieldValue.includes(normalizedCompareValue);
-            }),
+            conditions.every((condition) =>
+                matchesQuestionCondition(
+                    toReviewAwareQuestionRecord({
+                        status: question.status,
+                        datasourceId: question.datasourceId,
+                        metadata: question.metadata,
+                        aiReview:
+                            reviewSummaryMap.get(
+                                buildReviewCompositeKey({
+                                    projectId: scopedProjectId,
+                                    datasourceId: question.datasourceId,
+                                    externalRecordId: question.externalRecordId,
+                                }),
+                            )?.aiReview ?? null,
+                        manualReview:
+                            reviewSummaryMap.get(
+                                buildReviewCompositeKey({
+                                    projectId: scopedProjectId,
+                                    datasourceId: question.datasourceId,
+                                    externalRecordId: question.externalRecordId,
+                                }),
+                            )?.manualReview ?? null,
+                    }),
+                    condition,
+                ),
+            ),
         )
         .sort((left, right) => {
             const externalOrderDiff =

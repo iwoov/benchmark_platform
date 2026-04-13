@@ -7,6 +7,8 @@ export type QuestionStatus =
 
 export type ReviewQuestionSystemFieldKey =
     | "status"
+    | "aiReviewStatus"
+    | "manualReviewStatus"
     | "datasourceId"
     | "sourceRowNumber";
 export type ReviewQuestionRawFieldKey = `raw:${string}`;
@@ -61,6 +63,8 @@ function isValidFieldKey(
 ): value is ReviewQuestionFilterFieldKey {
     return (
         value === "status" ||
+        value === "aiReviewStatus" ||
+        value === "manualReviewStatus" ||
         value === "datasourceId" ||
         value === "sourceRowNumber" ||
         (typeof value === "string" && value.startsWith("raw:"))
@@ -127,9 +131,7 @@ export function parseReviewQuestionFilterConditions(
                     } satisfies ReviewQuestionFilterCondition;
                 })
                 .filter(
-                    (
-                        condition,
-                    ): condition is ReviewQuestionFilterCondition =>
+                    (condition): condition is ReviewQuestionFilterCondition =>
                         Boolean(condition),
                 ),
         );

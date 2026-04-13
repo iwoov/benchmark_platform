@@ -53,11 +53,25 @@ type ReviewQuestionItem = {
     externalRecordId: string;
     title: string;
     status: QuestionStatus;
+    aiReview: {
+        decision: "PASS" | "REJECT" | "NEEDS_REVISION";
+        comment: string;
+        updatedAt: string;
+        reviewerName: string;
+    } | null;
+    manualReview: {
+        decision: "PASS" | "REJECT" | "NEEDS_REVISION";
+        comment: string;
+        updatedAt: string;
+        reviewerName: string;
+    } | null;
     updatedAt: string;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
 };
+
+type ReviewStatus = "PASS" | "REJECT" | "NEEDS_REVISION" | "NONE";
 
 type FieldDefinition = {
     value: ReviewQuestionFilterFieldKey;
@@ -81,6 +95,13 @@ const questionStatusMeta = {
     APPROVED: { label: "已通过", color: "success" },
     REJECTED: { label: "已驳回", color: "error" },
 } satisfies Record<QuestionStatus, { label: string; color: string }>;
+
+const reviewStatusMeta = {
+    NONE: { label: "未审核", color: "default" },
+    PASS: { label: "通过", color: "success" },
+    REJECT: { label: "驳回", color: "error" },
+    NEEDS_REVISION: { label: "退回修改", color: "gold" },
+} satisfies Record<ReviewStatus, { label: string; color: string }>;
 
 const cellStyle = {
     overflow: "hidden",
@@ -144,6 +165,29 @@ function getOperatorOptions(valueType: FieldDefinition["valueType"]) {
         value: ReviewQuestionFilterOperator;
         label: string;
     }>;
+}
+
+function formatReviewTooltip(
+    review: ReviewQuestionItem["aiReview"] | ReviewQuestionItem["manualReview"],
+) {
+    if (!review) {
+        return "未审核";
+    }
+
+    const details = [
+        `状态：${reviewStatusMeta[review.decision].label}`,
+        `时间：${new Date(review.updatedAt).toLocaleString("zh-CN")}`,
+    ];
+
+    if (review.reviewerName) {
+        details.push(`审核人：${review.reviewerName}`);
+    }
+
+    if (review.comment.trim()) {
+        details.push(`意见：${review.comment}`);
+    }
+
+    return details.join("\n");
 }
 
 export function ReviewQuestionList({
@@ -213,7 +257,19 @@ export function ReviewQuestionList({
         const systemFields: FieldDefinition[] = [
             {
                 value: "status",
-                label: "状态",
+                label: "题目状态",
+                kind: "system",
+                valueType: "select",
+            },
+            {
+                value: "aiReviewStatus",
+                label: "AI审核状态",
+                kind: "system",
+                valueType: "select",
+            },
+            {
+                value: "manualReviewStatus",
+                label: "人工审核状态",
                 kind: "system",
                 valueType: "select",
             },
@@ -270,6 +326,8 @@ export function ReviewQuestionList({
             { value: "externalRecordId", label: "外部记录 ID" },
             { value: "title", label: "题目标题" },
             { value: "status", label: "题目状态" },
+            { value: "aiReviewStatus", label: "AI审核状态" },
+            { value: "manualReviewStatus", label: "人工审核状态" },
             { value: "updatedAt", label: "题目更新时间" },
             { value: "projectName", label: "项目名称" },
             { value: "projectCode", label: "项目编码" },
@@ -318,11 +376,12 @@ export function ReviewQuestionList({
     const gridTemplateColumns = [
         "52px",
         "160px",
-        "120px",
+        "140px",
+        "140px",
         "180px",
         ...rawColumns.map(() => "220px"),
     ].join(" ");
-    const tableWidth = 52 + 160 + 120 + 180 + rawColumns.length * 220;
+    const tableWidth = 52 + 160 + 140 + 140 + 180 + rawColumns.length * 220;
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -410,9 +469,8 @@ export function ReviewQuestionList({
             const currentPageQuestionIds = questions.map((item) => item.id);
 
             if (withShift && anchorQuestionId) {
-                const anchorIndex = currentPageQuestionIds.indexOf(
-                    anchorQuestionId,
-                );
+                const anchorIndex =
+                    currentPageQuestionIds.indexOf(anchorQuestionId);
                 const targetIndex = currentPageQuestionIds.indexOf(questionId);
 
                 if (anchorIndex >= 0 && targetIndex >= 0) {
@@ -602,7 +660,8 @@ export function ReviewQuestionList({
         } catch (error) {
             notification.error({
                 message: "导出失败",
-                description: error instanceof Error ? error.message : "请稍后再试。",
+                description:
+                    error instanceof Error ? error.message : "请稍后再试。",
                 placement: "topRight",
             });
         } finally {
@@ -715,7 +774,10 @@ export function ReviewQuestionList({
                             </Button>
                             <Button
                                 icon={<Download size={16} />}
-                                disabled={!selectedQuestionIds.length && !totalQuestions}
+                                disabled={
+                                    !selectedQuestionIds.length &&
+                                    !totalQuestions
+                                }
                                 onClick={openExportModal}
                             >
                                 导出数据
@@ -751,9 +813,18 @@ export function ReviewQuestionList({
                                         ? (questionStatusMeta[
                                               condition.value as QuestionStatus
                                           ]?.label ?? condition.value)
-                                        : condition.fieldKey === "datasourceId"
-                                          ? (datasourceLabel ?? condition.value)
-                                          : condition.value || "—";
+                                        : condition.fieldKey ===
+                                                "aiReviewStatus" ||
+                                            condition.fieldKey ===
+                                                "manualReviewStatus"
+                                          ? (reviewStatusMeta[
+                                                condition.value as ReviewStatus
+                                            ]?.label ?? condition.value)
+                                          : condition.fieldKey ===
+                                              "datasourceId"
+                                            ? (datasourceLabel ??
+                                              condition.value)
+                                            : condition.value || "—";
 
                                 return (
                                     <Tag key={condition.id} color="blue">
@@ -832,7 +903,10 @@ export function ReviewQuestionList({
                                             />
                                         </div>
                                         <div style={cellStyle}>外部记录 ID</div>
-                                        <div style={cellStyle}>状态</div>
+                                        <div style={cellStyle}>AI审核状态</div>
+                                        <div style={cellStyle}>
+                                            人工审核状态
+                                        </div>
                                         <div style={cellStyle}>更新时间</div>
                                         {rawColumns.map((column) => (
                                             <div
@@ -893,73 +967,112 @@ export function ReviewQuestionList({
                                                     }
                                                 }}
                                             >
-                                            <div
-                                                onClick={(event) =>
-                                                    event.stopPropagation()
-                                                }
-                                                onKeyDown={(event) =>
-                                                    event.stopPropagation()
-                                                }
-                                            >
-                                                <Checkbox
-                                                    checked={isSelected}
-                                                    onChange={(event) =>
-                                                        toggleQuestionSelection(
-                                                            question.id,
-                                                            event.target
-                                                                .checked,
-                                                            isShiftPressed(
-                                                                event.nativeEvent,
-                                                            ),
-                                                        )
+                                                <div
+                                                    onClick={(event) =>
+                                                        event.stopPropagation()
                                                     }
-                                                />
-                                            </div>
-                                            <div
-                                                className="muted"
-                                                style={cellStyle}
-                                                title={
-                                                    question.externalRecordId
-                                                }
-                                            >
-                                                {question.externalRecordId}
-                                            </div>
-                                            <div>
-                                                <Tag
-                                                    color={
-                                                        questionStatusMeta[
-                                                            question.status
-                                                        ].color
+                                                    onKeyDown={(event) =>
+                                                        event.stopPropagation()
                                                     }
                                                 >
-                                                    {
-                                                        questionStatusMeta[
-                                                            question.status
-                                                        ].label
+                                                    <Checkbox
+                                                        checked={isSelected}
+                                                        onChange={(event) =>
+                                                            toggleQuestionSelection(
+                                                                question.id,
+                                                                event.target
+                                                                    .checked,
+                                                                isShiftPressed(
+                                                                    event.nativeEvent,
+                                                                ),
+                                                            )
+                                                        }
+                                                    />
+                                                </div>
+                                                <div
+                                                    className="muted"
+                                                    style={cellStyle}
+                                                    title={
+                                                        question.externalRecordId
                                                     }
-                                                </Tag>
-                                            </div>
-                                            <div className="muted">
-                                                {new Date(
-                                                    question.updatedAt,
-                                                ).toLocaleString("zh-CN")}
-                                            </div>
-                                            {rawColumns.map((column) => {
-                                                const value =
-                                                    question.rawRecord[
-                                                        column.key
-                                                    ] || "—";
-
-                                                return (
+                                                >
+                                                    {question.externalRecordId}
+                                                </div>
+                                                <div>
                                                     <div
-                                                        key={`${question.id}-${column.key}`}
-                                                        style={cellStyle}
-                                                        title={value}
+                                                        title={formatReviewTooltip(
+                                                            question.aiReview,
+                                                        )}
                                                     >
-                                                        {value}
+                                                        <Tag
+                                                            color={
+                                                                reviewStatusMeta[
+                                                                    question
+                                                                        .aiReview
+                                                                        ?.decision ??
+                                                                        "NONE"
+                                                                ].color
+                                                            }
+                                                        >
+                                                            {
+                                                                reviewStatusMeta[
+                                                                    question
+                                                                        .aiReview
+                                                                        ?.decision ??
+                                                                        "NONE"
+                                                                ].label
+                                                            }
+                                                        </Tag>
                                                     </div>
-                                                );
-                                            })}
+                                                </div>
+                                                <div>
+                                                    <div
+                                                        title={formatReviewTooltip(
+                                                            question.manualReview,
+                                                        )}
+                                                    >
+                                                        <Tag
+                                                            color={
+                                                                reviewStatusMeta[
+                                                                    question
+                                                                        .manualReview
+                                                                        ?.decision ??
+                                                                        "NONE"
+                                                                ].color
+                                                            }
+                                                        >
+                                                            {
+                                                                reviewStatusMeta[
+                                                                    question
+                                                                        .manualReview
+                                                                        ?.decision ??
+                                                                        "NONE"
+                                                                ].label
+                                                            }
+                                                        </Tag>
+                                                    </div>
+                                                </div>
+                                                <div className="muted">
+                                                    {new Date(
+                                                        question.updatedAt,
+                                                    ).toLocaleString("zh-CN")}
+                                                </div>
+                                                {rawColumns.map((column) => {
+                                                    const value =
+                                                        question.rawRecord[
+                                                            column.key
+                                                        ] || "—";
+
+                                                    return (
+                                                        <div
+                                                            key={`${question.id}-${column.key}`}
+                                                            style={cellStyle}
+                                                            title={value}
+                                                        >
+                                                            {value}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         );
                                     })}
@@ -1096,11 +1209,16 @@ export function ReviewQuestionList({
                                                                           "status"
                                                                               ? "SUBMITTED"
                                                                               : value ===
-                                                                                  "datasourceId"
-                                                                                ? (availableDatasourceOptions[0]
-                                                                                      ?.value ??
-                                                                                  "")
-                                                                                : "",
+                                                                                      "aiReviewStatus" ||
+                                                                                  value ===
+                                                                                      "manualReviewStatus"
+                                                                                ? "NONE"
+                                                                                : value ===
+                                                                                    "datasourceId"
+                                                                                  ? (availableDatasourceOptions[0]
+                                                                                        ?.value ??
+                                                                                    "")
+                                                                                  : "",
                                                                   }
                                                                 : item,
                                                         ),
@@ -1144,7 +1262,22 @@ export function ReviewQuestionList({
                                                                       label: meta.label,
                                                                   }),
                                                               )
-                                                            : availableDatasourceOptions
+                                                            : condition.fieldKey ===
+                                                                    "aiReviewStatus" ||
+                                                                condition.fieldKey ===
+                                                                    "manualReviewStatus"
+                                                              ? Object.entries(
+                                                                    reviewStatusMeta,
+                                                                ).map(
+                                                                    ([
+                                                                        value,
+                                                                        meta,
+                                                                    ]) => ({
+                                                                        value,
+                                                                        label: meta.label,
+                                                                    }),
+                                                                )
+                                                              : availableDatasourceOptions
                                                     }
                                                     size="large"
                                                     onChange={(value) => {
@@ -1334,16 +1467,21 @@ export function ReviewQuestionList({
                         title="导出勾选题目"
                         destroyOnHidden
                     >
-                        <div style={{ display: "grid", gap: 14, marginTop: 12 }}>
+                        <div
+                            style={{ display: "grid", gap: 14, marginTop: 12 }}
+                        >
                             <div className="workspace-tip">
                                 <Tag color="blue">说明</Tag>
                                 <span>
-                                    已勾选 {selectedQuestionIds.length} 题。可选择导出范围、字段与格式。
+                                    已勾选 {selectedQuestionIds.length}{" "}
+                                    题。可选择导出范围、字段与格式。
                                 </span>
                             </div>
 
                             <div>
-                                <div className="review-toolbar-label">导出范围</div>
+                                <div className="review-toolbar-label">
+                                    导出范围
+                                </div>
                                 <Select
                                     value={exportScope}
                                     onChange={(value) =>
@@ -1365,16 +1503,27 @@ export function ReviewQuestionList({
                             </div>
 
                             <div>
-                                <div className="review-toolbar-label">导出格式</div>
+                                <div className="review-toolbar-label">
+                                    导出格式
+                                </div>
                                 <Select
                                     value={exportFormat}
                                     onChange={(value) =>
                                         setExportFormat(value as ExportFormat)
                                     }
                                     options={[
-                                        { value: "excel", label: "Excel (.xlsx)" },
-                                        { value: "json", label: "JSON (.json)" },
-                                        { value: "markdown", label: "Markdown (.md)" },
+                                        {
+                                            value: "excel",
+                                            label: "Excel (.xlsx)",
+                                        },
+                                        {
+                                            value: "json",
+                                            label: "JSON (.json)",
+                                        },
+                                        {
+                                            value: "markdown",
+                                            label: "Markdown (.md)",
+                                        },
                                     ]}
                                     size="large"
                                     style={{ width: "100%" }}
@@ -1389,7 +1538,9 @@ export function ReviewQuestionList({
                                     mode="multiple"
                                     value={selectedExportFields}
                                     onChange={(value) =>
-                                        setSelectedExportFields(value as string[])
+                                        setSelectedExportFields(
+                                            value as string[],
+                                        )
                                     }
                                     options={exportFieldOptions}
                                     placeholder="选择导出字段"
