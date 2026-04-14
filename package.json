@@ -7,6 +7,7 @@
         "dev:web": "next dev -p 3001",
         "dev:worker": "tsx scripts/ai-review-batch-worker.ts",
         "dev:all": "concurrently -k -n web,worker -c blue,green \"pnpm dev:web\" \"pnpm dev:worker\"",
+        "prebuild": "prisma generate",
         "build": "next build",
         "start": "next start -p 8888",
         "start:web": "next start -p 8888",

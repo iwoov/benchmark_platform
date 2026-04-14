@@ -3,7 +3,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 const UPLOADS_ROOT =
-    process.env.UPLOADS_DIR || path.join(process.cwd(), "uploads");
+    process.env.UPLOADS_DIR ||
+    path.join(/*turbopackIgnore: true*/ process.cwd(), "uploads");
 
 /**
  * Save a buffer to the uploads directory under a datasource-scoped path.
