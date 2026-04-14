@@ -13,6 +13,8 @@ const TERMINAL_BATCH_STATUSES = new Set<BatchRunStatus>([
     BatchRunStatus.FAILED,
     BatchRunStatus.CANCELLED,
 ]);
+const BATCH_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const STALE_BATCH_RUN_HEARTBEAT_MS = 15 * 60 * 1000;
 
 function parseStringArray(input: unknown) {
     if (!Array.isArray(input)) {
@@ -314,6 +316,10 @@ async function syncBatchRunState(batchRunId: string) {
             failedCount: counts.failedCount,
             skippedCount: counts.skippedCount + counts.cancelledCount,
             finishedAt,
+            workerId:
+                TERMINAL_BATCH_STATUSES.has(nextStatus) ? null : undefined,
+            lastHeartbeatAt:
+                TERMINAL_BATCH_STATUSES.has(nextStatus) ? null : undefined,
             summaryPayload: serializeJson({
                 cancelledCount: counts.cancelledCount,
             }),
@@ -560,28 +566,95 @@ export async function deleteAiReviewStrategyBatchRun(batchRunId: string) {
 }
 
 export async function recoverAiReviewStrategyBatchRuns(workerId: string) {
-    await prisma.aiReviewStrategyBatchRunItem.updateMany({
+    const staleBefore = new Date(Date.now() - STALE_BATCH_RUN_HEARTBEAT_MS);
+    const staleRuns = await prisma.aiReviewStrategyBatchRun.findMany({
         where: {
-            status: BatchRunItemStatus.RUNNING,
+            OR: [
+                {
+                    status: BatchRunStatus.RUNNING,
+                    OR: [
+                        {
+                            lastHeartbeatAt: null,
+                        },
+                        {
+                            lastHeartbeatAt: {
+                                lt: staleBefore,
+                            },
+                        },
+                    ],
+                },
+                {
+                    status: BatchRunStatus.CANCEL_REQUESTED,
+                    OR: [
+                        {
+                            lastHeartbeatAt: null,
+                        },
+                        {
+                            lastHeartbeatAt: {
+                                lt: staleBefore,
+                            },
+                        },
+                    ],
+                },
+            ],
         },
-        data: {
-            status: BatchRunItemStatus.PENDING,
-            errorMessage: null,
-            startedAt: null,
+        select: {
+            id: true,
+            status: true,
+            workerId: true,
         },
     });
 
-    await prisma.aiReviewStrategyBatchRun.updateMany({
-        where: {
-            status: BatchRunStatus.RUNNING,
-        },
-        data: {
-            status: BatchRunStatus.PENDING,
-            runningCount: 0,
-            workerId: null,
-            lastHeartbeatAt: null,
-        },
-    });
+    for (const staleRun of staleRuns) {
+        if (staleRun.status === BatchRunStatus.CANCEL_REQUESTED) {
+            await prisma.aiReviewStrategyBatchRunItem.updateMany({
+                where: {
+                    batchRunId: staleRun.id,
+                    status: {
+                        in: [
+                            BatchRunItemStatus.PENDING,
+                            BatchRunItemStatus.RUNNING,
+                        ],
+                    },
+                },
+                data: {
+                    status: BatchRunItemStatus.CANCELLED,
+                    errorMessage: "批量任务已取消。",
+                    finishedAt: new Date(),
+                },
+            });
+
+            await syncBatchRunState(staleRun.id);
+            continue;
+        }
+
+        await prisma.aiReviewStrategyBatchRunItem.updateMany({
+            where: {
+                batchRunId: staleRun.id,
+                status: BatchRunItemStatus.RUNNING,
+            },
+            data: {
+                status: BatchRunItemStatus.PENDING,
+                errorMessage: null,
+                startedAt: null,
+                finishedAt: null,
+            },
+        });
+
+        await prisma.aiReviewStrategyBatchRun.update({
+            where: {
+                id: staleRun.id,
+            },
+            data: {
+                status: BatchRunStatus.PENDING,
+                runningCount: 0,
+                workerId: null,
+                lastHeartbeatAt: null,
+            },
+        });
+
+        await syncBatchRunState(staleRun.id);
+    }
 
     await prisma.aiReviewStrategyBatchRun.updateMany({
         where: {
@@ -589,13 +662,15 @@ export async function recoverAiReviewStrategyBatchRuns(workerId: string) {
         },
         data: {
             workerId: null,
+            lastHeartbeatAt: null,
         },
     });
 }
 
 async function claimNextBatchRun(workerId: string) {
-    const batchRun = await prisma.aiReviewStrategyBatchRun.findFirst({
+    const candidates = await prisma.aiReviewStrategyBatchRun.findMany({
         where: {
+            workerId: null,
             status: {
                 in: [
                     BatchRunStatus.PENDING,
@@ -605,46 +680,54 @@ async function claimNextBatchRun(workerId: string) {
             },
         },
         orderBy: [{ createdAt: "asc" }],
+        take: 20,
         select: {
             id: true,
             status: true,
         },
     });
 
-    if (!batchRun) {
-        return null;
+    for (const candidate of candidates) {
+        const claimedAt = new Date();
+        const result = await prisma.aiReviewStrategyBatchRun.updateMany({
+            where: {
+                id: candidate.id,
+                workerId: null,
+                status: candidate.status,
+            },
+            data: {
+                status:
+                    candidate.status === BatchRunStatus.PENDING
+                        ? BatchRunStatus.RUNNING
+                        : candidate.status,
+                workerId,
+                startedAt:
+                    candidate.status === BatchRunStatus.PENDING
+                        ? claimedAt
+                        : undefined,
+                lastHeartbeatAt: claimedAt,
+            },
+        });
+
+        if (result.count !== 1) {
+            continue;
+        }
+
+        return prisma.aiReviewStrategyBatchRun.findUnique({
+            where: {
+                id: candidate.id,
+            },
+            select: {
+                id: true,
+                strategyId: true,
+                createdById: true,
+                concurrency: true,
+                status: true,
+            },
+        });
     }
 
-    await prisma.aiReviewStrategyBatchRun.update({
-        where: {
-            id: batchRun.id,
-        },
-        data: {
-            status:
-                batchRun.status === BatchRunStatus.PENDING
-                    ? BatchRunStatus.RUNNING
-                    : batchRun.status,
-            workerId,
-            startedAt:
-                batchRun.status === BatchRunStatus.PENDING
-                    ? new Date()
-                    : undefined,
-            lastHeartbeatAt: new Date(),
-        },
-    });
-
-    return prisma.aiReviewStrategyBatchRun.findUnique({
-        where: {
-            id: batchRun.id,
-        },
-        select: {
-            id: true,
-            strategyId: true,
-            createdById: true,
-            concurrency: true,
-            status: true,
-        },
-    });
+    return null;
 }
 
 async function claimBatchRunItems(batchRunId: string, limit: number) {
@@ -759,6 +842,43 @@ async function executeBatchRunItem(
     }
 }
 
+async function withBatchRunHeartbeat<T>(
+    batchRunId: string,
+    workerId: string,
+    work: () => Promise<T>,
+) {
+    const interval = setInterval(() => {
+        void prisma.aiReviewStrategyBatchRun
+            .updateMany({
+                where: {
+                    id: batchRunId,
+                    workerId,
+                },
+                data: {
+                    lastHeartbeatAt: new Date(),
+                },
+            })
+            .catch((error) => {
+                logWarn("batch.run.heartbeat_tick_failed", {
+                    batchRunId,
+                    workerId,
+                    error:
+                        error instanceof Error
+                            ? error.message
+                            : "批量任务心跳更新失败。",
+                });
+            });
+    }, BATCH_RUN_HEARTBEAT_INTERVAL_MS);
+
+    interval.unref?.();
+
+    try {
+        return await work();
+    } finally {
+        clearInterval(interval);
+    }
+}
+
 async function processBatchRun(batchRunId: string, workerId: string) {
     while (true) {
         const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
@@ -773,6 +893,7 @@ async function processBatchRun(batchRunId: string, workerId: string) {
                 status: true,
                 pendingCount: true,
                 runningCount: true,
+                workerId: true,
             },
         });
 
@@ -784,15 +905,32 @@ async function processBatchRun(batchRunId: string, workerId: string) {
             return;
         }
 
-        await prisma.aiReviewStrategyBatchRun.update({
+        if (batchRun.workerId !== workerId) {
+            logWarn("batch.run.worker_mismatch", {
+                batchRunId: batchRun.id,
+                expectedWorkerId: workerId,
+                actualWorkerId: batchRun.workerId,
+            });
+            return;
+        }
+
+        const heartbeat = await prisma.aiReviewStrategyBatchRun.updateMany({
             where: {
                 id: batchRun.id,
+                workerId,
             },
             data: {
-                workerId,
                 lastHeartbeatAt: new Date(),
             },
         });
+
+        if (heartbeat.count !== 1) {
+            logWarn("batch.run.heartbeat_lost", {
+                batchRunId: batchRun.id,
+                workerId,
+            });
+            return;
+        }
 
         if (batchRun.status === BatchRunStatus.CANCEL_REQUESTED) {
             logWarn("batch.run.cancel_requested", {
@@ -854,12 +992,14 @@ async function processBatchRun(batchRunId: string, workerId: string) {
         });
 
         await syncBatchRunState(batchRun.id);
-        await Promise.allSettled(
-            items.map((item) =>
-                executeBatchRunItem(batchRun, {
-                    id: item.id,
-                    questionId: item.questionId,
-                }),
+        await withBatchRunHeartbeat(batchRun.id, workerId, () =>
+            Promise.allSettled(
+                items.map((item) =>
+                    executeBatchRunItem(batchRun, {
+                        id: item.id,
+                        questionId: item.questionId,
+                    }),
+                ),
             ),
         );
     }
