@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { App, Button, Input, Select, Space, Tag } from "antd";
 import { ArrowLeft, ChevronLeft, ChevronRight, Languages } from "lucide-react";
-import { translateReviewFieldAction } from "@/app/actions/review-field-translation";
 import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
@@ -320,9 +319,30 @@ export function QuestionReviewDetail({
                 sourceLanguage?: string | null;
             }
         >
-    >({});
+    >(() => {
+        const initial: Record<
+            string,
+            {
+                loading: boolean;
+                translatedText?: string;
+                displayedText?: string;
+                sourceLanguage?: string | null;
+            }
+        > = {};
+        for (const [key, saved] of Object.entries(
+            question.savedTranslations ?? {},
+        )) {
+            initial[key] = {
+                loading: false,
+                translatedText: saved.translatedText,
+                displayedText: saved.translatedText,
+                sourceLanguage: saved.sourceLanguage,
+            };
+        }
+        return initial;
+    });
     const [isSubmitting, startSubmitting] = useTransition();
-    const translationTimersRef = useRef<Record<string, number>>({});
+    const abortControllersRef = useRef<Record<string, AbortController>>({});
     const detailBasePath = listPath.split("?")[0];
     const listQuery = listPath.includes("?")
         ? listPath.slice(listPath.indexOf("?"))
@@ -336,11 +356,11 @@ export function QuestionReviewDetail({
     const imageMap = question.imageMap ?? {};
 
     useEffect(() => {
-        const timers = translationTimersRef.current;
+        const controllers = abortControllersRef.current;
 
         return () => {
-            Object.values(timers).forEach((timerId) => {
-                window.clearTimeout(timerId);
+            Object.values(controllers).forEach((controller) => {
+                controller.abort();
             });
         };
     }, []);
@@ -383,40 +403,6 @@ export function QuestionReviewDetail({
         router.push(listPath);
     }
 
-    function streamTranslatedText(
-        fieldKey: string,
-        fullText: string,
-        sourceLanguage?: string | null,
-    ) {
-        const characters = Array.from(fullText);
-        const chunkSize =
-            characters.length > 360 ? 10 : characters.length > 180 ? 6 : 3;
-
-        const tick = (index: number) => {
-            setFieldTranslations((current) => ({
-                ...current,
-                [fieldKey]: {
-                    loading: false,
-                    translatedText: fullText,
-                    displayedText: characters.slice(0, index).join(""),
-                    sourceLanguage,
-                },
-            }));
-
-            if (index >= characters.length) {
-                delete translationTimersRef.current[fieldKey];
-                return;
-            }
-
-            translationTimersRef.current[fieldKey] = window.setTimeout(
-                () => tick(Math.min(index + chunkSize, characters.length)),
-                18,
-            );
-        };
-
-        tick(0);
-    }
-
     async function translateField(fieldKey: string, value: unknown) {
         const rawValue = getTranslatableFieldValue(value);
 
@@ -429,30 +415,121 @@ export function QuestionReviewDetail({
             return;
         }
 
+        // Abort any existing translation for this field
+        if (abortControllersRef.current[fieldKey]) {
+            abortControllersRef.current[fieldKey].abort();
+        }
+
+        const controller = new AbortController();
+        abortControllersRef.current[fieldKey] = controller;
+
         setFieldTranslations((current) => ({
             ...current,
             [fieldKey]: {
-                ...current[fieldKey],
                 loading: true,
                 displayedText: "",
             },
         }));
 
-        if (translationTimersRef.current[fieldKey]) {
-            window.clearTimeout(translationTimersRef.current[fieldKey]);
-            delete translationTimersRef.current[fieldKey];
-        }
+        try {
+            const response = await fetch("/api/ai/translate-field", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    questionId: question.id,
+                    fieldKey,
+                    value: rawValue,
+                }),
+                signal: controller.signal,
+            });
 
-        const result = await translateReviewFieldAction({
-            questionId: question.id,
-            fieldKey,
-            value: rawValue,
-        });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                throw new Error(
+                    errorData?.error ?? `请求失败 (${response.status})`,
+                );
+            }
 
-        if (result.error) {
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error("响应体为空");
+            }
+
+            const decoder = new TextDecoder();
+            let accumulated = "";
+            let sourceLanguage: string | null = null;
+
+            while (true) {
+                const { value: chunk, done } = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(chunk, { stream: true });
+                const lines = text
+                    .split(/\r?\n/)
+                    .map((l) => l.trim())
+                    .filter(Boolean);
+
+                for (const line of lines) {
+                    if (!line.startsWith("data:")) continue;
+                    const jsonStr = line.slice(5).trim();
+                    if (!jsonStr) continue;
+
+                    try {
+                        const event = JSON.parse(jsonStr) as {
+                            delta?: string;
+                            done?: boolean;
+                            sourceLanguage?: string | null;
+                            error?: string;
+                        };
+
+                        if (event.error) {
+                            throw new Error(event.error);
+                        }
+
+                        if (event.delta) {
+                            accumulated += event.delta;
+                            setFieldTranslations((current) => ({
+                                ...current,
+                                [fieldKey]: {
+                                    loading: true,
+                                    displayedText: accumulated,
+                                    sourceLanguage,
+                                },
+                            }));
+                        }
+
+                        if (event.done) {
+                            sourceLanguage = event.sourceLanguage ?? null;
+                        }
+                    } catch (parseError) {
+                        if (
+                            parseError instanceof Error &&
+                            parseError.message !== jsonStr
+                        ) {
+                            throw parseError;
+                        }
+                    }
+                }
+            }
+
+            setFieldTranslations((current) => ({
+                ...current,
+                [fieldKey]: {
+                    loading: false,
+                    translatedText: accumulated,
+                    displayedText: accumulated,
+                    sourceLanguage,
+                },
+            }));
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+                return;
+            }
+
             notification.error({
                 message: "翻译失败",
-                description: result.error,
+                description:
+                    error instanceof Error ? error.message : "未知错误",
                 placement: "topRight",
             });
             setFieldTranslations((current) => ({
@@ -460,21 +537,19 @@ export function QuestionReviewDetail({
                 [fieldKey]: {
                     ...current[fieldKey],
                     loading: false,
-                    displayedText: undefined,
+                    displayedText: current[fieldKey]?.translatedText,
                 },
             }));
-            return;
+        } finally {
+            delete abortControllersRef.current[fieldKey];
         }
-
-        streamTranslatedText(
-            fieldKey,
-            result.translatedText ?? "",
-            result.sourceLanguage,
-        );
     }
 
     return (
-        <div className="review-compact-scope" style={{ display: "grid", gap: 16 }}>
+        <div
+            className="review-compact-scope"
+            style={{ display: "grid", gap: 16 }}
+        >
             <section className="content-surface review-content-surface">
                 <div className="section-head">
                     <div
@@ -510,7 +585,9 @@ export function QuestionReviewDetail({
                                 disabled={!navigation.nextQuestionId}
                             />
                         </Space>
-                        <h2 className="review-detail-title">{question.title}</h2>
+                        <h2 className="review-detail-title">
+                            {question.title}
+                        </h2>
                         <Space size={8} wrap>
                             <Tag
                                 color={
@@ -544,8 +621,8 @@ export function QuestionReviewDetail({
                                     原始字段
                                 </h3>
                                 <p className="muted review-page-copy">
-                                    按字段设置中的顺序竖向展示，便于和原始 JSON /
-                                    Excel 对照。
+                                    按字段设置中的顺序竖向展示，便于和原始 JSON
+                                    / Excel 对照。
                                 </p>
                             </div>
                         </div>
@@ -601,7 +678,9 @@ export function QuestionReviewDetail({
                                                             )
                                                         }
                                                     >
-                                                        翻译
+                                                        {translationState?.translatedText
+                                                            ? "重新翻译"
+                                                            : "翻译"}
                                                     </Button>
                                                 ) : null}
                                             </div>

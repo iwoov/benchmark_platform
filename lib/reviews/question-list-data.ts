@@ -147,6 +147,10 @@ export type ReviewQuestionDetail = {
     rawFieldOrder: string[];
     imageFields: string[];
     imageMap: Record<string, string[]> | null;
+    savedTranslations: Record<
+        string,
+        { translatedText: string; sourceLanguage: string | null }
+    >;
 };
 
 type ReviewAwareQuestionRecord = {
@@ -692,6 +696,13 @@ export async function getReviewQuestionDetail(questionId: string) {
                     syncConfig: true,
                 },
             },
+            fieldTranslations: {
+                select: {
+                    fieldKey: true,
+                    translatedText: true,
+                    sourceLanguage: true,
+                },
+            },
         },
     });
 
@@ -720,6 +731,15 @@ export async function getReviewQuestionDetail(questionId: string) {
         rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
         imageFields: readImageFields(question.datasource.syncConfig),
         imageMap: readImageMap(question.datasource.syncConfig),
+        savedTranslations: Object.fromEntries(
+            question.fieldTranslations.map((t) => [
+                t.fieldKey,
+                {
+                    translatedText: t.translatedText,
+                    sourceLanguage: t.sourceLanguage,
+                },
+            ]),
+        ),
     } satisfies ReviewQuestionDetail;
 }
 
