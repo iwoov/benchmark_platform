@@ -9,8 +9,15 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
-import { FileUp, Image as ImageIcon, Plus, Settings } from "lucide-react";
 import {
+    FileUp,
+    Image as ImageIcon,
+    Plus,
+    Settings,
+    Trash2,
+} from "lucide-react";
+import {
+    deleteDatasourceAction,
     importProjectDataAction,
     type ImportProjectDataFormState,
 } from "@/app/actions/datasources";
@@ -68,7 +75,7 @@ export function ProjectDatasourceConsole({
     datasources: DataSourceItem[];
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
+    const { modal, notification } = App.useApp();
     const [state, formAction, isPending] = useActionState(
         importProjectDataAction,
         initialState,
@@ -87,6 +94,9 @@ export function ProjectDatasourceConsole({
         [],
     );
     const [isSavingImageFields, startSavingImageFields] = useTransition();
+    const [deletingDatasourceId, setDeletingDatasourceId] = useState<
+        string | null
+    >(null);
 
     useActionNotification(state, {
         successTitle: "导入成功",
@@ -155,6 +165,63 @@ export function ProjectDatasourceConsole({
             });
             setImageFieldOpen(false);
             router.refresh();
+        });
+    }
+
+    function confirmDeleteDatasource(datasource: DataSourceItem) {
+        modal.confirm({
+            title: `确认删除数据源“${datasource.name}”`,
+            centered: true,
+            okText: "确认删除",
+            cancelText: "取消",
+            okButtonProps: {
+                danger: true,
+            },
+            content: (
+                <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                    <div>
+                        删除后将立即移除该数据源下的全部导入题目、关联图片、审核记录、AI
+                        回答与运行记录，且不可恢复。
+                    </div>
+                    <div className="workspace-tip">
+                        <Tag color="red">高风险操作</Tag>
+                        <span>
+                            当前数据源属于项目 {datasource.project.name} (
+                            {datasource.project.code})，当前可见题目数为{" "}
+                            {datasource.questionCount}。
+                        </span>
+                    </div>
+                </div>
+            ),
+            onOk: async () => {
+                setDeletingDatasourceId(datasource.id);
+
+                try {
+                    const result = await deleteDatasourceAction({
+                        datasourceId: datasource.id,
+                    });
+
+                    if (result.error) {
+                        notification.error({
+                            message: "删除失败",
+                            description: result.error,
+                            placement: "topRight",
+                        });
+                        throw new Error(result.error);
+                    }
+
+                    notification.success({
+                        message: "数据源已删除",
+                        description: result.success,
+                        placement: "topRight",
+                    });
+                    router.refresh();
+                } finally {
+                    setDeletingDatasourceId((current) =>
+                        current === datasource.id ? null : current,
+                    );
+                }
+            },
         });
     }
 
@@ -285,6 +352,22 @@ export function ProjectDatasourceConsole({
                                             }
                                         >
                                             图片字段
+                                        </Button>
+                                        <Button
+                                            danger
+                                            size="small"
+                                            icon={<Trash2 size={14} />}
+                                            loading={
+                                                deletingDatasourceId ===
+                                                datasource.id
+                                            }
+                                            onClick={() =>
+                                                confirmDeleteDatasource(
+                                                    datasource,
+                                                )
+                                            }
+                                        >
+                                            删除
                                         </Button>
                                     </Space>
                                 </div>

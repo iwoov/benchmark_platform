@@ -57,6 +57,25 @@ export async function resolveUploadPath(relativePath: string) {
     }
 }
 
+/**
+ * Delete all uploaded files for a datasource.
+ *
+ * Directory structure: uploads/<datasourceId>
+ */
+export async function deleteDatasourceUploads(datasourceId: string) {
+    if (!datasourceId.trim()) {
+        return;
+    }
+
+    const dirPath = path.join(UPLOADS_ROOT, datasourceId);
+
+    if (!dirPath.startsWith(UPLOADS_ROOT)) {
+        throw new Error("图片目录路径无效，无法删除。");
+    }
+
+    await fs.rm(dirPath, { recursive: true, force: true });
+}
+
 export const UPLOAD_URL_PREFIX = "/api/uploads/";
 
 export function toUploadUrl(relativePath: string) {
