@@ -16,6 +16,7 @@ import type {
     WorkspaceOverviewData,
     WorkspaceOverviewRole,
 } from "@/lib/dashboard/overview";
+import { PersistedReviewListLink } from "@/components/reviews/persisted-review-list-link";
 
 const STORAGE_KEY = "workspace-overview-role";
 const rolePreferenceListeners = new Set<() => void>();
@@ -415,10 +416,14 @@ function ReviewerOverviewView({
                     </div>
 
                     <div className="overview-link-grid">
-                        <Link href="/workspace/reviews" className="overview-link-chip">
+                        <PersistedReviewListLink
+                            href="/workspace/reviews"
+                            listPath="/workspace/reviews"
+                            className="overview-link-chip"
+                        >
                             <ScanSearch size={16} />
                             <span>审核任务</span>
-                        </Link>
+                        </PersistedReviewListLink>
                         <Link
                             href="/workspace/review-batches"
                             className="overview-link-chip"

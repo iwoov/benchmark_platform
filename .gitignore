@@ -9,3 +9,4 @@ prisma/dev.db-journal
 docs/
 .codex/skills
 tsconfig.tsbuildinfo
+benchmark_platform.dump

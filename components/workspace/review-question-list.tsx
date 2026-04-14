@@ -18,6 +18,7 @@ import { Bot, Download, Eye, SlidersHorizontal, X } from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
 import { ReviewFieldSettingsModal } from "@/components/reviews/review-field-settings-modal";
 import { exportReviewQuestionsAction } from "@/app/actions/review-exports";
+import { writeStoredReviewListHref } from "@/lib/reviews/review-list-preference";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import {
     conditionNeedsValue,
@@ -389,6 +390,38 @@ export function ReviewQuestionList({
                 : (projectReviewStrategies[0]?.id ?? ""),
         );
     }, [projectReviewStrategies]);
+
+    useEffect(() => {
+        if (!selectedProjectId) {
+            return;
+        }
+
+        const search = new URLSearchParams({
+            projectId: selectedProjectId,
+            page: String(currentPage),
+            pageSize: String(pageSize),
+        });
+
+        if (selectedDatasourceId) {
+            search.set("datasourceId", selectedDatasourceId);
+        }
+
+        const serializedFilters =
+            serializeReviewQuestionFilterConditions(activeConditions);
+
+        if (serializedFilters) {
+            search.set("filters", serializedFilters);
+        }
+
+        writeStoredReviewListHref(listPath, `${listPath}?${search.toString()}`);
+    }, [
+        activeConditions,
+        currentPage,
+        listPath,
+        pageSize,
+        selectedDatasourceId,
+        selectedProjectId,
+    ]);
 
     function buildQuestionDetailPath(questionId: string) {
         const search = new URLSearchParams({

@@ -18,6 +18,7 @@ import {
     UsersRound,
 } from "lucide-react";
 import { LogoutButton } from "@/components/layout/logout-button";
+import { PersistedReviewListLink } from "@/components/reviews/persisted-review-list-link";
 import {
     getPlatformRoleColor,
     getPlatformRoleLabel,
@@ -197,20 +198,40 @@ export function Sidebar({
                                             pathname === item.href ||
                                             (item.href !== rootPath &&
                                                 pathname.startsWith(item.href));
-
-                                        return (
-                                            <Link
-                                                key={item.href}
-                                                href={item.href}
-                                                className={cn(
-                                                    "sidebar-link",
-                                                    isActive && "active",
-                                                )}
-                                            >
+                                        const linkProps = {
+                                            href: item.href,
+                                            className: cn(
+                                                "sidebar-link",
+                                                isActive && "active",
+                                            ),
+                                        };
+                                        const content = (
+                                            <>
                                                 <span className="sidebar-link-icon">
                                                     <Icon size={16} />
                                                 </span>
                                                 <span>{item.label}</span>
+                                            </>
+                                        );
+
+                                        if (
+                                            item.href === "/admin/review-tasks" ||
+                                            item.href === "/workspace/reviews"
+                                        ) {
+                                            return (
+                                                <PersistedReviewListLink
+                                                    key={item.href}
+                                                    {...linkProps}
+                                                    listPath={item.href}
+                                                >
+                                                    {content}
+                                                </PersistedReviewListLink>
+                                            );
+                                        }
+
+                                        return (
+                                            <Link key={item.href} {...linkProps}>
+                                                {content}
                                             </Link>
                                         );
                                     })}

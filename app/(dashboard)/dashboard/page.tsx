@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import Link from "next/link";
 import { Tag } from "antd";
 import { auth } from "@/auth";
+import { PersistedReviewListLink } from "@/components/reviews/persisted-review-list-link";
 import {
     getAdminOverview,
     type RecentBatchIssue,
@@ -40,11 +41,29 @@ function QuickLinks({
         <div className="overview-link-grid">
             {links.map((link) => {
                 const Icon = link.icon;
+                const content = (
+                    <>
+                        <Icon size={16} />
+                        <span>{link.label}</span>
+                    </>
+                );
+
+                if (link.href === "/admin/review-tasks") {
+                    return (
+                        <PersistedReviewListLink
+                            key={link.href}
+                            href={link.href}
+                            listPath={link.href}
+                            className="overview-link-chip"
+                        >
+                            {content}
+                        </PersistedReviewListLink>
+                    );
+                }
 
                 return (
                     <Link key={link.href} href={link.href} className="overview-link-chip">
-                        <Icon size={16} />
-                        <span>{link.label}</span>
+                        {content}
                     </Link>
                 );
             })}
