@@ -17,6 +17,7 @@ import {
     DatabaseZap,
     FolderKanban,
     Layers3,
+    PlugZap,
     RefreshCw,
     ScanSearch,
     Users,
@@ -327,10 +328,19 @@ export default async function DashboardPage() {
                         </div>
                         <QuickLinks
                             links={[
-                                { href: "/admin/ai", label: "AI 设置", icon: Cpu },
+                                {
+                                    href: "/admin/ai/models",
+                                    label: "模型路由",
+                                    icon: Cpu,
+                                },
+                                {
+                                    href: "/admin/ai/routes",
+                                    label: "供应商",
+                                    icon: PlugZap,
+                                },
                                 {
                                     href: "/admin/ai-strategies",
-                                    label: "AI 审核策略",
+                                    label: "审核策略",
                                     icon: BrainCircuit,
                                 },
                                 {

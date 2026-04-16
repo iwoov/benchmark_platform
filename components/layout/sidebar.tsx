@@ -46,14 +46,20 @@ const adminSections = [
         ],
     },
     {
-        title: "审核工作台",
+        title: "AI 配置",
         items: [
-            { href: "/admin/ai", label: "AI 设置", icon: Cpu },
+            { href: "/admin/ai/models", label: "模型路由", icon: Cpu },
+            { href: "/admin/ai/routes", label: "供应商", icon: PlugZap },
             {
                 href: "/admin/ai-strategies",
-                label: "AI 审核策略",
+                label: "审核策略",
                 icon: BrainCircuit,
             },
+        ],
+    },
+    {
+        title: "审核工作台",
+        items: [
             {
                 href: "/admin/review-tasks",
                 label: "审核任务",
@@ -142,7 +148,8 @@ export function Sidebar({
             ? adminSections.map((section) => ({
                   ...section,
                   items: section.items.filter((item) =>
-                      item.href === "/admin/ai"
+                      item.href === "/admin/ai/models" ||
+                      item.href === "/admin/ai/routes"
                           ? isSuperAdminRole(currentUser?.platformRole)
                           : true,
                   ),

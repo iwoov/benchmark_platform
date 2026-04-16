@@ -1,4 +1,5 @@
 import {
+    Prisma,
     BatchRunStatus,
     DataSourceStatus,
     PlatformRole,
@@ -208,6 +209,72 @@ function calculateFailureRate(total: number, failed: number) {
     return Number(((failed / total) * 100).toFixed(1));
 }
 
+function emptySuperAdminOverview(): SuperAdminOverviewData {
+    return {
+        role: "SUPER_ADMIN",
+        scale: {
+            activeUsers: 0,
+            activeProjects: 0,
+            activeDatasources: 0,
+            newProjects7d: 0,
+            newDatasources7d: 0,
+        },
+        aiResources: {
+            providerCount: 0,
+            endpointCount: 0,
+            modelCount: 0,
+            enabledStrategyCount: 0,
+        },
+        aiRuns: {
+            total7d: 0,
+            success7d: 0,
+            failed7d: 0,
+            failureRate7d: 0,
+        },
+        runningBatchCount: 0,
+        failedBatchCount7d: 0,
+        failedSyncCount7d: 0,
+        recentFailedBatches: [],
+        recentFailedSyncs: [],
+    };
+}
+
+function emptyPlatformAdminOverview(): PlatformAdminOverviewData {
+    return {
+        role: "PLATFORM_ADMIN",
+        scale: {
+            activeProjects: 0,
+            activeExperts: 0,
+            activeDatasources: 0,
+            importedDatasources7d: 0,
+        },
+        questionStatuses: emptyStatusCounts(),
+        pendingQuestionCount: 0,
+        completedReviews7d: 0,
+        needsRevisionReviews7d: 0,
+        syncSummary7d: {
+            successCount: 0,
+            failedCount: 0,
+        },
+        recentFailedSyncs: [],
+        riskProjects: [],
+    };
+}
+
+function isDatabaseUnavailableError(error: unknown) {
+    if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P1001"
+    ) {
+        return true;
+    }
+
+    return (
+        error instanceof Error &&
+        error.message.includes("Can't reach database server")
+    );
+}
+
 function toRecentBatchIssueStatus(
     status: BatchRunStatus,
 ): RecentBatchIssue["status"] {
@@ -227,57 +294,25 @@ export async function getAdminOverview(
 ): Promise<AdminOverviewData> {
     if (!process.env.DATABASE_URL) {
         return role === "SUPER_ADMIN"
-            ? {
-                  role,
-                  scale: {
-                      activeUsers: 0,
-                      activeProjects: 0,
-                      activeDatasources: 0,
-                      newProjects7d: 0,
-                      newDatasources7d: 0,
-                  },
-                  aiResources: {
-                      providerCount: 0,
-                      endpointCount: 0,
-                      modelCount: 0,
-                      enabledStrategyCount: 0,
-                  },
-                  aiRuns: {
-                      total7d: 0,
-                      success7d: 0,
-                      failed7d: 0,
-                      failureRate7d: 0,
-                  },
-                  runningBatchCount: 0,
-                  failedBatchCount7d: 0,
-                  failedSyncCount7d: 0,
-                  recentFailedBatches: [],
-                  recentFailedSyncs: [],
-              }
-            : {
-                  role,
-                  scale: {
-                      activeProjects: 0,
-                      activeExperts: 0,
-                      activeDatasources: 0,
-                      importedDatasources7d: 0,
-                  },
-                  questionStatuses: emptyStatusCounts(),
-                  pendingQuestionCount: 0,
-                  completedReviews7d: 0,
-                  needsRevisionReviews7d: 0,
-                  syncSummary7d: {
-                      successCount: 0,
-                      failedCount: 0,
-                  },
-                  recentFailedSyncs: [],
-                  riskProjects: [],
-              };
+            ? emptySuperAdminOverview()
+            : emptyPlatformAdminOverview();
     }
 
-    return role === "SUPER_ADMIN"
-        ? getSuperAdminOverview()
-        : getPlatformAdminOverview();
+    try {
+        return role === "SUPER_ADMIN"
+            ? await getSuperAdminOverview()
+            : await getPlatformAdminOverview();
+    } catch (error) {
+        if (!isDatabaseUnavailableError(error)) {
+            throw error;
+        }
+
+        console.error("[dashboard] database unavailable while building overview", error);
+
+        return role === "SUPER_ADMIN"
+            ? emptySuperAdminOverview()
+            : emptyPlatformAdminOverview();
+    }
 }
 
 async function getSuperAdminOverview(): Promise<SuperAdminOverviewData> {

@@ -129,16 +129,27 @@ function routeStatusLabel(index: number) {
   return index === 0 ? "主路由" : `备用 ${index}`;
 }
 
+const providerProtocolColumns: Array<{
+  protocol: AiProtocol;
+  label: string;
+}> = [
+  { protocol: "OPENAI_COMPATIBLE", label: "OpenAI 接口" },
+  { protocol: "GEMINI_COMPATIBLE", label: "Gemini 接口" },
+  { protocol: "ANTHROPIC_COMPATIBLE", label: "Anthropic 接口" },
+];
+
 export function AiSettingsConsole({
   databaseEnabled,
   providers,
   endpointOptions,
   models,
+  mode = "all",
 }: {
   databaseEnabled: boolean;
   providers: AiSettingsProvider[];
   endpointOptions: AiSettingsEndpointOption[];
   models: AiSettingsModel[];
+  mode?: "all" | "models" | "routes";
 }) {
   const router = useRouter();
   const { notification } = App.useApp();
@@ -368,181 +379,184 @@ export function AiSettingsConsole({
     });
   }
 
+  const showRouteManagement = mode === "all" || mode === "routes";
+  const showModelManagement = mode === "all" || mode === "models";
+
   return (
     <div className="ai-settings-page">
-      <section className="content-surface">
-        <div className="section-head ai-settings-section-head">
-          <div>
-            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
-              提供商配置
-            </h2>
-            <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
-              这里只看接入状态、接口地址和模型覆盖情况，修改统一走弹窗。
-            </p>
+      {showRouteManagement ? (
+        <section className="content-surface">
+          <div className="section-head ai-settings-section-head">
+            <div>
+              <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                供应商
+              </h2>
+              <p
+                className="muted"
+                style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+              >
+                统一维护提供商 API Key、接口地址和各接口的模型覆盖情况。
+              </p>
+            </div>
           </div>
-        </div>
 
-        {!databaseEnabled ? (
-          <Empty description="当前未配置数据库，无法保存 AI 配置。" />
-        ) : (
-          <div className="ai-provider-overview-grid">
-            {providers.map((provider) => (
-              <article key={provider.id} className="ai-provider-overview-card">
-                <div className="ai-provider-overview-head">
-                  <div>
-                    <div className="ai-provider-overview-title">
-                      <h3 style={{ margin: 0, fontSize: 18 }}>{provider.name}</h3>
-                      <Tag>{provider.code}</Tag>
-                    </div>
-                    {provider.note ? (
-                      <p
-                        className="muted"
-                        style={{ margin: "8px 0 0", lineHeight: 1.7 }}
-                      >
-                        {provider.note}
-                      </p>
-                    ) : null}
-                  </div>
-                  <Tag color={provider.apiKeyConfigured ? "success" : "default"}>
-                    {provider.apiKeyConfigured ? "已配置" : "未配置"}
-                  </Tag>
-                </div>
+          {!databaseEnabled ? (
+            <Empty description="当前未配置数据库，无法保存供应商配置。" />
+          ) : !providers.length ? (
+            <Empty description="当前还没有供应商配置。" />
+          ) : (
+            <div className="table-surface">
+              <div className="ai-provider-list-head">
+                <div>供应商</div>
+                <div>API Key</div>
+                {providerProtocolColumns.map((column) => (
+                  <div key={column.protocol}>{column.label}</div>
+                ))}
+                <div>操作</div>
+              </div>
 
-                <div className="ai-provider-overview-meta">
-                  <div className="ai-provider-overview-metric">
-                    <div className="ai-provider-overview-metric-label">接口数量</div>
-                    <div className="ai-provider-overview-metric-value">
-                      {provider.endpoints.length}
-                    </div>
-                  </div>
-                  <div className="ai-provider-overview-metric">
-                    <div className="ai-provider-overview-metric-label">覆盖模型</div>
-                    <div className="ai-provider-overview-metric-value">
-                      {provider.endpoints.reduce(
-                        (total, endpoint) => total + endpoint.modelCount,
-                        0,
-                      )}
-                    </div>
-                  </div>
-                </div>
+              {providers.map((provider) => {
+                const endpointByProtocol = Object.fromEntries(
+                  provider.endpoints.map((endpoint) => [
+                    endpoint.protocol,
+                    endpoint,
+                  ]),
+                ) as Partial<Record<AiProtocol, AiSettingsProvider["endpoints"][number]>>;
 
-                <div className="ai-provider-endpoint-list">
-                  {provider.endpoints.map((endpoint) => (
-                    <div key={endpoint.id} className="ai-provider-endpoint-item">
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{endpoint.label}</div>
-                        <div className="muted" style={{ marginTop: 4 }}>
-                          {endpoint.baseUrl}
+                return (
+                  <article key={provider.id} className="ai-provider-list-row">
+                    <div>
+                      <div className="ai-provider-overview-title">
+                        <div style={{ fontWeight: 700 }}>{provider.name}</div>
+                        <Tag>{provider.code}</Tag>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Tag color={provider.apiKeyConfigured ? "success" : "default"}>
+                        {provider.apiKeyConfigured ? "已配置" : "未配置"}
+                      </Tag>
+                    </div>
+
+                    {providerProtocolColumns.map((column) => {
+                      const endpoint = endpointByProtocol[column.protocol];
+
+                      return (
+                        <div key={column.protocol} className="ai-provider-protocol-cell">
+                          {endpoint ? (
+                            <Tag color="blue">{endpoint.modelCount} 个模型</Tag>
+                          ) : (
+                            <span className="muted">未配置</span>
+                          )}
                         </div>
-                      </div>
-                      <Space size={[8, 8]} wrap>
-                        <Tag color="blue">
-                          {aiProtocolLabels[endpoint.protocol]}
-                        </Tag>
-                        <Tag>{endpoint.modelCount} 个模型</Tag>
-                      </Space>
+                      );
+                    })}
+
+                    <div className="ai-provider-overview-actions">
+                      <Button
+                        icon={<PencilLine size={16} />}
+                        onClick={() => openProviderModal(provider)}
+                      >
+                        编辑供应商
+                      </Button>
                     </div>
-                  ))}
-                </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
 
-                <div className="ai-provider-overview-actions">
-                  <Button
-                    icon={<PencilLine size={16} />}
-                    onClick={() => openProviderModal(provider)}
-                  >
-                    编辑提供商
-                  </Button>
-                </div>
-              </article>
-            ))}
+      {showModelManagement ? (
+        <section className="content-surface">
+          <div className="section-head ai-settings-section-head">
+            <div>
+              <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                模型路由
+              </h2>
+              <p
+                className="muted"
+                style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+              >
+                统一维护模型协议、默认参数和主备路由链。
+              </p>
+            </div>
+            <Button
+              type="primary"
+              icon={<Plus size={16} />}
+              onClick={openCreateModelModal}
+              disabled={!databaseEnabled || !endpointOptions.length}
+            >
+              新建模型路由
+            </Button>
           </div>
-        )}
-      </section>
 
-      <section className="content-surface">
-        <div className="section-head ai-settings-section-head">
-          <div>
-            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
-              模型路由
-            </h2>
-            <p className="muted" style={{ margin: "10px 0 0", lineHeight: 1.7 }}>
-              每个模型只在列表里展示协议、主路由和备用数量，详细调整放进弹窗。
-            </p>
-          </div>
-          <Button
-            type="primary"
-            icon={<Plus size={16} />}
-            onClick={openCreateModelModal}
-            disabled={!databaseEnabled || !endpointOptions.length}
-          >
-            新建模型
-          </Button>
-        </div>
-
-        {!databaseEnabled ? (
-          <Empty description="当前未配置数据库，无法维护模型路由。" />
-        ) : !models.length ? (
-          <Empty description="当前还没有模型，点击右上角开始添加。" />
-        ) : (
-          <div className="ai-model-overview-grid">
-            {models.map((model) => (
-              <article key={model.id} className="ai-model-overview-card">
-                <div className="ai-model-overview-head">
-                  <div>
-                    <div className="ai-provider-overview-title">
-                      <h3 style={{ margin: 0, fontSize: 18 }}>{model.code}</h3>
-                      <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
-                      <Tag>{model.routes.length} 条路由</Tag>
-                    </div>
-                    {model.label ? (
-                      <div className="muted" style={{ marginTop: 6 }}>
-                        {model.label}
+          {!databaseEnabled ? (
+            <Empty description="当前未配置数据库，无法维护模型路由。" />
+          ) : !models.length ? (
+            <Empty description="当前还没有模型路由，点击右上角开始添加。" />
+          ) : (
+            <div className="ai-model-overview-grid">
+              {models.map((model) => (
+                <article key={model.id} className="ai-model-overview-card">
+                  <div className="ai-model-overview-head">
+                    <div>
+                      <div className="ai-provider-overview-title">
+                        <h3 style={{ margin: 0, fontSize: 18 }}>{model.code}</h3>
+                        <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
+                        <Tag>{model.routes.length} 条路由</Tag>
                       </div>
-                    ) : null}
+                      {model.label ? (
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          {model.label}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="ai-model-overview-meta">
+                      <span className="muted">
+                        {model.routes[0]
+                          ? `主路由：${endpointLabel(
+                              model.routes[0].providerName,
+                              model.routes[0].label,
+                            )}`
+                          : "未配置路由"}
+                      </span>
+                      {model.note ? (
+                        <span className="muted">备注：{model.note}</span>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="ai-model-overview-meta">
-                    <span className="muted">
-                      {model.routes[0]
-                        ? `主路由：${endpointLabel(
-                            model.routes[0].providerName,
-                            model.routes[0].label,
-                          )}`
-                        : "未配置路由"}
-                    </span>
-                    {model.note ? (
-                      <span className="muted">备注：{model.note}</span>
-                    ) : null}
-                  </div>
-                </div>
 
-                <div className="ai-model-overview-actions">
-                  <Button
-                    icon={<PencilLine size={16} />}
-                    onClick={() => openEditModelModal(model)}
-                  >
-                    编辑
-                  </Button>
-                  <Popconfirm
-                    title="删除模型"
-                    description={`确认删除 ${model.code} 吗？`}
-                    okText="删除"
-                    cancelText="取消"
-                    onConfirm={() => handleDeleteModel(model)}
-                  >
+                  <div className="ai-model-overview-actions">
                     <Button
-                      danger
-                      icon={<Trash2 size={16} />}
-                      loading={isDeletingModel && deletingModelId === model.id}
+                      icon={<PencilLine size={16} />}
+                      onClick={() => openEditModelModal(model)}
                     >
-                      删除
+                      编辑
                     </Button>
-                  </Popconfirm>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+                    <Popconfirm
+                      title="删除模型"
+                      description={`确认删除 ${model.code} 吗？`}
+                      okText="删除"
+                      cancelText="取消"
+                      onConfirm={() => handleDeleteModel(model)}
+                    >
+                      <Button
+                        danger
+                        icon={<Trash2 size={16} />}
+                        loading={isDeletingModel && deletingModelId === model.id}
+                      >
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       <Modal
         open={providerModalOpen}
@@ -631,7 +645,7 @@ export function AiSettingsConsole({
                   providerPendingId === providerForm.providerId
                 }
               >
-                保存提供商配置
+                保存供应商配置
               </Button>
             </div>
           </form>
@@ -1010,7 +1024,7 @@ export function AiSettingsConsole({
                 isSavingModel && savingModelId === (modelForm.modelId ?? "new")
               }
             >
-              {modelForm.modelId ? "保存模型路由" : "创建模型"}
+              {modelForm.modelId ? "保存模型路由" : "创建模型路由"}
             </Button>
           </div>
         </form>

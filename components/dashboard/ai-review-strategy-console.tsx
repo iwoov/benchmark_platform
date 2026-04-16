@@ -479,7 +479,7 @@ export function AiReviewStrategyConsole({
                         <h2
                             style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
                         >
-                            AI 审核策略
+                            审核策略
                         </h2>
                         <p
                             className="muted"
@@ -501,7 +501,7 @@ export function AiReviewStrategyConsole({
                 {!databaseEnabled ? (
                     <Empty description="当前未配置数据库，无法保存审核策略。" />
                 ) : !strategies.length ? (
-                    <Empty description="当前还没有 AI 审核策略，请先创建一条策略。" />
+                    <Empty description="当前还没有审核策略，请先创建一条策略。" />
                 ) : (
                     <div className="strategy-card-grid">
                         {strategies.map((strategy) => (
@@ -687,9 +687,7 @@ export function AiReviewStrategyConsole({
             </section>
 
             <Modal
-                title={
-                    form.strategyId ? "编辑 AI 审核策略" : "新建 AI 审核策略"
-                }
+                title={form.strategyId ? "编辑审核策略" : "新建审核策略"}
                 open={modalOpen}
                 onCancel={closeModal}
                 width={920}

@@ -128,7 +128,11 @@ async function requireAdminAccess() {
 
 function revalidateAiPages() {
     revalidatePath("/admin/ai");
+    revalidatePath("/admin/ai/models");
+    revalidatePath("/admin/ai/routes");
     revalidatePath("/dashboard/ai");
+    revalidatePath("/dashboard/ai/models");
+    revalidatePath("/dashboard/ai/routes");
 }
 
 export async function updateAiProviderConfigAction(

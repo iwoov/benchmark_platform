@@ -935,8 +935,8 @@ select {
 }
 
 .ant-btn {
-    height: 32px;
-    padding-inline: 12px;
+    height: 31px;
+    padding-inline: 11px;
     border-radius: var(--radius-sm);
     box-shadow: none;
     font-size: 13px;
@@ -944,8 +944,8 @@ select {
 }
 
 .ant-btn-lg {
-    height: 36px;
-    padding-inline: 14px;
+    height: 31px;
+    padding-inline: 11px;
     font-size: 13px;
 }
 
@@ -956,12 +956,12 @@ select {
 }
 
 .ant-btn.ant-btn-icon-only {
-    width: 32px;
+    width: 31px;
     padding-inline: 0;
 }
 
 .ant-btn-lg.ant-btn-icon-only {
-    width: 36px;
+    width: 31px;
 }
 
 .ant-btn-sm.ant-btn-icon-only {
@@ -1230,6 +1230,35 @@ select {
 .datasource-list-head > div,
 .datasource-list-row > div {
     min-width: 0;
+}
+
+.ai-provider-list-head,
+.ai-provider-list-row {
+    display: grid;
+    grid-template-columns: 1fr 0.7fr 1.1fr 1.1fr 1.1fr 0.8fr;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+}
+
+.ai-provider-list-head {
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+}
+
+.ai-provider-list-row {
+    border-top: 1px solid rgba(217, 224, 234, 0.85);
+}
+
+.ai-provider-list-head > div,
+.ai-provider-list-row > div {
+    min-width: 0;
+}
+
+.ai-provider-protocol-cell {
+    min-width: 0;
+    display: flex;
+    align-items: center;
 }
 
 .review-record-comment {
@@ -2714,6 +2743,8 @@ a.overview-detail-item:hover {
 
     .datasource-list-head,
     .datasource-list-row,
+    .ai-provider-list-head,
+    .ai-provider-list-row,
     .overview-stat-grid,
     .ai-provider-overview-grid,
     .ai-model-overview-grid,
@@ -2726,6 +2757,10 @@ a.overview-detail-item:hover {
     .strategy-form-grid,
     .strategy-step-form-grid {
         grid-template-columns: 1fr;
+    }
+
+    .ai-provider-list-head {
+        display: none;
     }
 
     .ai-provider-card-head,
