@@ -14,12 +14,20 @@ export type AiSettingsEndpointOption = {
   providerName: string;
 };
 
+export type AiSettingsSupportedModel = {
+  id: string;
+  name: string;
+  protocol: AiProtocol;
+  companyName: string | null;
+};
+
 export type AiSettingsProvider = {
   id: string;
   code: string;
   name: string;
   note: string | null;
   apiKeyConfigured: boolean;
+  supportedModels: AiSettingsSupportedModel[];
   endpoints: Array<
     AiSettingsEndpointOption & {
       modelCount: number;

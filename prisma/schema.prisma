@@ -263,14 +263,15 @@ model AiReviewRun {
 }
 
 model AiProvider {
-  id        String               @id @default(cuid())
-  code      String               @unique
-  name      String
-  apiKey    String?
-  note      String?
-  endpoints AiProviderEndpoint[]
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
+  id             String                   @id @default(cuid())
+  code           String                   @unique
+  name           String
+  apiKey         String?
+  note           String?
+  endpoints      AiProviderEndpoint[]
+  supportedModels AiProviderSupportedModel[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
 }
 
 model AiProviderEndpoint {
@@ -305,6 +306,23 @@ model AiModel {
   endpoints      AiProviderEndpointModel[]
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
+}
+
+model AiProviderSupportedModel {
+  id          String     @id @default(cuid())
+  providerId  String
+  name        String
+  protocol    AiProtocol
+  companyName String?
+  sortOrder   Int        @default(0)
+  provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([providerId, name, protocol])
+  @@index([providerId, sortOrder])
+  @@index([providerId, protocol, sortOrder])
+  @@index([companyName])
 }
 
 model AiProviderEndpointModel {

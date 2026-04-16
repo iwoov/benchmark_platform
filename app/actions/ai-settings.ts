@@ -5,15 +5,46 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { isSuperAdminRole } from "@/lib/auth/roles";
+import {
+    aiCompanyOptions,
+    normalizeAiCompanyName,
+} from "@/lib/ai/provider-catalog";
 
 export type AiSettingsActionState = {
     error?: string;
     success?: string;
 };
 
+const aiCompanyNameEnum = z.enum(
+    aiCompanyOptions.map((company) => company.name) as [string, ...string[]],
+    {
+        message: "开发公司名称不在支持列表中。",
+    },
+);
+
 const providerEndpointSchema = z.object({
     id: z.string().min(1, "缺少接口 ID"),
     baseUrl: z.string().trim().url("接口地址格式不正确，请输入完整 URL"),
+});
+
+const providerSupportedModelSchema = z.object({
+    name: z
+        .string()
+        .trim()
+        .min(1, "支持模型名称不能为空")
+        .max(100, "支持模型名称不能超过 100 个字符"),
+    protocol: z.enum([
+        "OPENAI_COMPATIBLE",
+        "GEMINI_COMPATIBLE",
+        "ANTHROPIC_COMPATIBLE",
+    ]),
+    companyName: z.preprocess(
+        (value) =>
+            normalizeAiCompanyName(
+                typeof value === "string" ? value : String(value ?? ""),
+            ),
+        aiCompanyNameEnum,
+    ),
 });
 
 const updateAiProviderSchema = z.object({
@@ -36,6 +67,7 @@ const updateAiProviderSchema = z.object({
         .optional()
         .transform((value) => value || undefined),
     endpoints: z.array(providerEndpointSchema).min(1, "至少保留一个接口"),
+    supportedModels: z.array(providerSupportedModelSchema),
 });
 
 const saveAiModelSchema = z.object({
@@ -181,6 +213,16 @@ export async function updateAiProviderConfigAction(
         }
     }
 
+    const normalizedModelNames = parsed.data.supportedModels.map((model) =>
+        `${model.protocol}:${model.name.trim().toLowerCase()}`,
+    );
+
+    if (new Set(normalizedModelNames).size !== normalizedModelNames.length) {
+        return {
+            error: "同一个供应商下不允许重复的支持模型名称。",
+        };
+    }
+
     await prisma.$transaction(async (tx) => {
         await tx.aiProvider.update({
             where: {
@@ -192,6 +234,24 @@ export async function updateAiProviderConfigAction(
                 ...(parsed.data.apiKey ? { apiKey: parsed.data.apiKey } : {}),
             },
         });
+
+        await tx.aiProviderSupportedModel.deleteMany({
+            where: {
+                providerId: provider.id,
+            },
+        });
+
+        if (parsed.data.supportedModels.length) {
+            await tx.aiProviderSupportedModel.createMany({
+                data: parsed.data.supportedModels.map((model, index) => ({
+                    providerId: provider.id,
+                    name: model.name,
+                    protocol: model.protocol,
+                    companyName: model.companyName,
+                    sortOrder: index + 1,
+                })),
+            });
+        }
 
         for (const endpoint of parsed.data.endpoints) {
             await tx.aiProviderEndpoint.update({

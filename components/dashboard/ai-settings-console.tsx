@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -14,6 +15,7 @@ import {
   Space,
   Switch,
   Tag,
+  Tooltip,
 } from "antd";
 import {
   ArrowDown,
@@ -31,8 +33,11 @@ import {
   updateAiProviderConfigAction,
 } from "@/app/actions/ai-settings";
 import {
+  aiCompanyOptions,
   aiProtocolLabels,
   aiReasoningLabels,
+  normalizeAiCompanyName,
+  type AiCompanyName,
   type AiProtocol,
   type AiReasoningLevel,
 } from "@/lib/ai/provider-catalog";
@@ -40,6 +45,7 @@ import type {
   AiSettingsEndpointOption,
   AiSettingsModel,
   AiSettingsProvider,
+  AiSettingsSupportedModel,
 } from "@/lib/ai/types";
 
 type ModelRouteFormState = {
@@ -68,6 +74,12 @@ type ProviderFormState = {
   name: string;
   note: string;
   apiKey: string;
+  supportedModels: Array<{
+    id: string;
+    name: string;
+    protocol: AiProtocol;
+    companyName: string;
+  }>;
   endpoints: Array<{
     id: string;
     label: string;
@@ -99,6 +111,21 @@ function createModelFormState(model?: AiSettingsModel): ModelFormState {
   };
 }
 
+function createProviderSupportedModelFormState(
+  model?: Partial<AiSettingsSupportedModel>,
+) {
+  return {
+    id:
+      model?.id ??
+      `supported-model-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: model?.name ?? "",
+    protocol: model?.protocol ?? "OPENAI_COMPATIBLE",
+    companyName:
+      normalizeAiCompanyName(model?.companyName) ??
+      aiCompanyOptions[0].name,
+  };
+}
+
 function createProviderFormState(
   provider?: AiSettingsProvider,
 ): ProviderFormState | null {
@@ -111,6 +138,9 @@ function createProviderFormState(
     name: provider.name,
     note: provider.note ?? "",
     apiKey: "",
+    supportedModels: provider.supportedModels.map((model) =>
+      createProviderSupportedModelFormState(model),
+    ),
     endpoints: provider.endpoints.map((endpoint) => ({
       id: endpoint.id,
       label: endpoint.label,
@@ -158,6 +188,7 @@ export function AiSettingsConsole({
   const [providerPendingId, setProviderPendingId] = useState<string | null>(
     null,
   );
+  const [activeProviderCompany, setActiveProviderCompany] = useState("");
   const [savingModelId, setSavingModelId] = useState<string | null>(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ProviderFormState | null>(
@@ -195,6 +226,29 @@ export function AiSettingsConsole({
     [modelForm.routes, protocolEndpointOptions],
   );
 
+  const visibleProviderCompanies = useMemo(() => {
+    const existingCompanies =
+      providerForm?.supportedModels
+        .map((model) => model.companyName.trim())
+        .filter(Boolean) ?? [];
+
+    return [
+      ...aiCompanyOptions.map((company) => company.name),
+      ...existingCompanies.filter(
+        (company) =>
+          !aiCompanyOptions.some((option) => option.name === company),
+      ),
+    ];
+  }, [providerForm?.supportedModels]);
+
+  const activeCompanyModels = useMemo(
+    () =>
+      providerForm?.supportedModels.filter(
+        (model) => model.companyName.trim() === activeProviderCompany,
+      ) ?? [],
+    [activeProviderCompany, providerForm?.supportedModels],
+  );
+
   function notifyResult(result: { error?: string; success?: string }) {
     if (result.error) {
       notification.error({
@@ -218,13 +272,22 @@ export function AiSettingsConsole({
   }
 
   function openProviderModal(provider: AiSettingsProvider) {
-    setProviderForm(createProviderFormState(provider));
+    const formState = createProviderFormState(provider);
+    const firstCompanyWithModels = aiCompanyOptions.find((company) =>
+      formState?.supportedModels.some(
+        (model) => model.companyName.trim() === company.name,
+      ),
+    );
+
+    setProviderForm(formState);
+    setActiveProviderCompany(firstCompanyWithModels?.name ?? aiCompanyOptions[0].name);
     setProviderModalOpen(true);
   }
 
   function closeProviderModal() {
     setProviderModalOpen(false);
     setProviderForm(null);
+    setActiveProviderCompany("");
   }
 
   function openCreateModelModal() {
@@ -307,6 +370,61 @@ export function AiSettingsConsole({
     );
   }
 
+  function addProviderSupportedModel(
+    companyName = activeProviderCompany as AiCompanyName,
+  ) {
+    const normalizedCompanyName = companyName.trim();
+
+    if (!normalizedCompanyName) {
+      return;
+    }
+
+    setProviderForm((current) =>
+      current
+        ? {
+            ...current,
+            supportedModels: [
+              ...current.supportedModels,
+              createProviderSupportedModelFormState({
+                name: "",
+                protocol: "OPENAI_COMPATIBLE",
+                companyName: normalizedCompanyName,
+              }),
+            ],
+          }
+        : current,
+    );
+  }
+
+  function updateProviderSupportedModel(
+    modelId: string,
+    patch: Partial<ProviderFormState["supportedModels"][number]>,
+  ) {
+    setProviderForm((current) =>
+      current
+        ? {
+            ...current,
+            supportedModels: current.supportedModels.map((model) =>
+              model.id === modelId ? { ...model, ...patch } : model,
+            ),
+          }
+        : current,
+    );
+  }
+
+  function removeProviderSupportedModel(modelId: string) {
+    setProviderForm((current) =>
+      current
+        ? {
+            ...current,
+            supportedModels: current.supportedModels.filter(
+              (model) => model.id !== modelId,
+            ),
+          }
+        : current,
+    );
+  }
+
   function handleProviderSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -321,6 +439,11 @@ export function AiSettingsConsole({
         name: providerForm.name,
         note: providerForm.note,
         apiKey: providerForm.apiKey,
+        supportedModels: providerForm.supportedModels.map((model) => ({
+          name: model.name,
+          protocol: model.protocol,
+          companyName: model.companyName,
+        })),
         endpoints: providerForm.endpoints.map((endpoint) => ({
           id: endpoint.id,
           baseUrl: endpoint.baseUrl,
@@ -440,11 +563,14 @@ export function AiSettingsConsole({
 
                     {providerProtocolColumns.map((column) => {
                       const endpoint = endpointByProtocol[column.protocol];
+                      const supportedModelCount = provider.supportedModels.filter(
+                        (model) => model.protocol === column.protocol,
+                      ).length;
 
                       return (
                         <div key={column.protocol} className="ai-provider-protocol-cell">
                           {endpoint ? (
-                            <Tag color="blue">{endpoint.modelCount} 个模型</Tag>
+                            <Tag color="blue">{supportedModelCount} 个模型</Tag>
                           ) : (
                             <span className="muted">未配置</span>
                           )}
@@ -452,16 +578,16 @@ export function AiSettingsConsole({
                       );
                     })}
 
-                    <div className="ai-provider-overview-actions">
+                  <div className="ai-provider-overview-actions">
+                    <Tooltip title="编辑供应商">
                       <Button
                         icon={<PencilLine size={16} />}
                         onClick={() => openProviderModal(provider)}
-                      >
-                        编辑供应商
-                      </Button>
-                    </div>
-                  </article>
-                );
+                      />
+                    </Tooltip>
+                  </div>
+                </article>
+              );
               })}
             </div>
           )}
@@ -564,16 +690,28 @@ export function AiSettingsConsole({
         footer={null}
         destroyOnHidden
         width={760}
-        title={providerForm ? `编辑提供商 · ${providerForm.name}` : "编辑提供商"}
+        wrapClassName="ai-provider-modal-wrap"
+        title={
+          providerForm ? (
+            <div className="ai-provider-modal-title">
+              <div className="ai-provider-modal-eyebrow">供应商配置</div>
+              <div className="ai-provider-modal-heading">
+                编辑提供商 · {providerForm.name}
+              </div>
+            </div>
+          ) : (
+            "编辑提供商"
+          )
+        }
       >
         {providerForm ? (
           <form className="ai-modal-form" onSubmit={handleProviderSubmit}>
-            <div className="ai-modal-panel">
+            <div className="ai-modal-panel ai-modal-panel-compact">
               <div className="ai-modal-panel-head">
                 <div>
                   <div style={{ fontWeight: 700 }}>基础配置</div>
-                  <div className="muted" style={{ marginTop: 4 }}>
-                    API Key 和接口地址修改后会立即影响模型路由调用。
+                  <div className="muted ai-modal-panel-copy">
+                    API Key 更新后立即影响当前供应商的调用。
                   </div>
                 </div>
                 <Tag>{providerForm.endpoints.length} 个接口</Tag>
@@ -602,7 +740,126 @@ export function AiSettingsConsole({
               </div>
             </div>
 
-            <div className="ai-modal-panel">
+            <div className="ai-modal-panel ai-modal-panel-compact">
+              <div className="ai-modal-panel-head">
+                <div>
+                  <div style={{ fontWeight: 700 }}>支持模型</div>
+                  <div className="muted ai-modal-panel-copy">
+                    按开发公司分组维护当前供应商支持的模型。
+                  </div>
+                </div>
+              </div>
+
+              <div className="ai-company-switcher">
+                <div className="ai-company-chip-list">
+                  {visibleProviderCompanies.map((company) => {
+                    const companyMeta = aiCompanyOptions.find(
+                      (option) => option.name === company,
+                    );
+
+                    return (
+                      <Button
+                        key={company}
+                        type={
+                          company === activeProviderCompany ? "primary" : "default"
+                        }
+                        onClick={() => setActiveProviderCompany(company)}
+                        className="ai-company-chip"
+                      >
+                        {companyMeta ? (
+                          <Image
+                            src={companyMeta.iconPath}
+                            alt={company}
+                            width={16}
+                            height={16}
+                            className="ai-company-chip-icon"
+                          />
+                        ) : null}
+                        <span>{company}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {activeProviderCompany ? (
+                <>
+                  <div className="ai-supported-model-toolbar">
+                    <div className="ai-supported-model-company">
+                      <div style={{ fontWeight: 700 }}>{activeProviderCompany}</div>
+                      <div className="muted ai-supported-model-count">
+                        {activeCompanyModels.length} 个模型
+                      </div>
+                    </div>
+                    <Space size={8} wrap>
+                      <Tooltip title="添加模型">
+                        <Button
+                          icon={<Plus size={16} />}
+                          onClick={() =>
+                            addProviderSupportedModel(
+                              activeProviderCompany as AiCompanyName,
+                            )
+                          }
+                        />
+                      </Tooltip>
+                    </Space>
+                  </div>
+
+                  {!activeCompanyModels.length ? (
+                    <div className="workspace-tip">
+                      <Tag color="blue">提示</Tag>
+                      <span>当前公司下还没有模型，点击右上角“添加模型”开始录入。</span>
+                    </div>
+                  ) : (
+                    <div className="ai-supported-model-list">
+                      {activeCompanyModels.map((model, index) => (
+                        <div key={model.id} className="ai-supported-model-item">
+                          <div className="ai-supported-model-index">{index + 1}</div>
+                          <div className="ai-supported-model-fields">
+                            <div>
+                              <label className="field-label">模型名称</label>
+                              <Input
+                                size="large"
+                                value={model.name}
+                                placeholder="例如 gpt-5.3"
+                                onChange={(event) =>
+                                  updateProviderSupportedModel(model.id, {
+                                    name: event.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className="field-label">协议</label>
+                              <Select
+                                size="large"
+                                value={model.protocol}
+                                options={providerProtocolColumns.map((column) => ({
+                                  value: column.protocol,
+                                  label: column.label,
+                                }))}
+                                onChange={(value) =>
+                                  updateProviderSupportedModel(model.id, {
+                                    protocol: value as AiProtocol,
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                          <Button
+                            danger
+                            icon={<Trash2 size={16} />}
+                            onClick={() => removeProviderSupportedModel(model.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            <div className="ai-modal-panel ai-modal-panel-compact">
               <div className="ai-modal-panel-head">
                 <div style={{ fontWeight: 700 }}>接口地址</div>
                 <Tag color="blue">按协议区分</Tag>
@@ -612,11 +869,15 @@ export function AiSettingsConsole({
                 {providerForm.endpoints.map((endpoint) => (
                   <div key={endpoint.id} className="ai-provider-endpoint-edit-item">
                     <div className="ai-provider-endpoint-edit-head">
-                      <div>
+                      <div className="ai-provider-overview-title">
                         <div style={{ fontWeight: 600 }}>{endpoint.label}</div>
-                        <div className="muted" style={{ marginTop: 4 }}>
-                          已绑定 {endpoint.modelCount} 个模型
-                        </div>
+                        <Tag>
+                          {
+                            providerForm.supportedModels.filter(
+                              (model) => model.protocol === endpoint.protocol,
+                            ).length
+                          }
+                        </Tag>
                       </div>
                       <Tag color="blue">{aiProtocolLabels[endpoint.protocol]}</Tag>
                     </div>
@@ -634,7 +895,7 @@ export function AiSettingsConsole({
               </div>
             </div>
 
-            <div className="ai-model-form-actions">
+            <div className="ai-model-form-actions ai-provider-modal-actions">
               <Button onClick={closeProviderModal}>取消</Button>
               <Button
                 type="primary"

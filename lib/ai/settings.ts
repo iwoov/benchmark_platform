@@ -69,6 +69,9 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
   const [providers, models] = await Promise.all([
     prisma.aiProvider.findMany({
       include: {
+        supportedModels: {
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        },
         endpoints: {
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
           include: {
@@ -105,6 +108,12 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
       name: provider.name,
       note: provider.note,
       apiKeyConfigured: Boolean(provider.apiKey),
+      supportedModels: provider.supportedModels.map((model) => ({
+        id: model.id,
+        name: model.name,
+        protocol: model.protocol,
+        companyName: model.companyName,
+      })),
       endpoints: provider.endpoints.map((endpoint) => ({
         id: endpoint.id,
         code: endpoint.code,
