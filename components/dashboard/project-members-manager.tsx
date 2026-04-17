@@ -1,13 +1,14 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
-import { Button, Modal, Space, Tag } from "antd";
-import { Settings2, UserPlus, X } from "lucide-react";
+import { useActionState, useMemo, useState, useTransition } from "react";
+import { App, Button, Modal, Space, Tag } from "antd";
+import { Settings2, Trash2, UserPlus, X } from "lucide-react";
 import {
     assignProjectMemberAction,
     removeProjectMemberAction,
     type ProjectMemberFormState,
 } from "@/app/actions/project-members";
+import { deleteProjectAction } from "@/app/actions/projects";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
     getProjectRoleColor,
@@ -53,6 +54,7 @@ export function ProjectMembersManager({
     projects: ProjectOption[];
     users: UserOption[];
 }) {
+    const { notification } = App.useApp();
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
     const [assignState, assignAction, assignPending] = useActionState(
         assignProjectMemberAction,
@@ -62,6 +64,9 @@ export function ProjectMembersManager({
         removeProjectMemberAction,
         initialState,
     );
+    const [isDeletePending, startDeleteTransition] = useTransition();
+    const [pendingDeleteProject, setPendingDeleteProject] =
+        useState<ProjectOption | null>(null);
 
     useActionNotification(assignState, {
         successTitle: "成员已更新",
@@ -71,6 +76,32 @@ export function ProjectMembersManager({
         successTitle: "成员已移除",
         errorTitle: "成员移除失败",
     });
+
+    function handleDeleteConfirm() {
+        if (!pendingDeleteProject) return;
+
+        startDeleteTransition(async () => {
+            const formData = new FormData();
+            formData.append("projectId", pendingDeleteProject.id);
+            const result = await deleteProjectAction({}, formData);
+
+            if (result.success) {
+                notification.success({
+                    message: "项目已删除",
+                    description: result.success,
+                    placement: "topRight",
+                });
+            }
+            if (result.error) {
+                notification.error({
+                    message: "项目删除失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+            }
+        });
+        setPendingDeleteProject(null);
+    }
 
     const activeProject = useMemo(
         () =>
@@ -122,12 +153,26 @@ export function ProjectMembersManager({
                         <div>{project.members.length}</div>
                         <div>{project.datasourcesCount}</div>
                         <div>
-                            <Button
-                                icon={<Settings2 size={16} />}
-                                onClick={() => setActiveProjectId(project.id)}
-                            >
-                                成员管理
-                            </Button>
+                            <Space size={8}>
+                                <Button
+                                    icon={<Settings2 size={16} />}
+                                    onClick={() =>
+                                        setActiveProjectId(project.id)
+                                    }
+                                >
+                                    成员管理
+                                </Button>
+                                <Button
+                                    danger
+                                    icon={<Trash2 size={16} />}
+                                    loading={isDeletePending}
+                                    onClick={() =>
+                                        setPendingDeleteProject(project)
+                                    }
+                                >
+                                    删除
+                                </Button>
+                            </Space>
                         </div>
                     </div>
                 ))}
@@ -310,6 +355,52 @@ export function ProjectMembersManager({
                                 </div>
                             )}
                         </div>
+                    </div>
+                ) : null}
+            </Modal>
+
+            <Modal
+                open={Boolean(pendingDeleteProject)}
+                onCancel={() => setPendingDeleteProject(null)}
+                onOk={handleDeleteConfirm}
+                okText="确认删除"
+                okButtonProps={{ danger: true, loading: isDeletePending }}
+                cancelText="取消"
+                title={
+                    pendingDeleteProject ? (
+                        <div>
+                            <div style={{ fontSize: 18, fontWeight: 700 }}>
+                                确认删除项目
+                            </div>
+                            <div
+                                className="muted"
+                                style={{ marginTop: 4, fontSize: 13 }}
+                            >
+                                此操作不可恢复
+                            </div>
+                        </div>
+                    ) : null
+                }
+            >
+                {pendingDeleteProject ? (
+                    <div style={{ lineHeight: 1.7 }}>
+                        <p>
+                            确定要删除项目{" "}
+                            <strong>{pendingDeleteProject.name}</strong> 吗？
+                        </p>
+                        <p>删除后将同时删除该项目下的所有关联数据，包括：</p>
+                        <ul style={{ marginTop: 8, paddingLeft: 20 }}>
+                            <li>
+                                {pendingDeleteProject.datasourcesCount} 个数据源
+                            </li>
+                            <li>
+                                {pendingDeleteProject.members.length} 个成员
+                            </li>
+                            <li>所有题目、审核记录、AI 审核结果等</li>
+                        </ul>
+                        <p style={{ color: "var(--danger)", marginTop: 12 }}>
+                            此操作不可恢复，请谨慎操作。
+                        </p>
                     </div>
                 ) : null}
             </Modal>
