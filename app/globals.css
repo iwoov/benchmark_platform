@@ -506,7 +506,7 @@ select {
 
 .review-compact-scope .ant-select-single .ant-select-selector,
 .review-compact-scope .ant-input-affix-wrapper,
-.review-compact-scope .ant-input,
+.review-compact-scope .ant-input:not(textarea),
 .review-compact-scope .ant-input-number,
 .review-compact-scope .ant-input-number-input-wrap,
 .review-compact-scope .ant-input-number-input {
@@ -1184,7 +1184,11 @@ select {
 .ai-provider-modal-wrap .ant-modal-header {
     padding: 12px 14px;
     border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.96));
+    background: linear-gradient(
+        180deg,
+        rgba(248, 250, 252, 0.92),
+        rgba(255, 255, 255, 0.96)
+    );
 }
 
 .ai-provider-modal-wrap .ant-modal-body {
