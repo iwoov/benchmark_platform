@@ -754,16 +754,6 @@ export function QuestionReviewDetail({
                                             >
                                                 AI 审核辅助
                                             </h3>
-                                            <p
-                                                className="muted"
-                                                style={{
-                                                    margin: "10px 0 0",
-                                                    lineHeight: 1.7,
-                                                }}
-                                            >
-                                                审核员可选择已配置的审核策略执行。AI
-                                                只提供结构化建议，最终结论仍由人工确认提交。
-                                            </p>
                                         </div>
                                         {chatConfigs?.length ? (
                                             <Button
@@ -803,9 +793,6 @@ export function QuestionReviewDetail({
                                         <h3 className="review-section-title">
                                             提交审核
                                         </h3>
-                                        <p className="muted review-page-copy">
-                                            在详情页直接填写审核意见并提交结论。
-                                        </p>
                                     </div>
                                 </div>
 
