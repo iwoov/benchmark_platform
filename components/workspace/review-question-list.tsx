@@ -14,10 +14,20 @@ import {
     Select,
     Tag,
 } from "antd";
-import { Bot, Download, Eye, SlidersHorizontal, X } from "lucide-react";
+import {
+    Bot,
+    Download,
+    Eye,
+    FileText,
+    SlidersHorizontal,
+    X,
+} from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
 import { ReviewFieldSettingsModal } from "@/components/reviews/review-field-settings-modal";
-import { exportReviewQuestionsAction } from "@/app/actions/review-exports";
+import {
+    exportReviewQuestionsAction,
+    exportReviewReportAction,
+} from "@/app/actions/review-exports";
 import { writeStoredReviewListHref } from "@/lib/reviews/review-list-preference";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import {
@@ -85,6 +95,7 @@ type FieldDefinition = {
 
 type ExportFormat = "excel" | "json" | "markdown";
 type ExportScope = "selected" | "filteredAll";
+type ReportFormat = "markdown" | "html";
 
 type ExportFieldOption = {
     value: string;
@@ -222,6 +233,16 @@ export function ReviewQuestionList({
         [],
     );
     const [isExporting, setIsExporting] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [reportScope, setReportScope] = useState<ExportScope>("filteredAll");
+    const [reportFormat, setReportFormat] = useState<ReportFormat>("markdown");
+    const [reportSubjectFieldKey, setReportSubjectFieldKey] = useState("");
+    const [reportDetailFields, setReportDetailFields] = useState<string[]>([
+        "externalRecordId",
+        "reviewDecision",
+        "reviewComment",
+    ]);
+    const [isExportingReport, setIsExportingReport] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);
 
     const rawColumns = useMemo(
@@ -696,6 +717,104 @@ export function ReviewQuestionList({
         }
     }
 
+    function openReportModal() {
+        if (!selectedQuestionIds.length && !totalQuestions) {
+            notification.warning({
+                message: "没有可导出数据",
+                description: "当前项目下没有可导出的题目。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        if (!selectedQuestionIds.length) {
+            setReportScope("filteredAll");
+        }
+
+        setReportModalOpen(true);
+    }
+
+    async function exportReport() {
+        if (!reportSubjectFieldKey) {
+            notification.warning({
+                message: "请选择学科字段",
+                description: "请选择用于按学科分组的原始字段。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        if (!reportDetailFields.length) {
+            notification.warning({
+                message: "请选择详情字段",
+                description: "至少选择 1 个详情字段后再导出。",
+                placement: "topRight",
+            });
+            return;
+        }
+
+        setIsExportingReport(true);
+
+        try {
+            const result = await exportReviewReportAction({
+                projectId: selectedProjectId,
+                scope: reportScope,
+                questionIds: selectedQuestions.map((question) => question.id),
+                filters: activeConditions,
+                subjectFieldKey: reportSubjectFieldKey,
+                detailFieldKeys: reportDetailFields,
+                format: reportFormat,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "导出失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            if (!result.base64 || !result.fileName || !result.mimeType) {
+                notification.error({
+                    message: "导出失败",
+                    description: "导出结果不完整，请稍后重试。",
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            const bytes = Uint8Array.from(atob(result.base64), (char) =>
+                char.charCodeAt(0),
+            );
+            const blob = new Blob([bytes], { type: result.mimeType });
+            const objectUrl = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = objectUrl;
+            anchor.download = result.fileName;
+            document.body.append(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(objectUrl);
+
+            notification.success({
+                message: "导出成功",
+                description: result.success ?? "文件已开始下载。",
+                placement: "topRight",
+            });
+            setReportModalOpen(false);
+        } catch (error) {
+            notification.error({
+                message: "导出失败",
+                description:
+                    error instanceof Error ? error.message : "请稍后再试。",
+                placement: "topRight",
+            });
+        } finally {
+            setIsExportingReport(false);
+        }
+    }
+
     return (
         <section className="content-surface review-content-surface review-compact-scope">
             <div className="section-head" style={{ marginBottom: 16 }}>
@@ -828,6 +947,16 @@ export function ReviewQuestionList({
                                 onClick={openExportModal}
                             >
                                 导出数据
+                            </Button>
+                            <Button
+                                icon={<FileText size={16} />}
+                                disabled={
+                                    !selectedQuestionIds.length &&
+                                    !totalQuestions
+                                }
+                                onClick={openReportModal}
+                            >
+                                导出审核报告
                             </Button>
                             {selectedQuestionIds.length ? (
                                 <Button
@@ -1617,6 +1746,116 @@ export function ReviewQuestionList({
                                     size="middle"
                                     style={{ width: "100%" }}
                                     optionFilterProp="label"
+                                />
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={reportModalOpen}
+                        rootClassName="review-dialog"
+                        onCancel={() => setReportModalOpen(false)}
+                        onOk={exportReport}
+                        okText={isExportingReport ? "生成中..." : "导出报告"}
+                        cancelText="取消"
+                        okButtonProps={{ loading: isExportingReport }}
+                        title="导出审核报告"
+                        destroyOnHidden
+                    >
+                        <div
+                            style={{ display: "grid", gap: 14, marginTop: 12 }}
+                        >
+                            <div className="workspace-tip">
+                                <Tag color="blue">说明</Tag>
+                                <span>
+                                    报告包含两部分：总体及按学科的通过率统计，以及分学科题目详情。
+                                </span>
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    导出范围
+                                </div>
+                                <Select
+                                    value={reportScope}
+                                    onChange={(value) =>
+                                        setReportScope(value as ExportScope)
+                                    }
+                                    options={[
+                                        {
+                                            value: "selected",
+                                            label: `仅导出勾选题目（${selectedQuestionIds.length} 条）`,
+                                        },
+                                        {
+                                            value: "filteredAll",
+                                            label: `导出当前筛选全部结果（约 ${totalQuestions} 条）`,
+                                        },
+                                    ]}
+                                    size="middle"
+                                    style={{ width: "100%" }}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    学科分组字段
+                                </div>
+                                <Select
+                                    value={reportSubjectFieldKey || undefined}
+                                    onChange={(value) =>
+                                        setReportSubjectFieldKey(value)
+                                    }
+                                    options={rawFieldOptions.map((field) => ({
+                                        value: `raw:${field.key}`,
+                                        label: field.label,
+                                    }))}
+                                    placeholder="选择用于按学科分组的原始字段"
+                                    size="middle"
+                                    style={{ width: "100%" }}
+                                    showSearch
+                                    optionFilterProp="label"
+                                />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    详情字段（可多选）
+                                </div>
+                                <Select
+                                    mode="multiple"
+                                    value={reportDetailFields}
+                                    onChange={(value) =>
+                                        setReportDetailFields(value as string[])
+                                    }
+                                    options={exportFieldOptions}
+                                    placeholder="选择报告详情中展示的字段"
+                                    size="middle"
+                                    style={{ width: "100%" }}
+                                    optionFilterProp="label"
+                                />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    导出格式
+                                </div>
+                                <Select
+                                    value={reportFormat}
+                                    onChange={(value) =>
+                                        setReportFormat(value as ReportFormat)
+                                    }
+                                    options={[
+                                        {
+                                            value: "markdown",
+                                            label: "Markdown (.md)",
+                                        },
+                                        {
+                                            value: "html",
+                                            label: "HTML (.html) — 可通过浏览器打印为 PDF",
+                                        },
+                                    ]}
+                                    size="middle"
+                                    style={{ width: "100%" }}
                                 />
                             </div>
                         </div>
