@@ -36,7 +36,11 @@ function EmptyState({ text }: { text: string }) {
 function QuickLinks({
     links,
 }: {
-    links: Array<{ href: string; label: string; icon: ComponentType<{ size?: number }> }>;
+    links: Array<{
+        href: string;
+        label: string;
+        icon: ComponentType<{ size?: number }>;
+    }>;
 }) {
     return (
         <div className="overview-link-grid">
@@ -63,7 +67,11 @@ function QuickLinks({
                 }
 
                 return (
-                    <Link key={link.href} href={link.href} className="overview-link-chip">
+                    <Link
+                        key={link.href}
+                        href={link.href}
+                        className="overview-link-chip"
+                    >
                         {content}
                     </Link>
                 );
@@ -80,13 +88,18 @@ function RecentBatchList({ items }: { items: RecentBatchIssue[] }) {
     return (
         <div className="overview-detail-list">
             {items.map((item) => (
-                <Link key={item.id} href={item.href} className="overview-detail-item">
+                <Link
+                    key={item.id}
+                    href={item.href}
+                    className="overview-detail-item"
+                >
                     <div className="overview-detail-main">
                         <div className="overview-item-title">
                             {item.projectName} · {item.strategyName}
                         </div>
                         <div className="overview-item-meta">
-                            {item.projectCode} · {formatDateTime(item.createdAt)}
+                            {item.projectCode} ·{" "}
+                            {formatDateTime(item.createdAt)}
                         </div>
                         {item.errorMessage ? (
                             <div className="overview-item-subline">
@@ -95,7 +108,11 @@ function RecentBatchList({ items }: { items: RecentBatchIssue[] }) {
                         ) : null}
                     </div>
                     <div className="overview-detail-tags">
-                        <Tag color={item.status === "FAILED" ? "error" : "warning"}>
+                        <Tag
+                            color={
+                                item.status === "FAILED" ? "error" : "warning"
+                            }
+                        >
                             {item.status === "FAILED"
                                 ? "失败"
                                 : item.status === "CANCELLED"
@@ -117,7 +134,11 @@ function RecentSyncList({ items }: { items: RecentSyncIssue[] }) {
     return (
         <div className="overview-detail-list">
             {items.map((item) => (
-                <Link key={item.id} href={item.href} className="overview-detail-item">
+                <Link
+                    key={item.id}
+                    href={item.href}
+                    className="overview-detail-item"
+                >
                     <div className="overview-detail-main">
                         <div className="overview-item-title">
                             {item.projectName} · {item.datasourceName}
@@ -149,10 +170,18 @@ function RiskProjectList({ items }: { items: RiskProject[] }) {
     return (
         <div className="overview-detail-list">
             {items.map((item) => (
-                <Link key={item.projectId} href={item.href} className="overview-detail-item">
+                <Link
+                    key={item.projectId}
+                    href={item.href}
+                    className="overview-detail-item"
+                >
                     <div className="overview-detail-main">
-                        <div className="overview-item-title">{item.projectName}</div>
-                        <div className="overview-item-meta">{item.projectCode}</div>
+                        <div className="overview-item-title">
+                            {item.projectName}
+                        </div>
+                        <div className="overview-item-meta">
+                            {item.projectCode}
+                        </div>
                     </div>
                     <div className="overview-inline-metrics">
                         <span>待审核 {item.pendingQuestionCount}</span>
@@ -181,8 +210,12 @@ export default async function DashboardPage() {
                             <Users size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">活跃用户</div>
-                            <div className="stat-value">{overview.scale.activeUsers}</div>
+                            <div className="overview-metric-label">
+                                活跃用户
+                            </div>
+                            <div className="stat-value">
+                                {overview.scale.activeUsers}
+                            </div>
                             <div className="overview-metric-note">平台全局</div>
                         </div>
                     </div>
@@ -191,7 +224,9 @@ export default async function DashboardPage() {
                             <FolderKanban size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">活跃项目</div>
+                            <div className="overview-metric-label">
+                                活跃项目
+                            </div>
                             <div className="stat-value">
                                 {overview.scale.activeProjects}
                             </div>
@@ -205,7 +240,9 @@ export default async function DashboardPage() {
                             <DatabaseZap size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">活跃数据源</div>
+                            <div className="overview-metric-label">
+                                活跃数据源
+                            </div>
                             <div className="stat-value">
                                 {overview.scale.activeDatasources}
                             </div>
@@ -219,11 +256,15 @@ export default async function DashboardPage() {
                             <BrainCircuit size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">已启用策略</div>
+                            <div className="overview-metric-label">
+                                已启用策略
+                            </div>
                             <div className="stat-value">
                                 {overview.aiResources.enabledStrategyCount}
                             </div>
-                            <div className="overview-metric-note">AI 能力编排</div>
+                            <div className="overview-metric-note">
+                                AI 能力编排
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -234,7 +275,9 @@ export default async function DashboardPage() {
                             <Cpu size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">Provider</div>
+                            <div className="overview-metric-label">
+                                Provider
+                            </div>
                             <div className="stat-value">
                                 {overview.aiResources.providerCount}
                             </div>
@@ -246,11 +289,15 @@ export default async function DashboardPage() {
                             <Bot size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">Endpoint</div>
+                            <div className="overview-metric-label">
+                                Endpoint
+                            </div>
                             <div className="stat-value">
                                 {overview.aiResources.endpointCount}
                             </div>
-                            <div className="overview-metric-note">可调用接入点</div>
+                            <div className="overview-metric-note">
+                                可调用接入点
+                            </div>
                         </div>
                     </div>
                     <div className="overview-metric-tile">
@@ -270,7 +317,9 @@ export default async function DashboardPage() {
                             <RefreshCw size={18} />
                         </div>
                         <div>
-                            <div className="overview-metric-label">近 7 天运行失败率</div>
+                            <div className="overview-metric-label">
+                                近 7 天运行失败率
+                            </div>
                             <div className="stat-value">
                                 {overview.aiRuns.failureRate7d}%
                             </div>
@@ -286,7 +335,11 @@ export default async function DashboardPage() {
                         <div className="section-head">
                             <div>
                                 <h2
-                                    style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                                    style={{
+                                        margin: 0,
+                                        fontSize: 24,
+                                        lineHeight: 1.1,
+                                    }}
                                 >
                                     AI 运行概览
                                 </h2>
@@ -298,19 +351,27 @@ export default async function DashboardPage() {
 
                         <div className="overview-status-grid">
                             <div className="overview-status-item">
-                                <span className="overview-status-label">成功</span>
+                                <span className="overview-status-label">
+                                    成功
+                                </span>
                                 <strong>{overview.aiRuns.success7d}</strong>
                             </div>
                             <div className="overview-status-item">
-                                <span className="overview-status-label">失败</span>
+                                <span className="overview-status-label">
+                                    失败
+                                </span>
                                 <strong>{overview.aiRuns.failed7d}</strong>
                             </div>
                             <div className="overview-status-item">
-                                <span className="overview-status-label">运行中批量</span>
+                                <span className="overview-status-label">
+                                    运行中批量
+                                </span>
                                 <strong>{overview.runningBatchCount}</strong>
                             </div>
                             <div className="overview-status-item">
-                                <span className="overview-status-label">同步失败</span>
+                                <span className="overview-status-label">
+                                    同步失败
+                                </span>
                                 <strong>{overview.failedSyncCount7d}</strong>
                             </div>
                         </div>
@@ -320,7 +381,11 @@ export default async function DashboardPage() {
                         <div className="section-head">
                             <div>
                                 <h2
-                                    style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                                    style={{
+                                        margin: 0,
+                                        fontSize: 24,
+                                        lineHeight: 1.1,
+                                    }}
                                 >
                                     快捷入口
                                 </h2>
@@ -358,7 +423,11 @@ export default async function DashboardPage() {
                         <div className="section-head">
                             <div>
                                 <h2
-                                    style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                                    style={{
+                                        margin: 0,
+                                        fontSize: 24,
+                                        lineHeight: 1.1,
+                                    }}
                                 >
                                     最近失败批量任务
                                 </h2>
@@ -371,7 +440,11 @@ export default async function DashboardPage() {
                         <div className="section-head">
                             <div>
                                 <h2
-                                    style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                                    style={{
+                                        margin: 0,
+                                        fontSize: 24,
+                                        lineHeight: 1.1,
+                                    }}
                                 >
                                     最近同步异常
                                 </h2>
@@ -393,7 +466,9 @@ export default async function DashboardPage() {
                     </div>
                     <div>
                         <div className="overview-metric-label">活跃项目</div>
-                        <div className="stat-value">{overview.scale.activeProjects}</div>
+                        <div className="stat-value">
+                            {overview.scale.activeProjects}
+                        </div>
                         <div className="overview-metric-note">运营范围</div>
                     </div>
                 </div>
@@ -403,7 +478,9 @@ export default async function DashboardPage() {
                     </div>
                     <div>
                         <div className="overview-metric-label">活跃专家</div>
-                        <div className="stat-value">{overview.scale.activeExperts}</div>
+                        <div className="stat-value">
+                            {overview.scale.activeExperts}
+                        </div>
                         <div className="overview-metric-note">普通账号</div>
                     </div>
                 </div>
@@ -437,7 +514,13 @@ export default async function DashboardPage() {
                 <div className="content-surface">
                     <div className="section-head">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                            <h2
+                                style={{
+                                    margin: 0,
+                                    fontSize: 24,
+                                    lineHeight: 1.1,
+                                }}
+                            >
                                 题目流转
                             </h2>
                             <div className="muted" style={{ marginTop: 8 }}>
@@ -452,22 +535,32 @@ export default async function DashboardPage() {
                             <strong>{overview.questionStatuses.DRAFT}</strong>
                         </div>
                         <div className="overview-status-item">
-                            <span className="overview-status-label">已提交</span>
-                            <strong>{overview.questionStatuses.SUBMITTED}</strong>
+                            <span className="overview-status-label">
+                                已提交
+                            </span>
+                            <strong>
+                                {overview.questionStatuses.SUBMITTED}
+                            </strong>
                         </div>
                         <div className="overview-status-item">
-                            <span className="overview-status-label">审核中</span>
+                            <span className="overview-status-label">
+                                审核中
+                            </span>
                             <strong>
                                 {overview.questionStatuses.UNDER_REVIEW}
                             </strong>
                         </div>
                         <div className="overview-status-item">
                             <span className="overview-status-label">通过</span>
-                            <strong>{overview.questionStatuses.APPROVED}</strong>
+                            <strong>
+                                {overview.questionStatuses.APPROVED}
+                            </strong>
                         </div>
                         <div className="overview-status-item">
                             <span className="overview-status-label">驳回</span>
-                            <strong>{overview.questionStatuses.REJECTED}</strong>
+                            <strong>
+                                {overview.questionStatuses.REJECTED}
+                            </strong>
                         </div>
                     </div>
                 </div>
@@ -475,7 +568,13 @@ export default async function DashboardPage() {
                 <section className="content-surface">
                     <div className="section-head">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                            <h2
+                                style={{
+                                    margin: 0,
+                                    fontSize: 24,
+                                    lineHeight: 1.1,
+                                }}
+                            >
                                 当前焦点
                             </h2>
                         </div>
@@ -484,7 +583,9 @@ export default async function DashboardPage() {
                     <div className="overview-detail-list">
                         <div className="overview-detail-item static">
                             <div className="overview-detail-main">
-                                <div className="overview-item-title">待审核题目</div>
+                                <div className="overview-item-title">
+                                    待审核题目
+                                </div>
                                 <div className="overview-item-meta">
                                     当前积压量
                                 </div>
@@ -495,7 +596,9 @@ export default async function DashboardPage() {
                         </div>
                         <div className="overview-detail-item static">
                             <div className="overview-detail-main">
-                                <div className="overview-item-title">近 7 天人工审核</div>
+                                <div className="overview-item-title">
+                                    近 7 天人工审核
+                                </div>
                                 <div className="overview-item-meta">
                                     已完成审核
                                 </div>
@@ -506,23 +609,33 @@ export default async function DashboardPage() {
                         </div>
                         <div className="overview-detail-item static">
                             <div className="overview-detail-main">
-                                <div className="overview-item-title">近 7 天退回修改</div>
+                                <div className="overview-item-title">
+                                    近 7 天驳回
+                                </div>
                                 <div className="overview-item-meta">
-                                    需要作者继续处理
+                                    审核未通过的题目
                                 </div>
                             </div>
                             <div className="overview-inline-metrics">
-                                <span>{overview.needsRevisionReviews7d}</span>
+                                <span>{overview.rejectedReviews7d}</span>
                             </div>
                         </div>
                         <div className="overview-detail-item static">
                             <div className="overview-detail-main">
-                                <div className="overview-item-title">同步成功 / 失败</div>
-                                <div className="overview-item-meta">近 7 天</div>
+                                <div className="overview-item-title">
+                                    同步成功 / 失败
+                                </div>
+                                <div className="overview-item-meta">
+                                    近 7 天
+                                </div>
                             </div>
                             <div className="overview-inline-metrics">
-                                <span>{overview.syncSummary7d.successCount}</span>
-                                <span>{overview.syncSummary7d.failedCount}</span>
+                                <span>
+                                    {overview.syncSummary7d.successCount}
+                                </span>
+                                <span>
+                                    {overview.syncSummary7d.failedCount}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -555,7 +668,13 @@ export default async function DashboardPage() {
                 <div className="content-surface">
                     <div className="section-head">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                            <h2
+                                style={{
+                                    margin: 0,
+                                    fontSize: 24,
+                                    lineHeight: 1.1,
+                                }}
+                            >
                                 风险项目
                             </h2>
                             <div className="muted" style={{ marginTop: 8 }}>
@@ -569,7 +688,13 @@ export default async function DashboardPage() {
                 <section className="content-surface">
                     <div className="section-head">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                            <h2
+                                style={{
+                                    margin: 0,
+                                    fontSize: 24,
+                                    lineHeight: 1.1,
+                                }}
+                            >
                                 最近同步异常
                             </h2>
                         </div>

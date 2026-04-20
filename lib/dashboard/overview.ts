@@ -130,7 +130,7 @@ export type PlatformAdminOverviewData = {
     questionStatuses: StatusCountMap;
     pendingQuestionCount: number;
     completedReviews7d: number;
-    needsRevisionReviews7d: number;
+    rejectedReviews7d: number;
     syncSummary7d: {
         successCount: number;
         failedCount: number;
@@ -251,7 +251,7 @@ function emptyPlatformAdminOverview(): PlatformAdminOverviewData {
         questionStatuses: emptyStatusCounts(),
         pendingQuestionCount: 0,
         completedReviews7d: 0,
-        needsRevisionReviews7d: 0,
+        rejectedReviews7d: 0,
         syncSummary7d: {
             successCount: 0,
             failedCount: 0,
@@ -307,7 +307,10 @@ export async function getAdminOverview(
             throw error;
         }
 
-        console.error("[dashboard] database unavailable while building overview", error);
+        console.error(
+            "[dashboard] database unavailable while building overview",
+            error,
+        );
 
         return role === "SUPER_ADMIN"
             ? emptySuperAdminOverview()
@@ -544,7 +547,7 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
         questionStatusRows,
         pendingQuestionCount,
         completedReviews7d,
-        needsRevisionReviews7d,
+        rejectedReviews7d,
         syncSuccessCount7d,
         syncFailedCount7d,
         recentFailedSyncs,
@@ -601,7 +604,7 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
                 createdAt: {
                     gte: windowStart,
                 },
-                decision: ReviewDecision.NEEDS_REVISION,
+                decision: ReviewDecision.REJECT,
             },
         }),
         prisma.syncLog.count({
@@ -756,7 +759,7 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
         questionStatuses,
         pendingQuestionCount,
         completedReviews7d,
-        needsRevisionReviews7d,
+        rejectedReviews7d,
         syncSummary7d: {
             successCount: syncSuccessCount7d,
             failedCount: syncFailedCount7d,
@@ -823,7 +826,10 @@ export async function getWorkspaceOverview(
 
     const [author, reviewer] = await Promise.all([
         workspaceContext.canAuthor
-            ? getAuthorOverview(authorProjectIds, workspaceContext.authorProjects)
+            ? getAuthorOverview(
+                  authorProjectIds,
+                  workspaceContext.authorProjects,
+              )
             : Promise.resolve<AuthorOverviewData | null>(null),
         workspaceContext.canReview
             ? getReviewerOverview(
@@ -844,7 +850,9 @@ export async function getWorkspaceOverview(
 
 async function getAuthorOverview(
     projectIds: string[],
-    memberships: Awaited<ReturnType<typeof getWorkspaceContext>>["authorProjects"],
+    memberships: Awaited<
+        ReturnType<typeof getWorkspaceContext>
+    >["authorProjects"],
 ): Promise<AuthorOverviewData> {
     if (!projectIds.length) {
         return {
@@ -978,7 +986,8 @@ async function getAuthorOverview(
                 lastActivityAt: project.updatedAt.toISOString(),
                 href: `/workspace/submissions`,
                 sortTime: project.updatedAt.getTime(),
-                sortIndex: membershipOrder.get(project.id) ?? Number.MAX_SAFE_INTEGER,
+                sortIndex:
+                    membershipOrder.get(project.id) ?? Number.MAX_SAFE_INTEGER,
             };
         })
         .sort((left, right) => {
@@ -989,7 +998,10 @@ async function getAuthorOverview(
             return left.sortIndex - right.sortIndex;
         })
         .slice(0, 5)
-        .map(({ sortTime: _sortTime, sortIndex: _sortIndex, ...project }) => project);
+        .map(
+            ({ sortTime: _sortTime, sortIndex: _sortIndex, ...project }) =>
+                project,
+        );
 
     return {
         projectCount: projectIds.length,
@@ -1002,7 +1014,9 @@ async function getAuthorOverview(
 async function getReviewerOverview(
     userId: string,
     projectIds: string[],
-    memberships: Awaited<ReturnType<typeof getWorkspaceContext>>["reviewerProjects"],
+    memberships: Awaited<
+        ReturnType<typeof getWorkspaceContext>
+    >["reviewerProjects"],
 ): Promise<ReviewerOverviewData> {
     if (!projectIds.length) {
         return {
@@ -1130,7 +1144,10 @@ async function getReviewerOverview(
     const completedByProject = mapCountRows(completedByProjectRows);
     const latestBatchByProject = new Map<
         string,
-        { status: ReviewerPriorityProject["latestBatchStatus"]; createdAt: string }
+        {
+            status: ReviewerPriorityProject["latestBatchStatus"];
+            createdAt: string;
+        }
     >();
     for (const run of recentBatchRuns) {
         if (!latestBatchByProject.has(run.projectId)) {
@@ -1163,7 +1180,8 @@ async function getReviewerOverview(
                 sortFailedBatch: latestBatchPenalty,
                 sortCompleted: completedByProject.get(project.id) ?? 0,
                 sortTime: project.updatedAt.getTime(),
-                sortIndex: membershipOrder.get(project.id) ?? Number.MAX_SAFE_INTEGER,
+                sortIndex:
+                    membershipOrder.get(project.id) ?? Number.MAX_SAFE_INTEGER,
             };
         })
         .sort((left, right) => {

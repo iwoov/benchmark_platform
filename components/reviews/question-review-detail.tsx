@@ -288,7 +288,7 @@ export function QuestionReviewDetail({
                 error?: string;
             }>;
             finalRecommendation: {
-                decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+                decision?: "PASS" | "REJECT";
                 riskLevel?: string;
                 summary: string;
             } | null;
@@ -296,7 +296,7 @@ export function QuestionReviewDetail({
                 status: "SAVED" | "SKIPPED" | "FAILED";
                 message: string;
                 reviewId?: string;
-                decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+                decision?: "PASS" | "REJECT";
                 comment?: string;
                 questionStatus?: "APPROVED" | "REJECTED";
             } | null;
@@ -305,9 +305,7 @@ export function QuestionReviewDetail({
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
-    const [decision, setDecision] = useState<
-        "PASS" | "REJECT" | "NEEDS_REVISION"
-    >("PASS");
+    const [decision, setDecision] = useState<"PASS" | "REJECT">("PASS");
     const [comment, setComment] = useState("");
     const [fieldTranslations, setFieldTranslations] = useState<
         Record<
@@ -762,10 +760,6 @@ export function QuestionReviewDetail({
                                         onChange={(value) => setDecision(value)}
                                         options={[
                                             { value: "PASS", label: "通过" },
-                                            {
-                                                value: "NEEDS_REVISION",
-                                                label: "退回修改",
-                                            },
                                             { value: "REJECT", label: "驳回" },
                                         ]}
                                         size="middle"

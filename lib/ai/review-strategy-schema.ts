@@ -27,12 +27,7 @@ export const aiReviewRuleAggregates = [
 
 export const aiReviewComparisonOperators = [">", ">=", "<", "<=", "="] as const;
 
-export const aiReviewOutcomeLabels = [
-    "PASS",
-    "NEEDS_REVISION",
-    "REJECT",
-    "FLAG",
-] as const;
+export const aiReviewOutcomeLabels = ["PASS", "REJECT", "FLAG"] as const;
 
 export const aiReviewSeverityLevels = ["LOW", "MEDIUM", "HIGH"] as const;
 export const aiReviewMatchLevels = [
@@ -72,7 +67,6 @@ export const aiReviewAggregateLabels: Record<AiReviewRuleAggregate, string> = {
 
 export const aiReviewOutcomeLabelMap: Record<AiReviewOutcomeLabel, string> = {
     PASS: "通过",
-    NEEDS_REVISION: "退回修改",
     REJECT: "驳回",
     FLAG: "命中规则",
 };
@@ -102,9 +96,9 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
 3. 是否存在题干歧义、答案冲突、解析不足、知识性错误、多解风险等问题
 
 判定原则：
-1. 如果全面检查发现高严重度问题，优先判定为 NEEDS_REVISION 或 REJECT
+1. 如果全面检查发现高严重度问题，优先判定为 REJECT
 2. 如果题目存在知识性错误、逻辑性错误、答案明显冲突，可判定为 REJECT
-3. 如果题目主体可用，但存在表达、解析、格式、完整性问题，判定为 NEEDS_REVISION
+3. 如果题目主体可用，但存在表达、解析、格式、完整性问题，判定为 REJECT
 4. 如果全面检查无明显问题，且 AI 解题结果满足规则要求，可判定为 PASS
 5. 不要替人工做过度推断，但要给出明确建议
 
@@ -115,7 +109,7 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
 
 返回格式：
 {
-  "recommendedDecision": "PASS|NEEDS_REVISION|REJECT",
+  "recommendedDecision": "PASS|REJECT",
   "riskLevel": "LOW|MEDIUM|HIGH",
   "summary": "一句话总结最终建议",
   "keyIssues": [
@@ -412,7 +406,7 @@ export const difficultyEvaluationOutputSchema = z.object({
 });
 
 export const reviewSummaryOutputSchema = z.object({
-    recommendedDecision: z.enum(["PASS", "NEEDS_REVISION", "REJECT"]),
+    recommendedDecision: z.enum(["PASS", "REJECT"]),
     riskLevel: z.enum(aiReviewRiskLevels),
     summary: z.string().min(1),
     keyIssues: z.array(z.string()).default([]),

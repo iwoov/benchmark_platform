@@ -51,7 +51,6 @@ enum QuestionStatus {
 enum ReviewDecision {
   PASS
   REJECT
-  NEEDS_REVISION
 }
 
 enum AiProtocol {
@@ -103,47 +102,47 @@ enum SyncStatus {
 }
 
 model User {
-  id                   String                @id @default(cuid())
-  username             String?               @unique
-  email                String?               @unique
-  name                 String
-  passwordHash         String
-  avatar               String?
-  mobile               String?
-  dingtalkUserId       String?               @unique
-  status               UserStatus            @default(ACTIVE)
-  platformRole         PlatformRole          @default(USER)
-  createdProjects      Project[]             @relation("ProjectCreator")
-  memberships          ProjectMember[]
-  reviews              Review[]
-  aiReviewRuns         AiReviewRun[]         @relation("AiReviewRunTrigger")
-  aiReviewStrategies   AiReviewStrategy[]    @relation("AiReviewStrategyCreator")
-  aiReviewStrategyRuns AiReviewStrategyRun[] @relation("AiReviewStrategyRunTrigger")
-  aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[] @relation("AiReviewStrategyBatchRunCreator")
-  dingtalkAccounts     DingtalkAccount[]
-  reviewFieldPreferences UserProjectReviewFieldPreference[]
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  id                        String                             @id @default(cuid())
+  username                  String?                            @unique
+  email                     String?                            @unique
+  name                      String
+  passwordHash              String
+  avatar                    String?
+  mobile                    String?
+  dingtalkUserId            String?                            @unique
+  status                    UserStatus                         @default(ACTIVE)
+  platformRole              PlatformRole                       @default(USER)
+  createdProjects           Project[]                          @relation("ProjectCreator")
+  memberships               ProjectMember[]
+  reviews                   Review[]
+  aiReviewRuns              AiReviewRun[]                      @relation("AiReviewRunTrigger")
+  aiReviewStrategies        AiReviewStrategy[]                 @relation("AiReviewStrategyCreator")
+  aiReviewStrategyRuns      AiReviewStrategyRun[]              @relation("AiReviewStrategyRunTrigger")
+  aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[]         @relation("AiReviewStrategyBatchRunCreator")
+  dingtalkAccounts          DingtalkAccount[]
+  reviewFieldPreferences    UserProjectReviewFieldPreference[]
+  createdAt                 DateTime                           @default(now())
+  updatedAt                 DateTime                           @updatedAt
 }
 
 model Project {
-  id           String            @id @default(cuid())
-  name         String
-  code         String            @unique
-  description  String?
-  status       ProjectStatus     @default(ACTIVE)
-  createdById  String
-  createdBy    User              @relation("ProjectCreator", fields: [createdById], references: [id])
-  members      ProjectMember[]
-  datasources  ProjectDataSource[]
-  questions    Question[]
-  reviews      Review[]
-  aiReviewRuns AiReviewRun[]
+  id                        String                             @id @default(cuid())
+  name                      String
+  code                      String                             @unique
+  description               String?
+  status                    ProjectStatus                      @default(ACTIVE)
+  createdById               String
+  createdBy                 User                               @relation("ProjectCreator", fields: [createdById], references: [id])
+  members                   ProjectMember[]
+  datasources               ProjectDataSource[]
+  questions                 Question[]
+  reviews                   Review[]
+  aiReviewRuns              AiReviewRun[]
   aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[]
-  syncLogs     SyncLog[]
-  reviewFieldPreferences UserProjectReviewFieldPreference[]
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  syncLogs                  SyncLog[]
+  reviewFieldPreferences    UserProjectReviewFieldPreference[]
+  createdAt                 DateTime                           @default(now())
+  updatedAt                 DateTime                           @updatedAt
 }
 
 model UserProjectReviewFieldPreference {
@@ -192,27 +191,27 @@ model ProjectDataSource {
 }
 
 model Question {
-  id                   String                @id @default(cuid())
-  projectId            String
-  datasourceId         String
-  externalRecordId     String
-  title                String
-  content              String
-  answer               String?
-  analysis             String?
-  questionType         String?
-  difficulty           String?
-  status               QuestionStatus        @default(DRAFT)
-  metadata             Json?
-  sourceUpdatedAt      DateTime?
-  lastSyncedAt         DateTime?
-  project              Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  datasource           ProjectDataSource     @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
-  aiReviewStrategyRuns AiReviewStrategyRun[]
+  id                            String                         @id @default(cuid())
+  projectId                     String
+  datasourceId                  String
+  externalRecordId              String
+  title                         String
+  content                       String
+  answer                        String?
+  analysis                      String?
+  questionType                  String?
+  difficulty                    String?
+  status                        QuestionStatus                 @default(DRAFT)
+  metadata                      Json?
+  sourceUpdatedAt               DateTime?
+  lastSyncedAt                  DateTime?
+  project                       Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  datasource                    ProjectDataSource              @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  aiReviewStrategyRuns          AiReviewStrategyRun[]
   aiReviewStrategyBatchRunItems AiReviewStrategyBatchRunItem[]
-  fieldTranslations    QuestionFieldTranslation[]
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  fieldTranslations             QuestionFieldTranslation[]
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
 
   @@unique([datasourceId, externalRecordId])
   @@index([projectId, status])
@@ -220,7 +219,7 @@ model Question {
 }
 
 model Review {
-  id               String         @id @default(cuid())
+  id               String            @id @default(cuid())
   projectId        String
   datasourceId     String
   externalRecordId String
@@ -228,17 +227,17 @@ model Review {
   decision         ReviewDecision
   comment          String
   suggestions      Json?
-  project          Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
-  reviewer         User           @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  reviewer         User              @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([projectId, datasourceId, externalRecordId])
 }
 
 model AiReviewRun {
-  id               String           @id @default(cuid())
+  id               String            @id @default(cuid())
   projectId        String
   datasourceId     String
   externalRecordId String
@@ -249,63 +248,63 @@ model AiReviewRun {
   requestPayload   Json
   responsePayload  Json?
   parsedResult     Json?
-  status           RunStatus        @default(PENDING)
+  status           RunStatus         @default(PENDING)
   errorMessage     String?
   startedAt        DateTime?
   finishedAt       DateTime?
-  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
-  triggeredBy      User             @relation("AiReviewRunTrigger", fields: [triggeredById], references: [id], onDelete: Cascade)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  triggeredBy      User              @relation("AiReviewRunTrigger", fields: [triggeredById], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([projectId, datasourceId, externalRecordId])
 }
 
 model AiProvider {
-  id             String                   @id @default(cuid())
-  code           String                   @unique
-  name           String
-  apiKey         String?
-  note           String?
-  endpoints      AiProviderEndpoint[]
+  id              String                     @id @default(cuid())
+  code            String                     @unique
+  name            String
+  apiKey          String?
+  note            String?
+  endpoints       AiProviderEndpoint[]
   supportedModels AiProviderSupportedModel[]
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
 }
 
 model AiProviderEndpoint {
-  id        String                  @id @default(cuid())
+  id         String                    @id @default(cuid())
   providerId String
-  code      String                  @unique
-  label     String
-  protocol  AiProtocol
-  baseUrl   String
-  sortOrder Int                     @default(0)
-  provider  AiProvider              @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  models    AiProviderEndpointModel[]
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
+  code       String                    @unique
+  label      String
+  protocol   AiProtocol
+  baseUrl    String
+  sortOrder  Int                       @default(0)
+  provider   AiProvider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  models     AiProviderEndpointModel[]
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
 
   @@unique([providerId, protocol])
   @@index([providerId, sortOrder])
 }
 
 model AiModel {
-  id             String                  @id @default(cuid())
-  code           String                  @unique
-  protocol       AiProtocol
-  streamDefault  Boolean                 @default(true)
-  reasoningLevel AiReasoningLevel        @default(DISABLED)
-  maxTokensDefault Int?
+  id                 String                    @id @default(cuid())
+  code               String                    @unique
+  protocol           AiProtocol
+  streamDefault      Boolean                   @default(true)
+  reasoningLevel     AiReasoningLevel          @default(DISABLED)
+  maxTokensDefault   Int?
   temperatureDefault Float?
-  maxRetries     Int                     @default(1)
-  allowFallback  Boolean                 @default(true)
-  label          String?
-  note           String?
-  endpoints      AiProviderEndpointModel[]
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  maxRetries         Int                       @default(1)
+  allowFallback      Boolean                   @default(true)
+  label              String?
+  note               String?
+  endpoints          AiProviderEndpointModel[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
 }
 
 model AiProviderSupportedModel {
@@ -341,21 +340,21 @@ model AiProviderEndpointModel {
 }
 
 model AiReviewStrategy {
-  id            String                @id @default(cuid())
-  code          String                @unique
+  id            String                     @id @default(cuid())
+  code          String                     @unique
   name          String
   description   String?
-  enabled       Boolean               @default(true)
+  enabled       Boolean                    @default(true)
   projectIds    Json?
   datasourceIds Json?
   questionTypes Json?
   definition    Json
   createdById   String
-  createdBy     User                  @relation("AiReviewStrategyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy     User                       @relation("AiReviewStrategyCreator", fields: [createdById], references: [id], onDelete: Restrict)
   runs          AiReviewStrategyRun[]
   batchRuns     AiReviewStrategyBatchRun[]
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
 
   @@index([enabled, createdAt])
 }
@@ -383,18 +382,18 @@ model AiReviewStrategyRun {
 }
 
 model AiReviewStrategyBatchRun {
-  id              String                      @id @default(cuid())
+  id              String                         @id @default(cuid())
   strategyId      String
   projectId       String
   createdById     String
-  status          BatchRunStatus              @default(PENDING)
-  concurrency     Int                         @default(1)
-  totalCount      Int                         @default(0)
-  pendingCount    Int                         @default(0)
-  runningCount    Int                         @default(0)
-  successCount    Int                         @default(0)
-  failedCount     Int                         @default(0)
-  skippedCount    Int                         @default(0)
+  status          BatchRunStatus                 @default(PENDING)
+  concurrency     Int                            @default(1)
+  totalCount      Int                            @default(0)
+  pendingCount    Int                            @default(0)
+  runningCount    Int                            @default(0)
+  successCount    Int                            @default(0)
+  failedCount     Int                            @default(0)
+  skippedCount    Int                            @default(0)
   requestPayload  Json
   summaryPayload  Json?
   errorMessage    String?
@@ -402,12 +401,12 @@ model AiReviewStrategyBatchRun {
   startedAt       DateTime?
   finishedAt      DateTime?
   lastHeartbeatAt DateTime?
-  strategy        AiReviewStrategy            @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  project         Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy       User                        @relation("AiReviewStrategyBatchRunCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  strategy        AiReviewStrategy               @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  project         Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy       User                           @relation("AiReviewStrategyBatchRunCreator", fields: [createdById], references: [id], onDelete: Cascade)
   items           AiReviewStrategyBatchRunItem[]
-  createdAt       DateTime                    @default(now())
-  updatedAt       DateTime                    @updatedAt
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
 
   @@index([projectId, createdAt])
   @@index([status, createdAt])
@@ -416,21 +415,21 @@ model AiReviewStrategyBatchRun {
 }
 
 model AiReviewStrategyBatchRunItem {
-  id            String             @id @default(cuid())
+  id            String                   @id @default(cuid())
   batchRunId    String
   questionId    String
   sequence      Int
-  status        BatchRunItemStatus @default(PENDING)
-  attemptCount  Int                @default(0)
+  status        BatchRunItemStatus       @default(PENDING)
+  attemptCount  Int                      @default(0)
   runId         String?
   errorMessage  String?
   resultPayload Json?
   startedAt     DateTime?
   finishedAt    DateTime?
   batchRun      AiReviewStrategyBatchRun @relation(fields: [batchRunId], references: [id], onDelete: Cascade)
-  question      Question           @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  question      Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
 
   @@unique([batchRunId, questionId])
   @@unique([batchRunId, sequence])
@@ -439,7 +438,7 @@ model AiReviewStrategyBatchRunItem {
 }
 
 model SyncLog {
-  id               String        @id @default(cuid())
+  id               String            @id @default(cuid())
   projectId        String
   datasourceId     String
   externalRecordId String?
@@ -449,9 +448,9 @@ model SyncLog {
   responsePayload  Json?
   status           SyncStatus
   errorMessage     String?
-  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   datasource       ProjectDataSource @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
-  createdAt        DateTime      @default(now())
+  createdAt        DateTime          @default(now())
 
   @@index([projectId, datasourceId, externalRecordId])
 }
@@ -472,15 +471,15 @@ model QuestionFieldTranslation {
 }
 
 model DingtalkAccount {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
-  unionId        String?  @unique
-  dingtalkUserId String?  @unique
+  unionId        String?   @unique
+  dingtalkUserId String?   @unique
   accessToken    String?
   refreshToken   String?
   tokenExpiredAt DateTime?
   scope          String?
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }

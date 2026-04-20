@@ -56,7 +56,7 @@ type StrategyRunResult = {
         error?: string;
     }>;
     finalRecommendation: {
-        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        decision?: "PASS" | "REJECT";
         riskLevel?: string;
         summary: string;
     } | null;
@@ -64,7 +64,7 @@ type StrategyRunResult = {
         status: "SAVED" | "SKIPPED" | "FAILED";
         message: string;
         reviewId?: string;
-        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        decision?: "PASS" | "REJECT";
         comment?: string;
         questionStatus?: "APPROVED" | "REJECTED";
     } | null;

@@ -55,7 +55,7 @@ export type StepExecutionResult = {
     stepType: string;
     status: "RUNNING" | "SUCCESS" | "FAILED" | "SKIPPED";
     summary: string;
-    outcomeLabel?: "PASS" | "NEEDS_REVISION" | "REJECT" | "FLAG";
+    outcomeLabel?: "PASS" | "REJECT" | "FLAG";
     items: StepExecutionItem[];
     metrics?: Record<string, unknown>;
     error?: string;
@@ -78,7 +78,7 @@ export type StrategyExecutionResult = {
     status: "RUNNING" | "SUCCESS" | "FAILED";
     stepResults: StepExecutionResult[];
     finalRecommendation: {
-        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        decision?: "PASS" | "REJECT";
         riskLevel?: string;
         summary: string;
     } | null;
@@ -86,7 +86,7 @@ export type StrategyExecutionResult = {
         status: "SAVED" | "SKIPPED" | "FAILED";
         message: string;
         reviewId?: string;
-        decision?: "PASS" | "NEEDS_REVISION" | "REJECT";
+        decision?: "PASS" | "REJECT";
         comment?: string;
         questionStatus?: "APPROVED" | "REJECTED";
     } | null;
@@ -157,16 +157,12 @@ function cloneJson<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function toReviewDecision(
-    value: unknown,
-): "PASS" | "NEEDS_REVISION" | "REJECT" | undefined {
-    return value === "PASS" || value === "NEEDS_REVISION" || value === "REJECT"
-        ? value
-        : undefined;
+function toReviewDecision(value: unknown): "PASS" | "REJECT" | undefined {
+    return value === "PASS" || value === "REJECT" ? value : undefined;
 }
 
 function toQuestionStatus(
-    decision: "PASS" | "NEEDS_REVISION" | "REJECT",
+    decision: "PASS" | "REJECT",
 ): "APPROVED" | "REJECTED" {
     return decision === "PASS" ? "APPROVED" : "REJECTED";
 }
@@ -584,7 +580,7 @@ function getToolContract(type: AiReviewAiToolType) {
         case "DIFFICULTY_EVALUATION":
             return `{"difficultyLevel":"EASY|MEDIUM|HARD","score":1-5,"summary":string,"evidence":string[]}`;
         case "REVIEW_SUMMARY":
-            return `{"recommendedDecision":"PASS|NEEDS_REVISION|REJECT","riskLevel":"LOW|MEDIUM|HIGH","summary":string,"keyIssues":string[]}`;
+            return `{"recommendedDecision":"PASS|REJECT","riskLevel":"LOW|MEDIUM|HIGH","summary":string,"keyIssues":string[]}`;
     }
 }
 

@@ -77,14 +77,12 @@ const questionStatusLabelMap: Record<string, string> = {
 const reviewDecisionLabelMap: Record<string, string> = {
     PASS: "通过",
     REJECT: "驳回",
-    NEEDS_REVISION: "退回修改",
 };
 
 const reviewStatusLabelMap: Record<string, string> = {
     NONE: "未审核",
     PASS: "通过",
     REJECT: "驳回",
-    NEEDS_REVISION: "退回修改",
 };
 
 function normalizeRawRecord(metadata: unknown) {

@@ -180,12 +180,7 @@ function toReviewAwareQuestionRecord(input: {
 }
 
 function isValidReviewStatusValue(value: string): value is ReviewStatusValue {
-    return (
-        value === "PASS" ||
-        value === "REJECT" ||
-        value === "NEEDS_REVISION" ||
-        value === "NONE"
-    );
+    return value === "PASS" || value === "REJECT" || value === "NONE";
 }
 
 function getConditionFieldValue(

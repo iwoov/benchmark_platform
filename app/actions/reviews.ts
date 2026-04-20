@@ -8,7 +8,7 @@ import { canUserReviewProject } from "@/lib/reviews/permissions";
 
 const submitReviewSchema = z.object({
     questionId: z.string().min(1, "缺少题目 ID"),
-    decision: z.enum(["PASS", "REJECT", "NEEDS_REVISION"]),
+    decision: z.enum(["PASS", "REJECT"]),
     comment: z
         .string()
         .trim()

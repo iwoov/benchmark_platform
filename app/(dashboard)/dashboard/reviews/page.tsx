@@ -34,13 +34,11 @@ export default async function ReviewsPage() {
     const decisionLabel = {
         PASS: "通过",
         REJECT: "驳回",
-        NEEDS_REVISION: "退回修改",
     } as const;
 
     const decisionColor = {
         PASS: "success",
         REJECT: "error",
-        NEEDS_REVISION: "warning",
     } as const;
 
     return (

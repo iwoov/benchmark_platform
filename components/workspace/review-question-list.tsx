@@ -57,13 +57,13 @@ type ReviewQuestionItem = {
     title: string;
     status: QuestionStatus;
     aiReview: {
-        decision: "PASS" | "REJECT" | "NEEDS_REVISION";
+        decision: "PASS" | "REJECT";
         comment: string;
         updatedAt: string;
         reviewerName: string;
     } | null;
     manualReview: {
-        decision: "PASS" | "REJECT" | "NEEDS_REVISION";
+        decision: "PASS" | "REJECT";
         comment: string;
         updatedAt: string;
         reviewerName: string;
@@ -74,7 +74,7 @@ type ReviewQuestionItem = {
     rawFieldOrder: string[];
 };
 
-type ReviewStatus = "PASS" | "REJECT" | "NEEDS_REVISION" | "NONE";
+type ReviewStatus = "PASS" | "REJECT" | "NONE";
 
 type FieldDefinition = {
     value: ReviewQuestionFilterFieldKey;
@@ -103,7 +103,6 @@ const reviewStatusMeta = {
     NONE: { label: "未审核", color: "default" },
     PASS: { label: "通过", color: "success" },
     REJECT: { label: "驳回", color: "error" },
-    NEEDS_REVISION: { label: "退回修改", color: "gold" },
 } satisfies Record<ReviewStatus, { label: string; color: string }>;
 
 const cellStyle = {
