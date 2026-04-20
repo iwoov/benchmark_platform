@@ -805,8 +805,10 @@ select {
 
 .detail-meta-card,
 .detail-field-card {
-    padding: 13px 0;
-    border-bottom: 1px solid var(--line);
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--panel-muted);
 }
 
 .detail-meta-label,
@@ -868,6 +870,8 @@ select {
     gap: 12px;
     min-height: 0;
     transition: grid-template-columns 0.2s ease;
+    border-left: 1px solid var(--line);
+    padding-left: 12px;
 }
 
 .review-detail-right.review-detail-right-with-chat {
@@ -903,6 +907,7 @@ select {
     word-break: break-word;
     font-size: 13px;
     line-height: 1.72;
+    text-align: justify;
 }
 
 .detail-field-json {
@@ -3017,17 +3022,6 @@ a.overview-detail-item:hover {
     gap: 8px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--line-soft);
-    flex-shrink: 0;
-}
-
-.ai-chat-sidebar-preset-hint {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 8px 16px;
-    background: var(--panel-muted);
-    border-bottom: 1px solid var(--line-faint);
     flex-shrink: 0;
 }
 

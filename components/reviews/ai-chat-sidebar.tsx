@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Input, Select, Tag } from "antd";
+import { Button, Input, Select } from "antd";
 import {
     ChevronDown,
     ChevronRight,
@@ -412,23 +412,6 @@ export function AiChatSidebar({
                     title="清空对话"
                 />
             </div>
-
-            {selectedConfig?.presetFields.length ? (
-                <div className="ai-chat-sidebar-preset-hint">
-                    <span className="muted" style={{ fontSize: 12 }}>
-                        预设字段：
-                    </span>
-                    {selectedConfig.presetFields.map((field) => (
-                        <Tag
-                            key={field}
-                            bordered={false}
-                            style={{ fontSize: 11 }}
-                        >
-                            {field}
-                        </Tag>
-                    ))}
-                </div>
-            ) : null}
 
             <div className="ai-chat-messages">
                 {!messages.length && (
