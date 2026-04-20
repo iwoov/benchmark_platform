@@ -109,6 +109,11 @@ function normalizeForMatch(value: string) {
     return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
 }
 
+/** Strip .zip extension for comparison when one side has it and the other doesn't. */
+function stripZipExt(value: string) {
+    return value.replace(/\.zip$/i, "");
+}
+
 function lookupImageUrls(
     value: string,
     imageMap: Record<string, string[]>,
@@ -122,9 +127,16 @@ function lookupImageUrls(
 
     // 2. Normalized match (handles : vs _ and similar filesystem differences)
     const normalizedValue = normalizeForMatch(value);
+    const normalizedValueNoZip = stripZipExt(normalizedValue);
 
     for (const [key, urls] of Object.entries(imageMap)) {
-        if (normalizeForMatch(key) === normalizedValue && urls.length) {
+        if (!urls.length) continue;
+        const normalizedKey = normalizeForMatch(key);
+        if (normalizedKey === normalizedValue) {
+            return urls;
+        }
+        // Also try matching with/without .zip extension
+        if (stripZipExt(normalizedKey) === normalizedValueNoZip) {
             return urls;
         }
     }

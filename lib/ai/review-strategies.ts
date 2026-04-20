@@ -471,6 +471,10 @@ function normalizeForImageMatch(value: string) {
     return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
 }
 
+function stripZipExt(value: string) {
+    return value.replace(/\.zip$/i, "");
+}
+
 function lookupImageUrlsFromMap(
     value: string,
     imageMap: Record<string, string[]>,
@@ -479,8 +483,14 @@ function lookupImageUrlsFromMap(
     if (exact?.length) return exact;
 
     const normalized = normalizeForImageMatch(value);
+    const normalizedNoZip = stripZipExt(normalized);
     for (const [key, urls] of Object.entries(imageMap)) {
-        if (normalizeForImageMatch(key) === normalized && urls.length) {
+        if (!urls.length) continue;
+        const normalizedKey = normalizeForImageMatch(key);
+        if (normalizedKey === normalized) {
+            return urls;
+        }
+        if (stripZipExt(normalizedKey) === normalizedNoZip) {
             return urls;
         }
     }

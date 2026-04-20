@@ -522,6 +522,7 @@ export function ProjectDatasourceConsole({
                                 name="file"
                                 type="file"
                                 accept=".zip"
+                                multiple
                                 className="field-file"
                             />
                         </div>

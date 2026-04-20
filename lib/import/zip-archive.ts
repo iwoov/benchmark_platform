@@ -22,9 +22,9 @@ function isZipFile(fileName: string) {
 }
 
 function isHiddenOrMeta(zipPath: string) {
-    return zipPath.split("/").some(
-        (segment) => segment.startsWith(".") || segment === "__MACOSX",
-    );
+    return zipPath
+        .split("/")
+        .some((segment) => segment.startsWith(".") || segment === "__MACOSX");
 }
 
 export type ExtractedImage = {
@@ -84,12 +84,24 @@ export async function extractImagesFromZip(
             const nestedBuffer = await zipEntry.async("arraybuffer");
             const nestedImages = await extractImagesFromNestedZip(nestedBuffer);
 
+            // Also add matchKey without .zip extension since Windows may strip it
+            const fileNameNoZip = fileName.replace(/\.zip$/i, "");
+
             for (const image of nestedImages) {
                 results.push({
                     matchKey: fileName,
                     fileName: image.fileName,
                     buffer: image.buffer,
                 });
+
+                // Match without .zip extension
+                if (fileNameNoZip !== fileName) {
+                    results.push({
+                        matchKey: fileNameNoZip,
+                        fileName: image.fileName,
+                        buffer: image.buffer,
+                    });
+                }
 
                 // Also match by the full path of this nested zip
                 if (zipPath !== fileName) {
@@ -140,6 +152,9 @@ async function extractImagesFromNestedZip(
  * build a mapping from matchKey -> array of public URLs.
  *
  * Multiple images can share the same matchKey (e.g. a nested zip with 2 images).
+ * Also adds a normalized variant of each key (replacing non-alphanumeric chars
+ * with underscore) so that lookups from JSON values with ':' can match filenames
+ * saved on Windows where ':' is replaced with '_'.
  */
 export function buildImageMap(
     images: ExtractedImage[],
@@ -160,6 +175,24 @@ export function buildImageMap(
 
         if (!map[image.matchKey].includes(url)) {
             map[image.matchKey].push(url);
+        }
+
+        // Also store under a "colon-restored" variant so that lookups using
+        // the original value with ':' can find an exact match.
+        // e.g. key "...T20_25_44..." also stored as "...T20:25:44..."
+        const colonRestored = image.matchKey.replace(
+            /(\d{2})_(\d{2})_(\d{2})/g,
+            "$1:$2:$3",
+        );
+
+        if (colonRestored !== image.matchKey) {
+            if (!map[colonRestored]) {
+                map[colonRestored] = [];
+            }
+
+            if (!map[colonRestored].includes(url)) {
+                map[colonRestored].push(url);
+            }
         }
     }
 
