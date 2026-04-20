@@ -651,6 +651,7 @@ export function AiReviewStrategyRunner({
     questionId,
     strategies,
     runs,
+    hideHeader,
 }: {
     questionId: string;
     strategies: Array<{
@@ -662,6 +663,7 @@ export function AiReviewStrategyRunner({
         datasourceIds: string[];
     }>;
     runs: RunnerRun[];
+    hideHeader?: boolean;
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
@@ -934,20 +936,24 @@ export function AiReviewStrategyRunner({
 
     return (
         <section className="content-surface">
-            <div className="section-head" style={{ marginBottom: 16 }}>
-                <div>
-                    <h3 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>
-                        AI 审核辅助
-                    </h3>
-                    <p
-                        className="muted"
-                        style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                    >
-                        审核员可选择已配置的审核策略执行。AI
-                        只提供结构化建议，最终结论仍由人工确认提交。
-                    </p>
+            {!hideHeader && (
+                <div className="section-head" style={{ marginBottom: 16 }}>
+                    <div>
+                        <h3
+                            style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}
+                        >
+                            AI 审核辅助
+                        </h3>
+                        <p
+                            className="muted"
+                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+                        >
+                            审核员可选择已配置的审核策略执行。AI
+                            只提供结构化建议，最终结论仍由人工确认提交。
+                        </p>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {!strategies.length ? (
                 <Empty description="当前项目没有可用的 AI 审核策略，请联系管理员先创建并绑定策略。" />

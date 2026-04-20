@@ -20,6 +20,7 @@ import {
     ArrowUp,
     Bot,
     Braces,
+    MessageSquare,
     PencilLine,
     Plus,
     Save,
@@ -29,6 +30,11 @@ import {
     deleteAiReviewStrategyAction,
     saveAiReviewStrategyAction,
 } from "@/app/actions/ai-review-strategies";
+import {
+    saveAiChatConfigAction,
+    deleteAiChatConfigAction,
+} from "@/app/actions/ai-chat-config";
+import type { AiChatConfigView } from "@/lib/ai/chat-config";
 import {
     aiReviewAggregateLabels,
     aiReviewComparisonOperators,
@@ -153,12 +159,34 @@ const systemFieldOptions = [
     { value: "rawRecord", label: "系统字段 / rawRecord" },
 ];
 
+type ChatConfigFormState = {
+    configId?: string;
+    name: string;
+    modelCode: string;
+    modelCodes: string[];
+    systemPrompt: string;
+    presetFields: string[];
+    enabled: boolean;
+};
+
+function createDefaultChatConfigForm(): ChatConfigFormState {
+    return {
+        name: "",
+        modelCode: "",
+        modelCodes: [],
+        systemPrompt: "",
+        presetFields: [],
+        enabled: true,
+    };
+}
+
 export function AiReviewStrategyConsole({
     databaseEnabled,
     modelOptions,
     projects,
     datasources,
     strategies,
+    chatConfigs,
 }: {
     databaseEnabled: boolean;
     modelOptions: Array<{
@@ -191,6 +219,7 @@ export function AiReviewStrategyConsole({
         createdByName: string;
         updatedAt: string;
     }>;
+    chatConfigs: AiChatConfigView[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
@@ -202,6 +231,15 @@ export function AiReviewStrategyConsole({
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [isSaving, startSaving] = useTransition();
     const [isDeleting, startDeleting] = useTransition();
+
+    // --- Chat config state ---
+    const [chatForm, setChatForm] = useState<ChatConfigFormState>(
+        createDefaultChatConfigForm(),
+    );
+    const [chatModalOpen, setChatModalOpen] = useState(false);
+    const [isSavingChat, startSavingChat] = useTransition();
+    const [isDeletingChat, startDeletingChat] = useTransition();
+    const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
 
     const projectOptions = useMemo(
         () =>
@@ -471,6 +509,74 @@ export function AiReviewStrategyConsole({
         });
     }
 
+    // --- Chat config handlers ---
+    const allFieldOptions = useMemo(() => {
+        const allFields = new Set(
+            datasources.flatMap((ds) => ds.rawFieldOrder),
+        );
+        return [
+            ...systemFieldOptions,
+            ...[...allFields].map((field) => ({
+                value: field,
+                label: field,
+            })),
+        ];
+    }, [datasources]);
+
+    function openCreateChatModal() {
+        setChatForm(createDefaultChatConfigForm());
+        setChatModalOpen(true);
+    }
+
+    function openEditChatModal(config: AiChatConfigView) {
+        setChatForm({
+            configId: config.id,
+            name: config.name,
+            modelCode: config.modelCodes[0] ?? config.modelCode,
+            modelCodes: config.modelCodes,
+            systemPrompt: config.systemPrompt ?? "",
+            presetFields: config.presetFields,
+            enabled: config.enabled,
+        });
+        setChatModalOpen(true);
+    }
+
+    function closeChatModal() {
+        setChatModalOpen(false);
+        setChatForm(createDefaultChatConfigForm());
+    }
+
+    function handleSaveChat(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        startSavingChat(async () => {
+            const codes = chatForm.modelCodes.length
+                ? chatForm.modelCodes
+                : [chatForm.modelCode];
+            const result = await saveAiChatConfigAction({
+                id: chatForm.configId,
+                name: chatForm.name,
+                modelCode: codes[0],
+                modelCodes: codes,
+                systemPrompt: chatForm.systemPrompt || undefined,
+                presetFields: chatForm.presetFields,
+                enabled: chatForm.enabled,
+            });
+            const success = notifyResult(result);
+            if (success) {
+                closeChatModal();
+            }
+        });
+    }
+
+    function handleDeleteChat(configId: string) {
+        setDeletingChatId(configId);
+        startDeletingChat(async () => {
+            const result = await deleteAiChatConfigAction({ id: configId });
+            notifyResult(result);
+            setDeletingChatId(null);
+        });
+    }
+
     return (
         <div className="ai-review-strategy-page">
             <section className="content-surface">
@@ -685,6 +791,265 @@ export function AiReviewStrategyConsole({
                     </div>
                 )}
             </section>
+
+            {/* AI Chat Config Section */}
+            <section className="content-surface" style={{ marginTop: 24 }}>
+                <div className="section-head ai-review-strategy-head">
+                    <div>
+                        <h2
+                            style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
+                        >
+                            AI 对话配置
+                        </h2>
+                        <p
+                            className="muted"
+                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+                        >
+                            配置审核场景的 AI
+                            对话助手。选择可用模型、编写系统提示词、指定预设发送给
+                            AI 的题目字段。
+                        </p>
+                    </div>
+                    <Button
+                        type="primary"
+                        icon={<Plus size={16} />}
+                        onClick={openCreateChatModal}
+                    >
+                        新建配置
+                    </Button>
+                </div>
+
+                {!databaseEnabled ? (
+                    <Empty description="当前未配置数据库，无法保存对话配置。" />
+                ) : !chatConfigs.length ? (
+                    <Empty description="当前还没有 AI 对话配置，请先创建一条配置。" />
+                ) : (
+                    <div className="strategy-card-grid">
+                        {chatConfigs.map((config) => (
+                            <div key={config.id} className="strategy-card">
+                                <div className="strategy-card-head">
+                                    <div>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 8,
+                                                flexWrap: "wrap",
+                                            }}
+                                        >
+                                            <MessageSquare size={18} />
+                                            <strong>{config.name}</strong>
+                                            <Tag
+                                                color={
+                                                    config.enabled
+                                                        ? "green"
+                                                        : "default"
+                                                }
+                                            >
+                                                {config.enabled
+                                                    ? "启用"
+                                                    : "已停用"}
+                                            </Tag>
+                                        </div>
+                                    </div>
+                                    <Space size={8} wrap>
+                                        <Button
+                                            icon={<PencilLine size={16} />}
+                                            onClick={() =>
+                                                openEditChatModal(config)
+                                            }
+                                        >
+                                            编辑
+                                        </Button>
+                                        <Popconfirm
+                                            title="删除对话配置"
+                                            description="删除后将无法在审核页面使用该对话配置，确认继续吗？"
+                                            okText="删除"
+                                            cancelText="取消"
+                                            onConfirm={() =>
+                                                handleDeleteChat(config.id)
+                                            }
+                                        >
+                                            <Button
+                                                danger
+                                                icon={<Trash2 size={16} />}
+                                                loading={
+                                                    isDeletingChat &&
+                                                    deletingChatId === config.id
+                                                }
+                                            >
+                                                删除
+                                            </Button>
+                                        </Popconfirm>
+                                    </Space>
+                                </div>
+
+                                <div className="strategy-meta-row">
+                                    <Tag bordered={false}>
+                                        模型：{config.modelCodes.join("、")}
+                                    </Tag>
+                                    {config.presetFields.length > 0 && (
+                                        <Tag bordered={false}>
+                                            预设字段：
+                                            {config.presetFields.length} 个
+                                        </Tag>
+                                    )}
+                                    <Tag bordered={false}>
+                                        更新于{" "}
+                                        {new Date(
+                                            config.updatedAt,
+                                        ).toLocaleString("zh-CN")}
+                                    </Tag>
+                                </div>
+
+                                {config.systemPrompt ? (
+                                    <div
+                                        className="muted"
+                                        style={{
+                                            marginTop: 8,
+                                            fontSize: 13,
+                                            lineHeight: 1.7,
+                                            whiteSpace: "pre-wrap",
+                                            maxHeight: 80,
+                                            overflow: "hidden",
+                                        }}
+                                    >
+                                        {config.systemPrompt}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
+
+            {/* Chat Config Modal */}
+            <Modal
+                title={
+                    chatForm.configId ? "编辑 AI 对话配置" : "新建 AI 对话配置"
+                }
+                open={chatModalOpen}
+                onCancel={closeChatModal}
+                footer={null}
+                width={680}
+                destroyOnHidden
+            >
+                <form onSubmit={handleSaveChat}>
+                    <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
+                        <div>
+                            <label className="field-label">配置名称</label>
+                            <Input
+                                value={chatForm.name}
+                                onChange={(e) =>
+                                    setChatForm((c) => ({
+                                        ...c,
+                                        name: e.target.value,
+                                    }))
+                                }
+                                placeholder="例如：题目分析助手"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="field-label">可用模型</label>
+                            <Select
+                                mode="multiple"
+                                value={chatForm.modelCodes}
+                                onChange={(value) =>
+                                    setChatForm((c) => ({
+                                        ...c,
+                                        modelCodes: value,
+                                        modelCode: value[0] ?? c.modelCode,
+                                    }))
+                                }
+                                options={modelSelectOptions}
+                                placeholder="选择一个或多个 AI 模型"
+                                style={{ width: "100%" }}
+                                showSearch
+                                optionFilterProp="label"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="field-label">启用</label>
+                            <div>
+                                <Switch
+                                    checked={chatForm.enabled}
+                                    onChange={(checked) =>
+                                        setChatForm((c) => ({
+                                            ...c,
+                                            enabled: checked,
+                                        }))
+                                    }
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="field-label">系统提示词</label>
+                            <Input.TextArea
+                                value={chatForm.systemPrompt}
+                                onChange={(e) =>
+                                    setChatForm((c) => ({
+                                        ...c,
+                                        systemPrompt: e.target.value,
+                                    }))
+                                }
+                                rows={6}
+                                placeholder="设定 AI 的角色和行为规则，例如：你是一个题目审核助手，帮助审核员分析题目质量..."
+                            />
+                        </div>
+
+                        <div>
+                            <label className="field-label">预设发送字段</label>
+                            <p
+                                className="muted"
+                                style={{
+                                    margin: "0 0 8px",
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                }}
+                            >
+                                在审核详情页发起对话时，这些字段的值会自动作为上下文发送给
+                                AI。
+                            </p>
+                            <Select
+                                mode="multiple"
+                                value={chatForm.presetFields}
+                                onChange={(value) =>
+                                    setChatForm((c) => ({
+                                        ...c,
+                                        presetFields: value,
+                                    }))
+                                }
+                                options={allFieldOptions}
+                                placeholder="选择要预设发送的字段"
+                                style={{ width: "100%" }}
+                                showSearch
+                                optionFilterProp="label"
+                            />
+                        </div>
+
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                gap: 8,
+                            }}
+                        >
+                            <Button onClick={closeChatModal}>取消</Button>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                icon={<Save size={16} />}
+                                loading={isSavingChat}
+                            >
+                                保存配置
+                            </Button>
+                        </div>
+                    </div>
+                </form>
+            </Modal>
 
             <Modal
                 title={form.strategyId ? "编辑审核策略" : "新建审核策略"}

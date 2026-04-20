@@ -1,0 +1,499 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button, Input, Select, Tag } from "antd";
+import {
+    ChevronDown,
+    ChevronRight,
+    MessageSquare,
+    Send,
+    Trash2,
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { AiChatConfigView } from "@/lib/ai/chat-config";
+
+type ChatMessage = {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    thinking?: string;
+    phase?: "waiting" | "thinking" | "responding" | "done";
+};
+
+function buildContextString(
+    presetFields: string[],
+    rawRecord: Record<string, string>,
+    questionMeta: {
+        title: string;
+        content: string;
+        answer?: string | null;
+        analysis?: string | null;
+        questionType?: string | null;
+        difficulty?: string | null;
+    },
+): string {
+    const lines: string[] = [];
+
+    const systemFieldMap: Record<string, string | null | undefined> = {
+        title: questionMeta.title,
+        content: questionMeta.content,
+        answer: questionMeta.answer,
+        analysis: questionMeta.analysis,
+        questionType: questionMeta.questionType,
+        difficulty: questionMeta.difficulty,
+    };
+
+    for (const field of presetFields) {
+        if (field in systemFieldMap) {
+            const val = systemFieldMap[field];
+            if (val) {
+                lines.push(`[${field}]\n${val}`);
+            }
+        } else if (field === "rawRecord") {
+            lines.push(`[rawRecord]\n${JSON.stringify(rawRecord, null, 2)}`);
+        } else if (field in rawRecord) {
+            lines.push(`[${field}]\n${rawRecord[field]}`);
+        }
+    }
+
+    return lines.join("\n\n");
+}
+
+let messageIdCounter = 0;
+function nextMessageId() {
+    return `msg-${++messageIdCounter}-${Date.now()}`;
+}
+
+function WaitingTimer() {
+    const [seconds, setSeconds] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setSeconds((s) => s + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
+        <div className="ai-chat-waiting">
+            <span className="ai-chat-waiting-dot" />
+            <span>等待回复... {seconds}s</span>
+        </div>
+    );
+}
+
+function ThinkingBlock({
+    thinking,
+    isThinking,
+}: {
+    thinking: string;
+    isThinking: boolean;
+}) {
+    const [manualToggle, setManualToggle] = useState<boolean | null>(null);
+
+    // Auto-expand while thinking, auto-collapse when done
+    const expanded = manualToggle ?? isThinking;
+
+    if (!thinking) return null;
+
+    return (
+        <div className="ai-chat-thinking-block">
+            <button
+                className="ai-chat-thinking-toggle"
+                onClick={() => setManualToggle(!expanded)}
+                type="button"
+            >
+                {expanded ? (
+                    <ChevronDown size={14} />
+                ) : (
+                    <ChevronRight size={14} />
+                )}
+                <span>思考过程{isThinking ? "..." : ""}</span>
+            </button>
+            {expanded && (
+                <div className="ai-chat-thinking-content">
+                    <MarkdownContent content={thinking} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+    return (
+        <div className="ai-chat-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        </div>
+    );
+}
+
+export function AiChatSidebar({
+    chatConfigs,
+    rawRecord,
+    questionMeta,
+}: {
+    chatConfigs: AiChatConfigView[];
+    rawRecord: Record<string, string>;
+    questionMeta: {
+        title: string;
+        content: string;
+        answer?: string | null;
+        analysis?: string | null;
+        questionType?: string | null;
+        difficulty?: string | null;
+    };
+}) {
+    const [selectedConfigId, setSelectedConfigId] = useState<string>(
+        chatConfigs[0]?.id ?? "",
+    );
+    const [selectedModelCode, setSelectedModelCode] = useState<string>("");
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [inputValue, setInputValue] = useState("");
+    const [isStreaming, setIsStreaming] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    const selectedConfig = chatConfigs.find((c) => c.id === selectedConfigId);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
+
+    useEffect(() => {
+        setMessages([]);
+        const config = chatConfigs.find((c) => c.id === selectedConfigId);
+        setSelectedModelCode(config?.modelCodes[0] ?? "");
+    }, [selectedConfigId, chatConfigs]);
+
+    function clearMessages() {
+        if (isStreaming) {
+            abortControllerRef.current?.abort();
+            setIsStreaming(false);
+        }
+        setMessages([]);
+    }
+
+    async function sendMessage() {
+        const text = inputValue.trim();
+        if (!text || !selectedConfig || isStreaming) return;
+
+        const userMsg: ChatMessage = {
+            id: nextMessageId(),
+            role: "user",
+            content: text,
+        };
+
+        const assistantMsgId = nextMessageId();
+        const assistantMsg: ChatMessage = {
+            id: assistantMsgId,
+            role: "assistant",
+            content: "",
+            thinking: "",
+            phase: "waiting",
+        };
+
+        const nextMessages = [...messages, userMsg];
+        setMessages([...nextMessages, assistantMsg]);
+        setInputValue("");
+        setIsStreaming(true);
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        try {
+            const context = buildContextString(
+                selectedConfig.presetFields,
+                rawRecord,
+                questionMeta,
+            );
+
+            const response = await fetch("/api/ai/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chatConfigId: selectedConfig.id,
+                    modelCode: selectedModelCode || undefined,
+                    messages: nextMessages.map((m) => ({
+                        role: m.role,
+                        content: m.content,
+                    })),
+                    context: context || undefined,
+                }),
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => null);
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantMsgId
+                            ? {
+                                  ...m,
+                                  content:
+                                      error?.error ??
+                                      `请求失败 (${response.status})`,
+                              }
+                            : m,
+                    ),
+                );
+                setIsStreaming(false);
+                return;
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantMsgId
+                            ? { ...m, content: "无法读取响应流。" }
+                            : m,
+                    ),
+                );
+                setIsStreaming(false);
+                return;
+            }
+
+            const decoder = new TextDecoder();
+            let accumulated = "";
+            let accumulatedThinking = "";
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split(/\r?\n/).filter(Boolean);
+
+                for (const line of lines) {
+                    if (!line.startsWith("data:")) continue;
+                    const dataPart = line.slice(5).trim();
+                    if (!dataPart || dataPart === "[DONE]") continue;
+
+                    try {
+                        const parsed = JSON.parse(dataPart);
+                        if (parsed.thinking) {
+                            accumulatedThinking += parsed.thinking;
+                            const thinkingSnapshot = accumulatedThinking;
+                            const contentSnapshot = accumulated;
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantMsgId
+                                        ? {
+                                              ...m,
+                                              content: contentSnapshot,
+                                              thinking: thinkingSnapshot,
+                                              phase: "thinking",
+                                          }
+                                        : m,
+                                ),
+                            );
+                        }
+                        if (parsed.delta) {
+                            accumulated += parsed.delta;
+                            const contentSnapshot = accumulated;
+                            const thinkingSnapshot = accumulatedThinking;
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantMsgId
+                                        ? {
+                                              ...m,
+                                              content: contentSnapshot,
+                                              thinking: thinkingSnapshot,
+                                              phase: "responding",
+                                          }
+                                        : m,
+                                ),
+                            );
+                        }
+                        if (parsed.error) {
+                            accumulated += `\n[错误] ${parsed.error}`;
+                            const snapshot = accumulated;
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === assistantMsgId
+                                        ? {
+                                              ...m,
+                                              content: snapshot,
+                                              phase: "done",
+                                          }
+                                        : m,
+                                ),
+                            );
+                        }
+                    } catch {
+                        // ignore parse errors
+                    }
+                }
+            }
+        } catch (error) {
+            if ((error as Error).name !== "AbortError") {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantMsgId
+                            ? {
+                                  ...m,
+                                  content:
+                                      m.content ||
+                                      `请求异常：${(error as Error).message}`,
+                              }
+                            : m,
+                    ),
+                );
+            }
+        } finally {
+            setMessages((prev) =>
+                prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, phase: "done" } : m,
+                ),
+            );
+            setIsStreaming(false);
+            abortControllerRef.current = null;
+        }
+    }
+
+    function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    }
+
+    if (!chatConfigs.length) {
+        return null;
+    }
+
+    return (
+        <div className="ai-chat-sidebar">
+            <div className="ai-chat-sidebar-header">
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                    }}
+                >
+                    <MessageSquare size={18} />
+                    <strong>AI 对话</strong>
+                </div>
+            </div>
+
+            <div className="ai-chat-sidebar-config">
+                <Select
+                    value={selectedConfigId || undefined}
+                    onChange={(value) => setSelectedConfigId(value)}
+                    options={chatConfigs.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                    }))}
+                    placeholder="选择对话配置"
+                    size="small"
+                    style={{ flex: 1 }}
+                />
+                {selectedConfig && selectedConfig.modelCodes.length > 1 ? (
+                    <Select
+                        value={selectedModelCode || undefined}
+                        onChange={(value) => setSelectedModelCode(value)}
+                        options={selectedConfig.modelCodes.map((code) => ({
+                            value: code,
+                            label: code,
+                        }))}
+                        placeholder="模型"
+                        size="small"
+                        style={{ flex: 1 }}
+                    />
+                ) : null}
+                <Button
+                    type="text"
+                    size="small"
+                    icon={<Trash2 size={14} />}
+                    onClick={clearMessages}
+                    disabled={!messages.length && !isStreaming}
+                    title="清空对话"
+                />
+            </div>
+
+            {selectedConfig?.presetFields.length ? (
+                <div className="ai-chat-sidebar-preset-hint">
+                    <span className="muted" style={{ fontSize: 12 }}>
+                        预设字段：
+                    </span>
+                    {selectedConfig.presetFields.map((field) => (
+                        <Tag
+                            key={field}
+                            bordered={false}
+                            style={{ fontSize: 11 }}
+                        >
+                            {field}
+                        </Tag>
+                    ))}
+                </div>
+            ) : null}
+
+            <div className="ai-chat-messages">
+                {!messages.length && (
+                    <div className="ai-chat-empty">
+                        <MessageSquare
+                            size={32}
+                            className="ai-chat-empty-icon"
+                        />
+                        <p>
+                            向 AI
+                            提问关于当前题目的问题，预设字段会自动作为上下文发送。
+                        </p>
+                    </div>
+                )}
+                {messages.map((msg) => (
+                    <div
+                        key={msg.id}
+                        className={`ai-chat-message ai-chat-message-${msg.role}`}
+                    >
+                        <div className="ai-chat-message-role">
+                            {msg.role === "user" ? "你" : "AI"}
+                        </div>
+                        {msg.role === "assistant" && msg.phase === "waiting" ? (
+                            <WaitingTimer />
+                        ) : null}
+                        {msg.role === "assistant" && msg.thinking ? (
+                            <ThinkingBlock
+                                thinking={msg.thinking}
+                                isThinking={msg.phase === "thinking"}
+                            />
+                        ) : null}
+                        <div className="ai-chat-message-content">
+                            {msg.role === "assistant" ? (
+                                msg.content ? (
+                                    <MarkdownContent content={msg.content} />
+                                ) : null
+                            ) : (
+                                msg.content
+                            )}
+                        </div>
+                    </div>
+                ))}
+                <div ref={messagesEndRef} />
+            </div>
+
+            <div className="ai-chat-input-area">
+                <Input.TextArea
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                    autoSize={{ minRows: 1, maxRows: 4 }}
+                    disabled={isStreaming || !selectedConfig}
+                    size="small"
+                />
+                <Button
+                    type="primary"
+                    size="small"
+                    icon={<Send size={14} />}
+                    onClick={sendMessage}
+                    disabled={
+                        !inputValue.trim() || isStreaming || !selectedConfig
+                    }
+                />
+            </div>
+        </div>
+    );
+}

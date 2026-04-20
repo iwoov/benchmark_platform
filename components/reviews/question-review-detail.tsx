@@ -3,9 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { App, Button, Input, Select, Space, Tag } from "antd";
-import { ArrowLeft, ChevronLeft, ChevronRight, Languages } from "lucide-react";
+import {
+    ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
+    Languages,
+    MessageSquare,
+} from "lucide-react";
 import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
+import { AiChatSidebar } from "@/components/reviews/ai-chat-sidebar";
+import type { AiChatConfigView } from "@/lib/ai/chat-config";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import type {
     ReviewQuestionDetail,
@@ -227,12 +235,14 @@ export function QuestionReviewDetail({
     fieldPreference,
     reviewStrategies,
     strategyRuns,
+    chatConfigs,
 }: {
     question: ReviewQuestionDetail;
     canReview: boolean;
     listPath: string;
     navigation: ReviewQuestionNavigation;
     fieldPreference: ResolvedReviewFieldPreference;
+    chatConfigs?: AiChatConfigView[];
     reviewStrategies: Array<{
         id: string;
         name: string;
@@ -319,6 +329,7 @@ export function QuestionReviewDetail({
     const { notification } = App.useApp();
     const [decision, setDecision] = useState<"PASS" | "REJECT">("PASS");
     const [comment, setComment] = useState("");
+    const [chatOpen, setChatOpen] = useState(false);
     const [fieldTranslations, setFieldTranslations] = useState<
         Record<
             string,
@@ -556,71 +567,60 @@ export function QuestionReviewDetail({
     }
 
     return (
-        <div
-            className="review-compact-scope"
-            style={{ display: "grid", gap: 16 }}
-        >
-            <section className="content-surface review-content-surface">
-                <div className="section-head">
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            flexWrap: "wrap",
-                        }}
-                    >
-                        <Space size={8} wrap>
-                            <Button
-                                icon={<ArrowLeft size={16} />}
-                                size="middle"
-                                onClick={goBackToList}
-                            >
-                                返回列表
-                            </Button>
-                            <Button
-                                icon={<ChevronLeft size={16} />}
-                                size="middle"
-                                onClick={() =>
-                                    goToQuestion(navigation.previousQuestionId)
-                                }
-                                disabled={!navigation.previousQuestionId}
-                            />
-                            <Button
-                                icon={<ChevronRight size={16} />}
-                                size="middle"
-                                onClick={() =>
-                                    goToQuestion(navigation.nextQuestionId)
-                                }
-                                disabled={!navigation.nextQuestionId}
-                            />
-                        </Space>
-                        <h2 className="review-detail-title">
-                            {question.title}
-                        </h2>
-                        <Space size={8} wrap>
-                            <Tag
-                                color={
-                                    questionStatusMeta[question.status].color
-                                }
-                            >
-                                {questionStatusMeta[question.status].label}
-                            </Tag>
-                            <Tag>{question.externalRecordId}</Tag>
-                            <Tag>{question.project.code}</Tag>
-                            <Tag>{question.datasource.name}</Tag>
-                            <span className="muted review-page-meta">
-                                {new Date(question.updatedAt).toLocaleString(
-                                    "zh-CN",
-                                )}
-                            </span>
-                        </Space>
-                    </div>
+        <div className="review-detail-fullscreen review-compact-scope">
+            <div className="review-detail-topbar">
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        flexWrap: "wrap",
+                    }}
+                >
+                    <Space size={8} wrap>
+                        <Button
+                            icon={<ArrowLeft size={16} />}
+                            size="middle"
+                            onClick={goBackToList}
+                        >
+                            返回列表
+                        </Button>
+                        <Button
+                            icon={<ChevronLeft size={16} />}
+                            size="middle"
+                            onClick={() =>
+                                goToQuestion(navigation.previousQuestionId)
+                            }
+                            disabled={!navigation.previousQuestionId}
+                        />
+                        <Button
+                            icon={<ChevronRight size={16} />}
+                            size="middle"
+                            onClick={() =>
+                                goToQuestion(navigation.nextQuestionId)
+                            }
+                            disabled={!navigation.nextQuestionId}
+                        />
+                    </Space>
+                    <h2 className="review-detail-title">{question.title}</h2>
+                    <Space size={8} wrap>
+                        <Tag color={questionStatusMeta[question.status].color}>
+                            {questionStatusMeta[question.status].label}
+                        </Tag>
+                        <Tag>{question.externalRecordId}</Tag>
+                        <Tag>{question.project.code}</Tag>
+                        <Tag>{question.datasource.name}</Tag>
+                        <span className="muted review-page-meta">
+                            {new Date(question.updatedAt).toLocaleString(
+                                "zh-CN",
+                            )}
+                        </span>
+                    </Space>
                 </div>
-            </section>
+            </div>
 
-            <div className="detail-two-column">
-                <div className="detail-two-column-left">
+            <div className="review-detail-body">
+                <div className="review-detail-left">
                     <section className="content-surface review-content-surface">
                         <div
                             className="section-head"
@@ -733,87 +733,164 @@ export function QuestionReviewDetail({
                     </section>
                 </div>
 
-                <div className="detail-two-column-right">
-                    {canReview ? (
-                        <AiReviewStrategyRunner
-                            questionId={question.id}
-                            strategies={reviewStrategies}
-                            runs={strategyRuns}
-                        />
-                    ) : null}
-
-                    {canReview ? (
-                        <section className="content-surface review-content-surface">
-                            <div
-                                className="section-head"
-                                style={{ marginBottom: 16 }}
-                            >
-                                <div>
-                                    <h3 className="review-section-title">
-                                        提交审核
-                                    </h3>
-                                    <p className="muted review-page-copy">
-                                        在详情页直接填写审核意见并提交结论。
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div style={{ display: "grid", gap: 16 }}>
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="review-decision"
+                <div
+                    className={`review-detail-right${chatOpen ? " review-detail-right-with-chat" : ""}`}
+                >
+                    <div className="review-detail-right-main">
+                        {canReview ? (
+                            <>
+                                <section className="content-surface">
+                                    <div
+                                        className="section-head"
+                                        style={{ marginBottom: 16 }}
                                     >
-                                        审核结论
-                                    </label>
-                                    <Select
-                                        id="review-decision"
-                                        value={decision}
-                                        onChange={(value) => setDecision(value)}
-                                        options={[
-                                            { value: "PASS", label: "通过" },
-                                            { value: "REJECT", label: "驳回" },
-                                        ]}
-                                        size="middle"
-                                    />
-                                </div>
+                                        <div style={{ flex: 1 }}>
+                                            <h3
+                                                style={{
+                                                    margin: 0,
+                                                    fontSize: 20,
+                                                    lineHeight: 1.1,
+                                                }}
+                                            >
+                                                AI 审核辅助
+                                            </h3>
+                                            <p
+                                                className="muted"
+                                                style={{
+                                                    margin: "10px 0 0",
+                                                    lineHeight: 1.7,
+                                                }}
+                                            >
+                                                审核员可选择已配置的审核策略执行。AI
+                                                只提供结构化建议，最终结论仍由人工确认提交。
+                                            </p>
+                                        </div>
+                                        {chatConfigs?.length ? (
+                                            <Button
+                                                type={
+                                                    chatOpen
+                                                        ? "primary"
+                                                        : "default"
+                                                }
+                                                icon={
+                                                    <MessageSquare size={16} />
+                                                }
+                                                onClick={() =>
+                                                    setChatOpen(!chatOpen)
+                                                }
+                                            >
+                                                AI 对话
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                </section>
+                                <AiReviewStrategyRunner
+                                    questionId={question.id}
+                                    strategies={reviewStrategies}
+                                    runs={strategyRuns}
+                                    hideHeader
+                                />
+                            </>
+                        ) : null}
 
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="review-comment"
-                                    >
-                                        审核意见
-                                    </label>
-                                    <Input.TextArea
-                                        id="review-comment"
-                                        value={comment}
-                                        onChange={(event) =>
-                                            setComment(event.target.value)
-                                        }
-                                        rows={6}
-                                        placeholder="请输入审核意见、修改建议或驳回原因"
-                                        size="middle"
-                                    />
-                                </div>
-
+                        {canReview ? (
+                            <section className="content-surface review-content-surface">
                                 <div
-                                    style={{
-                                        display: "flex",
-                                        justifyContent: "flex-end",
-                                    }}
+                                    className="section-head"
+                                    style={{ marginBottom: 16 }}
                                 >
-                                    <Button
-                                        type="primary"
-                                        size="middle"
-                                        onClick={submitReview}
-                                        loading={isSubmitting}
-                                    >
-                                        提交审核
-                                    </Button>
+                                    <div>
+                                        <h3 className="review-section-title">
+                                            提交审核
+                                        </h3>
+                                        <p className="muted review-page-copy">
+                                            在详情页直接填写审核意见并提交结论。
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
-                        </section>
+
+                                <div style={{ display: "grid", gap: 16 }}>
+                                    <div>
+                                        <label
+                                            className="field-label"
+                                            htmlFor="review-decision"
+                                        >
+                                            审核结论
+                                        </label>
+                                        <Select
+                                            id="review-decision"
+                                            value={decision}
+                                            onChange={(value) =>
+                                                setDecision(value)
+                                            }
+                                            options={[
+                                                {
+                                                    value: "PASS",
+                                                    label: "通过",
+                                                },
+                                                {
+                                                    value: "REJECT",
+                                                    label: "驳回",
+                                                },
+                                            ]}
+                                            size="middle"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label
+                                            className="field-label"
+                                            htmlFor="review-comment"
+                                        >
+                                            审核意见
+                                        </label>
+                                        <Input.TextArea
+                                            id="review-comment"
+                                            value={comment}
+                                            onChange={(event) =>
+                                                setComment(event.target.value)
+                                            }
+                                            rows={6}
+                                            placeholder="请输入审核意见、修改建议或驳回原因"
+                                            size="middle"
+                                        />
+                                    </div>
+
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            justifyContent: "flex-end",
+                                        }}
+                                    >
+                                        <Button
+                                            type="primary"
+                                            size="middle"
+                                            onClick={submitReview}
+                                            loading={isSubmitting}
+                                        >
+                                            提交审核
+                                        </Button>
+                                    </div>
+                                </div>
+                            </section>
+                        ) : null}
+                    </div>
+
+                    {chatOpen && chatConfigs?.length ? (
+                        <div className="review-detail-chat-panel">
+                            <AiChatSidebar
+                                chatConfigs={chatConfigs}
+                                rawRecord={question.rawRecord}
+                                questionMeta={{
+                                    title: question.title,
+                                    content: question.content,
+                                    answer: question.answer,
+                                    analysis: question.analysis,
+                                    questionType: question.questionType,
+                                    difficulty: question.difficulty,
+                                }}
+                            />
+                        </div>
                     ) : null}
                 </div>
             </div>

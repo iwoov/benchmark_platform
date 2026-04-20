@@ -4,6 +4,7 @@ import { AiReviewStrategyConsole } from "@/components/dashboard/ai-review-strate
 import { getHomePathByRole } from "@/lib/auth/navigation";
 import { isAdminRole } from "@/lib/auth/roles";
 import { getAiReviewStrategyConsoleData } from "@/lib/ai/review-strategies";
+import { getAiChatConfigs } from "@/lib/ai/chat-config";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,10 @@ export default async function AiReviewStrategiesPage() {
         redirect(getHomePathByRole(session.user.platformRole));
     }
 
-    const data = await getAiReviewStrategyConsoleData();
+    const [data, chatConfigs] = await Promise.all([
+        getAiReviewStrategyConsoleData(),
+        getAiChatConfigs(),
+    ]);
 
     return (
         <AiReviewStrategyConsole
@@ -27,6 +31,7 @@ export default async function AiReviewStrategiesPage() {
             projects={data.projects}
             datasources={data.datasources}
             strategies={data.strategies}
+            chatConfigs={chatConfigs}
         />
     );
 }
