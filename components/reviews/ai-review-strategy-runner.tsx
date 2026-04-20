@@ -807,22 +807,6 @@ export function AiReviewStrategyRunner({
         return { color: "processing" as const, label: "执行中" };
     }
 
-    function getStepStatusColor(status: string) {
-        if (status === "SUCCESS") {
-            return "success";
-        }
-
-        if (status === "FAILED") {
-            return "error";
-        }
-
-        if (status === "RUNNING") {
-            return "processing";
-        }
-
-        return "default";
-    }
-
     function buildRetryKey(runId: string, stepId: string, itemIndex: number) {
         return `${runId}:${stepId}:${itemIndex}`;
     }
@@ -1093,15 +1077,14 @@ export function AiReviewStrategyRunner({
                                                                                   {
                                                                                       step.stepName
                                                                                   }
-                                                                                  <Tag
-                                                                                      color={getStepStatusColor(
-                                                                                          step.status,
-                                                                                      )}
-                                                                                  >
-                                                                                      {
-                                                                                          step.status
-                                                                                      }
-                                                                                  </Tag>
+                                                                                  {step.status ===
+                                                                                  "FAILED" ? (
+                                                                                      <Tag color="error">
+                                                                                          {
+                                                                                              step.status
+                                                                                          }
+                                                                                      </Tag>
+                                                                                  ) : null}
                                                                                   {step.outcomeLabel ? (
                                                                                       <Tag color="gold">
                                                                                           {
@@ -1246,9 +1229,7 @@ export function AiReviewStrategyRunner({
                                                                                                                   >
                                                                                                                       原始数据
                                                                                                                   </Button>
-                                                                                                                  {item.status ===
-                                                                                                                      "FAILED" &&
-                                                                                                                  run.status !==
+                                                                                                                  {run.status !==
                                                                                                                       "RUNNING" &&
                                                                                                                   run.status !==
                                                                                                                       "PENDING" ? (
@@ -1375,15 +1356,14 @@ export function AiReviewStrategyRunner({
                                                                                           {
                                                                                               step.stepName
                                                                                           }
-                                                                                          <Tag
-                                                                                              color={getStepStatusColor(
-                                                                                                  step.status,
-                                                                                              )}
-                                                                                          >
-                                                                                              {
-                                                                                                  step.status
-                                                                                              }
-                                                                                          </Tag>
+                                                                                          {step.status ===
+                                                                                          "FAILED" ? (
+                                                                                              <Tag color="error">
+                                                                                                  {
+                                                                                                      step.status
+                                                                                                  }
+                                                                                              </Tag>
+                                                                                          ) : null}
                                                                                           {step.outcomeLabel ? (
                                                                                               <Tag color="gold">
                                                                                                   {
@@ -1528,9 +1508,7 @@ export function AiReviewStrategyRunner({
                                                                                                                           >
                                                                                                                               原始数据
                                                                                                                           </Button>
-                                                                                                                          {item.status ===
-                                                                                                                              "FAILED" &&
-                                                                                                                          run.status !==
+                                                                                                                          {run.status !==
                                                                                                                               "RUNNING" &&
                                                                                                                           run.status !==
                                                                                                                               "PENDING" ? (
