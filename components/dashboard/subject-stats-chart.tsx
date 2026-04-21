@@ -10,12 +10,12 @@ const CHART_WIDTH = 320;
 
 function BarRow({
     label,
-    passRate,
-    unreviewedRate,
+    value,
+    barColor,
 }: {
     label: string;
-    passRate: number;
-    unreviewedRate: number;
+    value: number;
+    barColor: string;
 }) {
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: BAR_GAP }}>
@@ -34,87 +34,55 @@ function BarRow({
             >
                 {label}
             </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
-                {/* Pass rate bar */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div
+                    style={{
+                        width: CHART_WIDTH,
+                        height: BAR_HEIGHT,
+                        background: "var(--color-border, #f0f0f0)",
+                        borderRadius: 4,
+                        overflow: "hidden",
+                    }}
+                >
                     <div
                         style={{
-                            width: CHART_WIDTH,
-                            height: BAR_HEIGHT,
-                            background: "var(--color-border, #f0f0f0)",
+                            width: `${value}%`,
+                            height: "100%",
+                            background: barColor,
                             borderRadius: 4,
-                            overflow: "hidden",
-                            position: "relative",
+                            transition: "width 0.4s ease",
                         }}
-                    >
-                        <div
-                            style={{
-                                width: `${passRate}%`,
-                                height: "100%",
-                                background: "var(--color-success, #52c41a)",
-                                borderRadius: 4,
-                                transition: "width 0.4s ease",
-                            }}
-                        />
-                    </div>
-                    <span style={{ fontSize: 12, width: VALUE_WIDTH, flexShrink: 0, color: "var(--color-text-secondary, #888)" }}>
-                        {passRate}%
-                    </span>
+                    />
                 </div>
-                {/* Unreviewed rate bar */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div
-                        style={{
-                            width: CHART_WIDTH,
-                            height: BAR_HEIGHT,
-                            background: "var(--color-border, #f0f0f0)",
-                            borderRadius: 4,
-                            overflow: "hidden",
-                        }}
-                    >
-                        <div
-                            style={{
-                                width: `${unreviewedRate}%`,
-                                height: "100%",
-                                background: "var(--color-warning, #faad14)",
-                                borderRadius: 4,
-                                transition: "width 0.4s ease",
-                            }}
-                        />
-                    </div>
-                    <span style={{ fontSize: 12, width: VALUE_WIDTH, flexShrink: 0, color: "var(--color-text-secondary, #888)" }}>
-                        {unreviewedRate}%
-                    </span>
-                </div>
+                <span style={{ fontSize: 12, width: VALUE_WIDTH, flexShrink: 0, color: "var(--color-text-secondary, #888)" }}>
+                    {value}%
+                </span>
             </div>
         </div>
     );
 }
 
-export function SubjectStatsChart({ stats }: { stats: SubjectStat[] }) {
+export function SubjectStatsChart({
+    stats,
+    metric,
+    barColor,
+}: {
+    stats: SubjectStat[];
+    metric: "passRate" | "unreviewedRate";
+    barColor: string;
+}) {
     if (!stats.length) {
         return <div className="overview-empty-state">暂无学科数据。</div>;
     }
 
     return (
         <div style={{ overflowX: "auto" }}>
-            {/* Legend */}
-            <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 12, color: "var(--color-text-secondary, #888)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ display: "inline-block", width: 12, height: 12, background: "var(--color-success, #52c41a)", borderRadius: 2 }} />
-                    人工审核通过率
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ display: "inline-block", width: 12, height: 12, background: "var(--color-warning, #faad14)", borderRadius: 2 }} />
-                    未审核率
-                </span>
-            </div>
             {stats.map((row) => (
                 <BarRow
                     key={row.subject}
                     label={row.subject}
-                    passRate={row.passRate}
-                    unreviewedRate={row.unreviewedRate}
+                    value={row[metric]}
+                    barColor={barColor}
                 />
             ))}
             {/* Axis labels */}

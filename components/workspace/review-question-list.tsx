@@ -237,9 +237,9 @@ export function ReviewQuestionList({
     const [reportSubjectFieldKey, setReportSubjectFieldKey] = useState("");
     const [reportDetailFields, setReportDetailFields] = useState<string[]>([
         "title",
-        "externalRecordId",
         "reviewDecision",
         "reviewComment",
+        "datasourceId",
     ]);
     const [isExportingReport, setIsExportingReport] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);

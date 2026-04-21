@@ -20,7 +20,6 @@ import {
     Layers3,
     PlugZap,
     RefreshCw,
-    ScanSearch,
     Users,
 } from "lucide-react";
 
@@ -522,51 +521,21 @@ export default async function DashboardPage() {
                                     lineHeight: 1.1,
                                 }}
                             >
-                                题目流转
+                                人工审核通过率
                             </h2>
                             <div className="muted" style={{ marginTop: 8 }}>
-                                首页只看真正影响运营动作的题目状态分布。
+                                各学科人工审核通过占已审核总量的比例。
                             </div>
                         </div>
                     </div>
-
-                    <div className="overview-status-grid">
-                        <div className="overview-status-item">
-                            <span className="overview-status-label">草稿</span>
-                            <strong>{overview.questionStatuses.DRAFT}</strong>
-                        </div>
-                        <div className="overview-status-item">
-                            <span className="overview-status-label">
-                                已提交
-                            </span>
-                            <strong>
-                                {overview.questionStatuses.SUBMITTED}
-                            </strong>
-                        </div>
-                        <div className="overview-status-item">
-                            <span className="overview-status-label">
-                                审核中
-                            </span>
-                            <strong>
-                                {overview.questionStatuses.UNDER_REVIEW}
-                            </strong>
-                        </div>
-                        <div className="overview-status-item">
-                            <span className="overview-status-label">通过</span>
-                            <strong>
-                                {overview.questionStatuses.APPROVED}
-                            </strong>
-                        </div>
-                        <div className="overview-status-item">
-                            <span className="overview-status-label">驳回</span>
-                            <strong>
-                                {overview.questionStatuses.REJECTED}
-                            </strong>
-                        </div>
-                    </div>
+                    <SubjectStatsChart
+                        stats={overview.subjectStats}
+                        metric="passRate"
+                        barColor="var(--color-success, #52c41a)"
+                    />
                 </div>
 
-                <section className="content-surface">
+                <div className="content-surface">
                     <div className="section-head">
                         <div>
                             <h2
@@ -576,93 +545,19 @@ export default async function DashboardPage() {
                                     lineHeight: 1.1,
                                 }}
                             >
-                                当前焦点
+                                人工未审核率
                             </h2>
-                        </div>
-                    </div>
-
-                    <div className="overview-detail-list">
-                        <div className="overview-detail-item static">
-                            <div className="overview-detail-main">
-                                <div className="overview-item-title">
-                                    待审核题目
-                                </div>
-                                <div className="overview-item-meta">
-                                    当前积压量
-                                </div>
-                            </div>
-                            <div className="overview-inline-metrics">
-                                <span>{overview.pendingQuestionCount}</span>
-                            </div>
-                        </div>
-                        <div className="overview-detail-item static">
-                            <div className="overview-detail-main">
-                                <div className="overview-item-title">
-                                    近 7 天人工审核
-                                </div>
-                                <div className="overview-item-meta">
-                                    已完成审核
-                                </div>
-                            </div>
-                            <div className="overview-inline-metrics">
-                                <span>{overview.completedReviews7d}</span>
-                            </div>
-                        </div>
-                        <div className="overview-detail-item static">
-                            <div className="overview-detail-main">
-                                <div className="overview-item-title">
-                                    近 7 天驳回
-                                </div>
-                                <div className="overview-item-meta">
-                                    审核未通过的题目
-                                </div>
-                            </div>
-                            <div className="overview-inline-metrics">
-                                <span>{overview.rejectedReviews7d}</span>
-                            </div>
-                        </div>
-                        <div className="overview-detail-item static">
-                            <div className="overview-detail-main">
-                                <div className="overview-item-title">
-                                    同步成功 / 失败
-                                </div>
-                                <div className="overview-item-meta">
-                                    近 7 天
-                                </div>
-                            </div>
-                            <div className="overview-inline-metrics">
-                                <span>
-                                    {overview.syncSummary7d.successCount}
-                                </span>
-                                <span>
-                                    {overview.syncSummary7d.failedCount}
-                                </span>
+                            <div className="muted" style={{ marginTop: 8 }}>
+                                各学科尚无人工审核记录的题目占比。
                             </div>
                         </div>
                     </div>
-
-                    <div className="overview-side-actions">
-                        <QuickLinks
-                            links={[
-                                {
-                                    href: "/admin/projects",
-                                    label: "项目管理",
-                                    icon: FolderKanban,
-                                },
-                                {
-                                    href: "/admin/datasources",
-                                    label: "数据源",
-                                    icon: DatabaseZap,
-                                },
-                                {
-                                    href: "/admin/review-tasks",
-                                    label: "审核任务",
-                                    icon: ScanSearch,
-                                },
-                            ]}
-                        />
-                    </div>
-                </section>
+                    <SubjectStatsChart
+                        stats={overview.subjectStats}
+                        metric="unreviewedRate"
+                        barColor="var(--color-warning, #faad14)"
+                    />
+                </div>
             </section>
 
             <section className="overview-two-column">
@@ -702,26 +597,6 @@ export default async function DashboardPage() {
                     </div>
                     <RecentSyncList items={overview.recentFailedSyncs} />
                 </section>
-            </section>
-
-            <section className="content-surface">
-                <div className="section-head">
-                    <div>
-                        <h2
-                            style={{
-                                margin: 0,
-                                fontSize: 24,
-                                lineHeight: 1.1,
-                            }}
-                        >
-                            分学科审核统计
-                        </h2>
-                        <div className="muted" style={{ marginTop: 8 }}>
-                            各一级学科的人工审核通过率与未审核率。
-                        </div>
-                    </div>
-                </div>
-                <SubjectStatsChart stats={overview.subjectStats} />
             </section>
         </>
     );
