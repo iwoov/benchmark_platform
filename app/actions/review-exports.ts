@@ -740,6 +740,11 @@ function wrapMarkdownInHtml(markdown: string, projectName: string) {
                 } else {
                     acc.push(`<p>${escapeHtml(line)}</p>`);
                 }
+            } else if (line.startsWith("**") && line.endsWith("**")) {
+                // Standalone bold: **label**
+                acc.push(
+                    `<p><strong>${escapeHtml(line.slice(2, -2))}</strong></p>`,
+                );
             } else if (line.startsWith("_（") && line.endsWith("）_")) {
                 acc.push(`<p><em>${escapeHtml(line.slice(2, -2))}</em></p>`);
             } else if (line === "") {
@@ -749,6 +754,9 @@ function wrapMarkdownInHtml(markdown: string, projectName: string) {
                     acc.push("</table>");
                 }
                 acc.push("");
+            } else if (line.trim()) {
+                // Plain text content (field values, etc.)
+                acc.push(`<p>${escapeHtml(line)}</p>`);
             }
 
             return acc;
