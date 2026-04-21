@@ -10,6 +10,7 @@ import {
     type RiskProject,
 } from "@/lib/dashboard/overview";
 import { isSuperAdminRole } from "@/lib/auth/roles";
+import { SubjectStatsChart } from "@/components/dashboard/subject-stats-chart";
 import {
     Bot,
     BrainCircuit,
@@ -701,6 +702,26 @@ export default async function DashboardPage() {
                     </div>
                     <RecentSyncList items={overview.recentFailedSyncs} />
                 </section>
+            </section>
+
+            <section className="content-surface">
+                <div className="section-head">
+                    <div>
+                        <h2
+                            style={{
+                                margin: 0,
+                                fontSize: 24,
+                                lineHeight: 1.1,
+                            }}
+                        >
+                            分学科审核统计
+                        </h2>
+                        <div className="muted" style={{ marginTop: 8 }}>
+                            各一级学科的人工审核通过率与未审核率。
+                        </div>
+                    </div>
+                </div>
+                <SubjectStatsChart stats={overview.subjectStats} />
             </section>
         </>
     );

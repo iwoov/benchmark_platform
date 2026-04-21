@@ -62,6 +62,16 @@ export type RiskProject = {
     href: string;
 };
 
+export type SubjectStat = {
+    subject: string;
+    total: number;
+    approved: number;
+    rejected: number;
+    unreviewed: number;
+    passRate: number;
+    unreviewedRate: number;
+};
+
 export type ReviewerPriorityProject = {
     projectId: string;
     projectName: string;
@@ -137,6 +147,7 @@ export type PlatformAdminOverviewData = {
     };
     recentFailedSyncs: RecentSyncIssue[];
     riskProjects: RiskProject[];
+    subjectStats: SubjectStat[];
 };
 
 export type AdminOverviewData =
@@ -258,6 +269,7 @@ function emptyPlatformAdminOverview(): PlatformAdminOverviewData {
         },
         recentFailedSyncs: [],
         riskProjects: [],
+        subjectStats: [],
     };
 }
 
@@ -555,6 +567,7 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
         pendingByProjectRows,
         failedSyncByProjectRows,
         failedBatchByProjectRows,
+        subjectStatusRows,
     ] = await Promise.all([
         prisma.project.count({
             where: {
@@ -702,6 +715,12 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
                 _all: true,
             },
         }),
+        prisma.question.groupBy({
+            by: ["title", "status"],
+            _count: {
+                _all: true,
+            },
+        }),
     ]);
 
     const questionStatuses = applyQuestionStatusCounts(
@@ -711,6 +730,43 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
     const pendingByProject = mapCountRows(pendingByProjectRows);
     const failedSyncByProject = mapCountRows(failedSyncByProjectRows);
     const failedBatchByProject = mapCountRows(failedBatchByProjectRows);
+
+    // Build per-subject stats
+    const subjectMap = new Map<
+        string,
+        { approved: number; rejected: number; unreviewed: number }
+    >();
+    for (const row of subjectStatusRows) {
+        const subject = row.title ?? "(未知学科)";
+        const current = subjectMap.get(subject) ?? {
+            approved: 0,
+            rejected: 0,
+            unreviewed: 0,
+        };
+        if (row.status === QuestionStatus.APPROVED) {
+            current.approved += row._count._all;
+        } else if (row.status === QuestionStatus.REJECTED) {
+            current.rejected += row._count._all;
+        } else {
+            current.unreviewed += row._count._all;
+        }
+        subjectMap.set(subject, current);
+    }
+    const subjectStats: SubjectStat[] = Array.from(subjectMap.entries())
+        .map(([subject, counts]) => {
+            const total = counts.approved + counts.rejected + counts.unreviewed;
+            const reviewed = counts.approved + counts.rejected;
+            return {
+                subject,
+                total,
+                approved: counts.approved,
+                rejected: counts.rejected,
+                unreviewed: counts.unreviewed,
+                passRate: reviewed > 0 ? Number(((counts.approved / reviewed) * 100).toFixed(1)) : 0,
+                unreviewedRate: total > 0 ? Number(((counts.unreviewed / total) * 100).toFixed(1)) : 0,
+            };
+        })
+        .sort((a, b) => b.total - a.total);
 
     const riskProjects = activeProjectRows
         .map((project) => ({
@@ -776,6 +832,7 @@ async function getPlatformAdminOverview(): Promise<PlatformAdminOverviewData> {
             href: `/admin/datasources`,
         })),
         riskProjects,
+        subjectStats,
     };
 }
 

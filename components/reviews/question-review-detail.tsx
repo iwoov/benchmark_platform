@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { App, Button, Input, Select, Space, Tag } from "antd";
+import { App, Button, Checkbox, Input, Select, Space, Tag } from "antd";
 import {
     ArrowLeft,
     ChevronLeft,
@@ -329,7 +329,16 @@ export function QuestionReviewDetail({
     const { notification } = App.useApp();
     const [decision, setDecision] = useState<"PASS" | "REJECT">("PASS");
     const [comment, setComment] = useState("");
+    const [useReuseAiComment, setUseReuseAiComment] = useState(true);
     const [chatOpen, setChatOpen] = useState(false);
+
+    const latestAiComment = (() => {
+        for (const run of strategyRuns) {
+            const summary = run.parsedResult?.finalRecommendation?.summary;
+            if (summary) return summary;
+        }
+        return null;
+    })();
     const [fieldTranslations, setFieldTranslations] = useState<
         Record<
             string,
@@ -391,11 +400,13 @@ export function QuestionReviewDetail({
     }, []);
 
     function submitReview() {
+        const effectiveComment =
+            useReuseAiComment && latestAiComment ? latestAiComment : comment;
         startSubmitting(async () => {
             const result = await submitReviewAction({
                 questionId: question.id,
                 decision,
-                comment,
+                comment: effectiveComment,
             });
 
             if (result.error) {
@@ -816,10 +827,17 @@ export function QuestionReviewDetail({
                                 </div>
 
                                 <div style={{ display: "grid", gap: 16 }}>
-                                    <div>
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8,
+                                        }}
+                                    >
                                         <label
                                             className="field-label"
                                             htmlFor="review-decision"
+                                            style={{ marginBottom: 0, flexShrink: 0 }}
                                         >
                                             审核结论
                                         </label>
@@ -844,17 +862,47 @@ export function QuestionReviewDetail({
                                     </div>
 
                                     <div>
-                                        <label
-                                            className="field-label"
-                                            htmlFor="review-comment"
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 8,
+                                                marginBottom: 6,
+                                            }}
                                         >
-                                            审核意见
-                                        </label>
+                                            <label
+                                                className="field-label"
+                                                htmlFor="review-comment"
+                                                style={{ marginBottom: 0 }}
+                                            >
+                                                审核意见
+                                            </label>
+                                            {latestAiComment ? (
+                                                <Checkbox
+                                                    checked={useReuseAiComment}
+                                                    onChange={(e) =>
+                                                        setUseReuseAiComment(
+                                                            e.target.checked,
+                                                        )
+                                                    }
+                                                >
+                                                    复用AI审核意见
+                                                </Checkbox>
+                                            ) : null}
+                                        </div>
                                         <Input.TextArea
                                             id="review-comment"
-                                            value={comment}
+                                            value={
+                                                useReuseAiComment && latestAiComment
+                                                    ? latestAiComment
+                                                    : comment
+                                            }
                                             onChange={(event) =>
                                                 setComment(event.target.value)
+                                            }
+                                            disabled={
+                                                useReuseAiComment &&
+                                                !!latestAiComment
                                             }
                                             rows={6}
                                             placeholder="请输入审核意见、修改建议或驳回原因"

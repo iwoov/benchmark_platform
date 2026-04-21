@@ -174,10 +174,7 @@ function buildAutoReviewComment(
     >,
     stepResults: StepExecutionResult[],
 ) {
-    const lines = [
-        `[AI 审核策略] ${strategy.name} (${strategy.code})`,
-        finalRecommendation.summary,
-    ];
+    const lines = [finalRecommendation.summary];
 
     const stepSummaries = stepResults
         .filter((step) => step.status !== "SKIPPED")
@@ -907,6 +904,10 @@ function coerceAiOutput(
         payload.summary = toLooseString(payload.summary) ?? "";
         payload.keyIssues = toStringList(payload.keyIssues);
         payload.riskLevel = normalizeSeverity(payload.riskLevel);
+        // Normalize decision: only PASS is accepted as-is; anything else (NEEDS_REVISION, etc.) maps to REJECT
+        if (payload.recommendedDecision !== "PASS") {
+            payload.recommendedDecision = "REJECT";
+        }
     }
 
     return payload;

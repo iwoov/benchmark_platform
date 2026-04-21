@@ -603,8 +603,7 @@ export function ReviewQuestionList({
         if (!selectedExportFields.length) {
             setSelectedExportFields([
                 "externalRecordId",
-                "status",
-                "reviewDecision",
+                "manualReviewStatus",
                 "reviewComment",
             ]);
         }

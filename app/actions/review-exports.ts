@@ -529,16 +529,22 @@ export async function exportReviewQuestionsAction(
         const headers = parsed.data.fieldKeys.map((fieldKey) =>
             fieldLabel(fieldKey),
         );
-        const lines = [
-            `| ${headers.join(" | ")} |`,
-            `| ${headers.map(() => "---").join(" | ")} |`,
-            ...rows.map((row) => {
-                const values = headers.map((header) =>
-                    markdownEscape(formatCellValue(row[header] ?? "")),
-                );
-                return `| ${values.join(" | ")} |`;
-            }),
-        ];
+        const blocks: string[] = [];
+        for (const row of rows) {
+            for (const header of headers) {
+                const raw = formatCellValue(row[header] ?? "");
+                const value = raw
+                    .split("\n")
+                    .map((l, i) => (i === 0 ? l : `  ${l}`))
+                    .join("\n");
+                blocks.push(`**${header}**`);
+                blocks.push("");
+                blocks.push(value);
+                blocks.push("");
+            }
+            blocks.push("---");
+            blocks.push("");
+        }
 
         return {
             success:
@@ -547,7 +553,7 @@ export async function exportReviewQuestionsAction(
                     : `已导出勾选题目，共 ${rows.length} 条。`,
             fileName: `${fileNameBase}.md`,
             mimeType: "text/markdown;charset=utf-8",
-            base64: toBase64(lines.join("\n")),
+            base64: toBase64(blocks.join("\n")),
         };
     }
 
@@ -664,10 +670,16 @@ function buildReportMarkdown(
 
         for (const row of group.rows) {
             for (const header of detailHeaders) {
-                const value = formatCellValue(row[header] ?? "");
-                lines.push(`**${header}**：${value}  `);
+                const raw = formatCellValue(row[header] ?? "");
+                const value = raw
+                    .split("\n")
+                    .map((l, i) => (i === 0 ? l : `  ${l}`))
+                    .join("\n");
+                lines.push(`**${header}**`);
+                lines.push("");
+                lines.push(value);
+                lines.push("");
             }
-            lines.push("");
             lines.push("---");
             lines.push("");
         }
