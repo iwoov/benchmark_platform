@@ -5,7 +5,6 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { isAdminRole } from "@/lib/auth/roles";
-
 const createProjectSchema = z.object({
     name: z
         .string()
@@ -162,4 +161,42 @@ export async function createProjectAction(
     return {
         success: `项目 ${project.name} 已创建。`,
     };
+}
+
+export type SaveProjectFieldLabelMapState = {
+    error?: string;
+    success?: string;
+};
+
+export async function saveProjectFieldLabelMapAction(input: {
+    projectId: string;
+    labelMap: Record<string, string>;
+}): Promise<SaveProjectFieldLabelMapState> {
+    const session = await auth();
+
+    if (!session?.user || !isAdminRole(session.user.platformRole)) {
+        return {
+            error: "只有超级管理员或平台管理员可以修改字段映射。",
+        };
+    }
+
+    if (!input.projectId) {
+        return { error: "项目 ID 无效。" };
+    }
+
+    // 清理：去掉值为空的条目，只保留有效映射
+    const sanitized = Object.fromEntries(
+        Object.entries(input.labelMap).filter(([k, v]) => k.trim() && v.trim()),
+    );
+
+    await prisma.project.update({
+        where: { id: input.projectId },
+        data: { fieldLabelMap: sanitized },
+    });
+
+    revalidatePath("/admin/projects");
+    revalidatePath("/admin/review-tasks");
+    revalidatePath("/workspace/reviews");
+
+    return { success: "字段映射已保存。" };
 }

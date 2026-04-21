@@ -1,14 +1,18 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
-import { App, Button, Modal, Space, Tag } from "antd";
-import { Settings2, Trash2, UserPlus, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { App, Button, Empty, Input, Modal, Space, Tag } from "antd";
+import { Map, Settings2, Trash2, UserPlus, X } from "lucide-react";
 import {
     assignProjectMemberAction,
     removeProjectMemberAction,
     type ProjectMemberFormState,
 } from "@/app/actions/project-members";
-import { deleteProjectAction } from "@/app/actions/projects";
+import {
+    deleteProjectAction,
+    saveProjectFieldLabelMapAction,
+} from "@/app/actions/projects";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
     getProjectRoleColor,
@@ -42,6 +46,8 @@ type ProjectOption = {
     code: string;
     status: string;
     datasourcesCount: number;
+    rawFieldKeys: string[];
+    fieldLabelMap: Record<string, string>;
     members: ProjectMemberItem[];
 };
 
@@ -54,6 +60,7 @@ export function ProjectMembersManager({
     projects: ProjectOption[];
     users: UserOption[];
 }) {
+    const router = useRouter();
     const { notification } = App.useApp();
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
     const [assignState, assignAction, assignPending] = useActionState(
@@ -67,6 +74,13 @@ export function ProjectMembersManager({
     const [isDeletePending, startDeleteTransition] = useTransition();
     const [pendingDeleteProject, setPendingDeleteProject] =
         useState<ProjectOption | null>(null);
+    const [fieldMapProjectId, setFieldMapProjectId] = useState<string | null>(
+        null,
+    );
+    const [fieldMapDraft, setFieldMapDraft] = useState<Record<string, string>>(
+        {},
+    );
+    const [isSavingFieldMap, setIsSavingFieldMap] = useState(false);
 
     useActionNotification(assignState, {
         successTitle: "成员已更新",
@@ -108,6 +122,50 @@ export function ProjectMembersManager({
             projects.find((project) => project.id === activeProjectId) ?? null,
         [projects, activeProjectId],
     );
+
+    const fieldMapProject = useMemo(
+        () =>
+            projects.find((project) => project.id === fieldMapProjectId) ??
+            null,
+        [projects, fieldMapProjectId],
+    );
+
+    function openFieldMapModal(project: ProjectOption) {
+        setFieldMapDraft({ ...project.fieldLabelMap });
+        setFieldMapProjectId(project.id);
+    }
+
+    async function saveFieldMap() {
+        if (!fieldMapProjectId) return;
+
+        setIsSavingFieldMap(true);
+
+        try {
+            const result = await saveProjectFieldLabelMapAction({
+                projectId: fieldMapProjectId,
+                labelMap: fieldMapDraft,
+            });
+
+            if (result.error) {
+                notification.error({
+                    message: "保存失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "字段映射已保存",
+                description: result.success,
+                placement: "topRight",
+            });
+            setFieldMapProjectId(null);
+            router.refresh();
+        } finally {
+            setIsSavingFieldMap(false);
+        }
+    }
 
     return (
         <>
@@ -161,6 +219,12 @@ export function ProjectMembersManager({
                                     }
                                 >
                                     成员管理
+                                </Button>
+                                <Button
+                                    icon={<Map size={16} />}
+                                    onClick={() => openFieldMapModal(project)}
+                                >
+                                    字段映射
                                 </Button>
                                 <Button
                                     danger
@@ -401,6 +465,101 @@ export function ProjectMembersManager({
                         <p style={{ color: "var(--danger)", marginTop: 12 }}>
                             此操作不可恢复，请谨慎操作。
                         </p>
+                    </div>
+                ) : null}
+            </Modal>
+
+            <Modal
+                open={Boolean(fieldMapProject)}
+                onCancel={() => setFieldMapProjectId(null)}
+                onOk={saveFieldMap}
+                okText={isSavingFieldMap ? "保存中..." : "保存映射"}
+                cancelText="取消"
+                confirmLoading={isSavingFieldMap}
+                width={680}
+                destroyOnHidden
+                title={
+                    fieldMapProject ? (
+                        <div>
+                            <div style={{ fontSize: 18, fontWeight: 700 }}>
+                                字段名称映射 · {fieldMapProject.name}
+                            </div>
+                            <div
+                                className="muted"
+                                style={{ marginTop: 4, fontSize: 13 }}
+                            >
+                                为原始字段配置显示名称，空白则沿用原始字段名。
+                            </div>
+                        </div>
+                    ) : null
+                }
+            >
+                {fieldMapProject ? (
+                    <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
+                        <div className="workspace-tip">
+                            <Tag color="blue">说明</Tag>
+                            <span>
+                                配置后，题目列表、详情页及筛选条件中将显示映射后的名称，原始字段名作为辅助标注。
+                            </span>
+                        </div>
+
+                        {fieldMapProject.rawFieldKeys.length === 0 ? (
+                            <Empty description="该项目暂无已导入的原始字段，请先导入数据源。" />
+                        ) : (
+                            <div style={{ display: "grid", gap: 10 }}>
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns: "1fr 1fr",
+                                        gap: 12,
+                                        padding: "0 4px",
+                                        fontSize: 12,
+                                        color: "var(--color-text-muted, #667085)",
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    <div>原始字段名</div>
+                                    <div>显示名称</div>
+                                </div>
+
+                                {fieldMapProject.rawFieldKeys.map((key) => (
+                                    <div
+                                        key={key}
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "1fr 1fr",
+                                            gap: 12,
+                                            alignItems: "center",
+                                        }}
+                                    >
+                                        <div
+                                            className="muted"
+                                            style={{
+                                                fontFamily: "monospace",
+                                                fontSize: 13,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            }}
+                                            title={key}
+                                        >
+                                            {key}
+                                        </div>
+                                        <Input
+                                            value={fieldMapDraft[key] ?? ""}
+                                            placeholder={key}
+                                            size="middle"
+                                            onChange={(e) =>
+                                                setFieldMapDraft((prev) => ({
+                                                    ...prev,
+                                                    [key]: e.target.value,
+                                                }))
+                                            }
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ) : null}
             </Modal>

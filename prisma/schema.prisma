@@ -130,6 +130,7 @@ model Project {
   name                      String
   code                      String                             @unique
   description               String?
+  fieldLabelMap             Json?
   status                    ProjectStatus                      @default(ACTIVE)
   createdById               String
   createdBy                 User                               @relation("ProjectCreator", fields: [createdById], references: [id])

@@ -40,10 +40,25 @@ function normalizeFieldKeys(fieldKeys: string[]) {
     return normalized;
 }
 
-function toFieldOptions(fieldKeys: string[]): ReviewFieldOption[] {
-    return fieldKeys.map((fieldKey) => ({
-        key: fieldKey,
-        label: fieldKey,
+function parseFieldLabelMap(value: unknown): Record<string, string> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+            .filter(([, v]) => typeof v === "string" && (v as string).trim())
+            .map(([k, v]) => [k, (v as string).trim()]),
+    );
+}
+
+function toFieldOptionsWithLabelMap(
+    fieldKeys: string[],
+    labelMap: Record<string, string>,
+): ReviewFieldOption[] {
+    return fieldKeys.map((key) => ({
+        key,
+        label: labelMap[key] || key,
     }));
 }
 
@@ -59,21 +74,30 @@ export async function getProjectReviewFieldCatalog(projectId: string) {
         return [] as ReviewFieldOption[];
     }
 
-    const datasources = await prisma.projectDataSource.findMany({
-        where: {
-            projectId,
-        },
-        orderBy: [{ createdAt: "asc" }],
-        select: {
-            syncConfig: true,
-        },
-    });
+    const [datasources, project] = await Promise.all([
+        prisma.projectDataSource.findMany({
+            where: {
+                projectId,
+            },
+            orderBy: [{ createdAt: "asc" }],
+            select: {
+                syncConfig: true,
+            },
+        }),
+        prisma.project.findUnique({
+            where: { id: projectId },
+            select: { fieldLabelMap: true },
+        }),
+    ]);
 
-    const fieldCatalog = normalizeFieldKeys(
-        datasources.flatMap((datasource) => readRawFieldOrder(datasource.syncConfig)),
+    const labelMap = parseFieldLabelMap(project?.fieldLabelMap);
+    const fieldKeys = normalizeFieldKeys(
+        datasources.flatMap((datasource) =>
+            readRawFieldOrder(datasource.syncConfig),
+        ),
     );
 
-    return toFieldOptions(fieldCatalog);
+    return toFieldOptionsWithLabelMap(fieldKeys, labelMap);
 }
 
 export async function getUserProjectReviewFieldPreference(
@@ -84,17 +108,19 @@ export async function getUserProjectReviewFieldPreference(
         return null;
     }
 
-    const preference = await prisma.userProjectReviewFieldPreference.findUnique({
-        where: {
-            userId_projectId: {
-                userId,
-                projectId,
+    const preference = await prisma.userProjectReviewFieldPreference.findUnique(
+        {
+            where: {
+                userId_projectId: {
+                    userId,
+                    projectId,
+                },
+            },
+            select: {
+                config: true,
             },
         },
-        select: {
-            config: true,
-        },
-    });
+    );
 
     return preference ? parseStoredPreferenceConfig(preference.config) : null;
 }
@@ -106,12 +132,14 @@ export function resolveReviewFieldPreference({
     fieldCatalog: ReviewFieldOption[];
     preference: ReviewFieldPreferenceConfigV1 | null;
 }): ResolvedReviewFieldPreference {
-    const catalogKeys = normalizeFieldKeys(fieldCatalog.map((field) => field.key));
+    const catalogKeys = normalizeFieldKeys(
+        fieldCatalog.map((field) => field.key),
+    );
 
     if (!preference) {
         return {
             hasSavedPreference: false,
-            fieldCatalog: toFieldOptions(catalogKeys),
+            fieldCatalog,
             fieldOrder: catalogKeys,
             listVisibleFieldKeys: catalogKeys,
             detailVisibleFieldKeys: catalogKeys,
@@ -119,7 +147,9 @@ export function resolveReviewFieldPreference({
     }
 
     const preferredOrder = normalizeFieldKeys(
-        preference.fieldOrder.filter((fieldKey) => catalogKeys.includes(fieldKey)),
+        preference.fieldOrder.filter((fieldKey) =>
+            catalogKeys.includes(fieldKey),
+        ),
     );
     const remainingFieldKeys = catalogKeys.filter(
         (fieldKey) => !preferredOrder.includes(fieldKey),
@@ -128,7 +158,7 @@ export function resolveReviewFieldPreference({
 
     return {
         hasSavedPreference: true,
-        fieldCatalog: toFieldOptions(catalogKeys),
+        fieldCatalog,
         fieldOrder,
         listVisibleFieldKeys: normalizeFieldKeys(
             preference.listVisibleFieldKeys.filter((fieldKey) =>
@@ -171,7 +201,9 @@ export function sanitizeReviewFieldPreferenceInput({
 }): ReviewFieldPreferenceConfigV1 {
     const normalizedCatalogKeys = normalizeFieldKeys(fieldCatalogKeys);
     const normalizedFieldOrder = normalizeFieldKeys(
-        fieldOrder.filter((fieldKey) => normalizedCatalogKeys.includes(fieldKey)),
+        fieldOrder.filter((fieldKey) =>
+            normalizedCatalogKeys.includes(fieldKey),
+        ),
     );
     const missingFieldKeys = normalizedCatalogKeys.filter(
         (fieldKey) => !normalizedFieldOrder.includes(fieldKey),

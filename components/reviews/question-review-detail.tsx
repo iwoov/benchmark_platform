@@ -373,6 +373,10 @@ export function QuestionReviewDetail({
         (key) => [key, question.rawRecord[key]] as const,
     );
 
+    const rawFieldLabelMap = Object.fromEntries(
+        fieldPreference.fieldCatalog.map((field) => [field.key, field.label]),
+    );
+
     const imageFieldSet = new Set(question.imageFields ?? []);
     const imageMap = question.imageMap ?? {};
 
@@ -653,7 +657,22 @@ export function QuestionReviewDetail({
                                         >
                                             <div className="detail-field-head">
                                                 <div className="detail-field-label">
-                                                    {key}
+                                                    {rawFieldLabelMap[key] ??
+                                                        key}
+                                                    {rawFieldLabelMap[key] &&
+                                                    rawFieldLabelMap[key] !==
+                                                        key ? (
+                                                        <span
+                                                            className="muted"
+                                                            style={{
+                                                                fontWeight: 400,
+                                                                fontSize: 11,
+                                                                marginLeft: 6,
+                                                            }}
+                                                        >
+                                                            {key}
+                                                        </span>
+                                                    ) : null}
                                                     {isImageField ? (
                                                         <Tag
                                                             color="green"

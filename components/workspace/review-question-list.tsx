@@ -186,7 +186,6 @@ export function ReviewQuestionList({
     projects,
     questions,
     selectedProjectId,
-    selectedDatasourceId,
     currentPage,
     pageSize,
     totalQuestions,
@@ -202,7 +201,6 @@ export function ReviewQuestionList({
     projects: ProjectOption[];
     questions: ReviewQuestionItem[];
     selectedProjectId: string;
-    selectedDatasourceId: string;
     currentPage: number;
     pageSize: number;
     totalQuestions: number;
@@ -268,13 +266,13 @@ export function ReviewQuestionList({
             },
             {
                 value: "aiReviewStatus",
-                label: "AI审核状态",
+                label: "AI审核",
                 kind: "system",
                 valueType: "select",
             },
             {
                 value: "manualReviewStatus",
-                label: "人工审核状态",
+                label: "人工审核",
                 kind: "system",
                 valueType: "select",
             },
@@ -331,8 +329,8 @@ export function ReviewQuestionList({
             { value: "externalRecordId", label: "外部记录 ID" },
             { value: "title", label: "题目标题" },
             { value: "status", label: "题目状态" },
-            { value: "aiReviewStatus", label: "AI审核状态" },
-            { value: "manualReviewStatus", label: "人工审核状态" },
+            { value: "aiReviewStatus", label: "AI审核" },
+            { value: "manualReviewStatus", label: "人工审核" },
             { value: "updatedAt", label: "题目更新时间" },
             { value: "projectName", label: "项目名称" },
             { value: "projectCode", label: "项目编码" },
@@ -345,7 +343,7 @@ export function ReviewQuestionList({
         ];
         const rawFields = rawFieldOptions.map((field) => ({
             value: `raw:${field.key}`,
-            label: `原始字段 · ${field.label}`,
+            label: field.label,
         }));
 
         return [...baseFields, ...rawFields];
@@ -383,10 +381,12 @@ export function ReviewQuestionList({
         "160px",
         "140px",
         "140px",
+        "140px",
         "180px",
         ...rawColumns.map(() => "220px"),
     ].join(" ");
-    const tableWidth = 52 + 160 + 140 + 140 + 180 + rawColumns.length * 220;
+    const tableWidth =
+        52 + 160 + 140 + 140 + 140 + 180 + rawColumns.length * 220;
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -422,10 +422,6 @@ export function ReviewQuestionList({
             pageSize: String(pageSize),
         });
 
-        if (selectedDatasourceId) {
-            search.set("datasourceId", selectedDatasourceId);
-        }
-
         const serializedFilters =
             serializeReviewQuestionFilterConditions(activeConditions);
 
@@ -434,14 +430,7 @@ export function ReviewQuestionList({
         }
 
         writeStoredReviewListHref(listPath, `${listPath}?${search.toString()}`);
-    }, [
-        activeConditions,
-        currentPage,
-        listPath,
-        pageSize,
-        selectedDatasourceId,
-        selectedProjectId,
-    ]);
+    }, [activeConditions, currentPage, listPath, pageSize, selectedProjectId]);
 
     function buildQuestionDetailPath(questionId: string) {
         const search = new URLSearchParams({
@@ -449,10 +438,6 @@ export function ReviewQuestionList({
             page: String(currentPage),
             pageSize: String(pageSize),
         });
-
-        if (selectedDatasourceId) {
-            search.set("datasourceId", selectedDatasourceId);
-        }
 
         const serializedFilters =
             serializeReviewQuestionFilterConditions(activeConditions);
@@ -466,7 +451,6 @@ export function ReviewQuestionList({
 
     function pushListState(next: {
         projectId?: string;
-        datasourceId?: string;
         page?: number;
         pageSize?: number;
         conditions?: ReviewQuestionFilterCondition[];
@@ -476,11 +460,6 @@ export function ReviewQuestionList({
             page: String(next.page ?? currentPage),
             pageSize: String(next.pageSize ?? pageSize),
         });
-        const nextDatasourceId = next.datasourceId ?? selectedDatasourceId;
-
-        if (nextDatasourceId) {
-            search.set("datasourceId", nextDatasourceId);
-        }
 
         const serializedFilters = serializeReviewQuestionFilterConditions(
             next.conditions ?? activeConditions,
@@ -845,7 +824,6 @@ export function ReviewQuestionList({
                                     setSelectedQuestionIds([]);
                                     pushListState({
                                         projectId: value,
-                                        datasourceId: "",
                                         page: 1,
                                         conditions: [],
                                     });
@@ -858,29 +836,6 @@ export function ReviewQuestionList({
                                 size="middle"
                             />
                         </div>
-
-                        {datasourceOptions.length > 0 && (
-                            <div className="review-toolbar-field">
-                                <div className="review-toolbar-label">
-                                    数据源
-                                </div>
-                                <Select
-                                    value={selectedDatasourceId || undefined}
-                                    onChange={(value) => {
-                                        setSelectedQuestionIds([]);
-                                        pushListState({
-                                            datasourceId: value ?? "",
-                                            page: 1,
-                                        });
-                                    }}
-                                    allowClear
-                                    placeholder="全部数据源"
-                                    options={datasourceOptions}
-                                    style={{ minWidth: 220 }}
-                                    size="middle"
-                                />
-                            </div>
-                        )}
 
                         <div className="review-toolbar-actions">
                             {selectedProject ? (
@@ -1086,10 +1041,9 @@ export function ReviewQuestionList({
                                             />
                                         </div>
                                         <div style={cellStyle}>外部记录 ID</div>
-                                        <div style={cellStyle}>AI审核状态</div>
-                                        <div style={cellStyle}>
-                                            人工审核状态
-                                        </div>
+                                        <div style={cellStyle}>AI审核</div>
+                                        <div style={cellStyle}>人工审核</div>
+                                        <div style={cellStyle}>数据源</div>
                                         <div style={cellStyle}>更新时间</div>
                                         {rawColumns.map((column) => (
                                             <div
@@ -1235,6 +1189,15 @@ export function ReviewQuestionList({
                                                         </Tag>
                                                     </div>
                                                 </div>
+                                                <div
+                                                    className="muted"
+                                                    style={cellStyle}
+                                                    title={
+                                                        question.datasourceName
+                                                    }
+                                                >
+                                                    {question.datasourceName}
+                                                </div>
                                                 <div className="muted">
                                                     {new Date(
                                                         question.updatedAt,
@@ -1360,11 +1323,7 @@ export function ReviewQuestionList({
                                                 options={fieldDefinitions.map(
                                                     (definition) => ({
                                                         value: definition.value,
-                                                        label:
-                                                            definition.kind ===
-                                                            "raw"
-                                                                ? `原始字段 · ${definition.label}`
-                                                                : definition.label,
+                                                        label: definition.label,
                                                     }),
                                                 )}
                                                 size="middle"
@@ -1530,9 +1489,6 @@ export function ReviewQuestionList({
                                                         ),
                                                     );
                                                 }}
-                                                disabled={
-                                                    draftConditions.length === 1
-                                                }
                                             >
                                                 删除
                                             </Button>
@@ -1543,6 +1499,19 @@ export function ReviewQuestionList({
                                     );
                                 })}
                             </div>
+
+                            <Button
+                                onClick={() => {
+                                    setDraftConditions((prev) => [
+                                        ...prev,
+                                        createReviewQuestionFilterCondition(
+                                            prev.length + 1,
+                                        ),
+                                    ]);
+                                }}
+                            >
+                                + 添加条件
+                            </Button>
                         </div>
                     </Modal>
 

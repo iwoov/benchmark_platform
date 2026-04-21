@@ -56,54 +56,43 @@ export default async function WorkspaceReviewsPage({
             ? resolvedSearchParams.filters[0]
             : resolvedSearchParams.filters,
     );
-    const requestedDatasourceId = Array.isArray(
-        resolvedSearchParams.datasourceId,
-    )
-        ? resolvedSearchParams.datasourceId[0]
-        : resolvedSearchParams.datasourceId;
 
-    const [questionPage, reviewStrategies, filterMeta, fieldPreference] = selectedProjectId
-        ? await Promise.all([
-              getReviewQuestionListPageData({
-                  projectId: selectedProjectId,
-                  datasourceId: requestedDatasourceId,
-                  page: requestedPage,
-                  pageSize: requestedPageSize,
-                  conditions: filters,
-              }),
-              getReviewQuestionListAiStrategies([selectedProjectId]),
-              getReviewQuestionListFilterMeta(selectedProjectId),
-              getResolvedUserProjectReviewFieldPreference(
-                  session?.user?.id ?? "",
-                  selectedProjectId,
-              ),
-          ])
-        : [
-              {
-                  items: [],
-                  total: 0,
-                  page: 1,
-                  pageSize: 50,
-              },
-              [],
-              {
-                  datasourceOptions: [],
-                  rawFieldOptions: [],
-              },
-              {
-                  hasSavedPreference: false,
-                  fieldCatalog: [],
-                  fieldOrder: [],
-                  listVisibleFieldKeys: [],
-                  detailVisibleFieldKeys: [],
-              },
-          ];
-
-    const selectedDatasourceId = filterMeta.datasourceOptions.some(
-        (option) => option.value === requestedDatasourceId,
-    )
-        ? (requestedDatasourceId as string)
-        : "";
+    const [questionPage, reviewStrategies, filterMeta, fieldPreference] =
+        selectedProjectId
+            ? await Promise.all([
+                  getReviewQuestionListPageData({
+                      projectId: selectedProjectId,
+                      page: requestedPage,
+                      pageSize: requestedPageSize,
+                      conditions: filters,
+                  }),
+                  getReviewQuestionListAiStrategies([selectedProjectId]),
+                  getReviewQuestionListFilterMeta(selectedProjectId),
+                  getResolvedUserProjectReviewFieldPreference(
+                      session?.user?.id ?? "",
+                      selectedProjectId,
+                  ),
+              ])
+            : [
+                  {
+                      items: [],
+                      total: 0,
+                      page: 1,
+                      pageSize: 50,
+                  },
+                  [],
+                  {
+                      datasourceOptions: [],
+                      rawFieldOptions: [],
+                  },
+                  {
+                      hasSavedPreference: false,
+                      fieldCatalog: [],
+                      fieldOrder: [],
+                      listVisibleFieldKeys: [],
+                      detailVisibleFieldKeys: [],
+                  },
+              ];
 
     return (
         <ReviewQuestionList
@@ -119,7 +108,6 @@ export default async function WorkspaceReviewsPage({
             )}
             questions={questionPage.items}
             selectedProjectId={selectedProjectId}
-            selectedDatasourceId={selectedDatasourceId}
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}
