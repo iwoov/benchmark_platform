@@ -463,7 +463,7 @@ export function AiChatSidebar({
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-                    autoSize={{ minRows: 1, maxRows: 4 }}
+                    autoSize={{ minRows: 1, maxRows: 10 }}
                     disabled={isStreaming || !selectedConfig}
                     size="small"
                 />

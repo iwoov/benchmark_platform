@@ -82,7 +82,68 @@ function getJsonDisplayValue(value: unknown): string | null {
     }
 }
 
-function renderRawFieldValue(value: unknown) {
+function coerceToPrimitiveArray(value: unknown): string[] | null {
+    const tryFromArray = (arr: unknown[]): string[] | null => {
+        if (!arr.length) {
+            return null;
+        }
+        const out: string[] = [];
+        for (const item of arr) {
+            if (item == null) continue;
+            if (
+                typeof item === "string" ||
+                typeof item === "number" ||
+                typeof item === "boolean"
+            ) {
+                const text = String(item).trim();
+                if (text) out.push(text);
+                continue;
+            }
+            // any non-primitive entry → bail out, let caller fall back
+            return null;
+        }
+        return out.length ? out : null;
+    };
+
+    if (Array.isArray(value)) {
+        return tryFromArray(value);
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            try {
+                const parsed = JSON.parse(trimmed) as unknown;
+                if (Array.isArray(parsed)) {
+                    return tryFromArray(parsed);
+                }
+            } catch {
+                /* fall through */
+            }
+        }
+    }
+
+    return null;
+}
+
+function renderOptionsList(items: string[]) {
+    return (
+        <ul className="detail-field-options">
+            {items.map((item, index) => (
+                <li key={`${index}-${item}`}>{item}</li>
+            ))}
+        </ul>
+    );
+}
+
+function renderRawFieldValue(value: unknown, key?: string) {
+    if (key && key.toLowerCase() === "options") {
+        const items = coerceToPrimitiveArray(value);
+        if (items && items.length) {
+            return renderOptionsList(items);
+        }
+    }
+
     const jsonDisplayValue = getJsonDisplayValue(value);
 
     if (jsonDisplayValue) {
@@ -739,6 +800,7 @@ export function QuestionReviewDetail({
                                                       )
                                                     : renderRawFieldValue(
                                                           value,
+                                                          key,
                                                       )}
                                             </div>
                                             {translationState?.loading ||

@@ -933,6 +933,18 @@ select {
     margin-top: 8px;
 }
 
+.detail-field-options {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+}
+
+.detail-field-options > li {
+    padding: 0;
+}
+
 .detail-field-translation {
     margin-top: 12px;
     padding: 10px 0 0;
