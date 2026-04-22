@@ -4,7 +4,10 @@ import {
     type Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { executeAiReviewStrategy } from "@/lib/ai/review-strategies";
+import {
+    executeAiReviewStrategy,
+    retryAiReviewStrategyRunItem,
+} from "@/lib/ai/review-strategies";
 import { aiReviewStrategyDefinitionSchema } from "@/lib/ai/review-strategy-schema";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 
@@ -67,6 +70,73 @@ function strategyAppliesToQuestion(
 
 function serializeJson(value: unknown) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+type RetryRunItemTaskPayload = {
+    mode: "RETRY_RUN_ITEM";
+    runId: string;
+    stepId: string;
+    itemIndex: number;
+    questionId: string;
+    result?: {
+        runId?: string;
+        status?: string;
+        finalRecommendation?: unknown;
+        reviewPersistence?: unknown;
+        errorMessage?: string;
+    };
+};
+
+export type AiReviewStrategyRetryStateView = {
+    key: string;
+    runId: string;
+    stepId: string;
+    itemIndex: number;
+    batchRunId: string;
+    status: BatchRunItemStatus;
+    errorMessage: string | null;
+    updatedAt: string;
+};
+
+function buildRetryStateKey(runId: string, stepId: string, itemIndex: number) {
+    return `${runId}:${stepId}:${itemIndex}`;
+}
+
+function parseRetryRunItemTaskPayload(
+    input: unknown,
+): RetryRunItemTaskPayload | null {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+    }
+
+    const candidate = input as Record<string, unknown>;
+
+    if (candidate.mode !== "RETRY_RUN_ITEM") {
+        return null;
+    }
+
+    if (
+        typeof candidate.runId !== "string" ||
+        typeof candidate.stepId !== "string" ||
+        typeof candidate.itemIndex !== "number" ||
+        typeof candidate.questionId !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        mode: "RETRY_RUN_ITEM",
+        runId: candidate.runId,
+        stepId: candidate.stepId,
+        itemIndex: candidate.itemIndex,
+        questionId: candidate.questionId,
+        result:
+            candidate.result &&
+            typeof candidate.result === "object" &&
+            !Array.isArray(candidate.result)
+                ? (candidate.result as RetryRunItemTaskPayload["result"])
+                : undefined,
+    };
 }
 
 type BatchCounts = {
@@ -505,6 +575,194 @@ export async function createAiReviewStrategyBatchRun(input: {
     };
 }
 
+export async function createAiReviewStrategyRetryRunItemBatchRun(input: {
+    runId: string;
+    stepId: string;
+    itemIndex: number;
+    createdById: string;
+}) {
+    if (!process.env.DATABASE_URL) {
+        throw new Error("当前未配置 DATABASE_URL，无法创建重试任务。");
+    }
+
+    const run = await prisma.aiReviewStrategyRun.findUnique({
+        where: {
+            id: input.runId,
+        },
+        select: {
+            id: true,
+            strategyId: true,
+            questionId: true,
+            question: {
+                select: {
+                    projectId: true,
+                },
+            },
+            strategy: {
+                select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                },
+            },
+        },
+    });
+
+    if (!run) {
+        throw new Error("运行记录不存在。");
+    }
+
+    const activeItems = await prisma.aiReviewStrategyBatchRunItem.findMany({
+        where: {
+            questionId: run.questionId,
+            status: {
+                in: [BatchRunItemStatus.PENDING, BatchRunItemStatus.RUNNING],
+            },
+            batchRun: {
+                projectId: run.question.projectId,
+                status: {
+                    in: [
+                        BatchRunStatus.PENDING,
+                        BatchRunStatus.RUNNING,
+                        BatchRunStatus.CANCEL_REQUESTED,
+                    ],
+                },
+            },
+        },
+        select: {
+            id: true,
+            resultPayload: true,
+        },
+    });
+
+    const duplicated = activeItems.some((item) => {
+        const payload = parseRetryRunItemTaskPayload(item.resultPayload);
+
+        return (
+            payload?.runId === input.runId &&
+            payload.stepId === input.stepId &&
+            payload.itemIndex === input.itemIndex
+        );
+    });
+
+    if (duplicated) {
+        throw new Error("该执行项已在待重试或执行中，请勿重复提交。");
+    }
+
+    const taskPayload: RetryRunItemTaskPayload = {
+        mode: "RETRY_RUN_ITEM",
+        runId: input.runId,
+        stepId: input.stepId,
+        itemIndex: input.itemIndex,
+        questionId: run.questionId,
+    };
+
+    const batchRun = await prisma.$transaction(async (tx) => {
+        const created = await tx.aiReviewStrategyBatchRun.create({
+            data: {
+                strategyId: run.strategyId,
+                projectId: run.question.projectId,
+                createdById: input.createdById,
+                status: BatchRunStatus.PENDING,
+                concurrency: 1,
+                totalCount: 1,
+                pendingCount: 1,
+                runningCount: 0,
+                successCount: 0,
+                failedCount: 0,
+                skippedCount: 0,
+                requestPayload: serializeJson(taskPayload),
+            },
+        });
+
+        await tx.aiReviewStrategyBatchRunItem.create({
+            data: {
+                batchRunId: created.id,
+                questionId: run.questionId,
+                sequence: 1,
+                status: BatchRunItemStatus.PENDING,
+                runId: input.runId,
+                resultPayload: serializeJson(taskPayload),
+            },
+        });
+
+        return created;
+    });
+
+    return {
+        id: batchRun.id,
+        status: batchRun.status,
+    };
+}
+
+export async function getAiReviewStrategyRetryStatesForQuestion(
+    questionId: string,
+    limit = 30,
+) {
+    if (!process.env.DATABASE_URL) {
+        return [] as AiReviewStrategyRetryStateView[];
+    }
+
+    const items = await prisma.aiReviewStrategyBatchRunItem.findMany({
+        where: {
+            questionId,
+            batchRun: {
+                status: {
+                    in: [
+                        BatchRunStatus.PENDING,
+                        BatchRunStatus.RUNNING,
+                        BatchRunStatus.CANCEL_REQUESTED,
+                        BatchRunStatus.SUCCESS,
+                        BatchRunStatus.FAILED,
+                    ],
+                },
+            },
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: limit,
+        select: {
+            batchRunId: true,
+            status: true,
+            errorMessage: true,
+            updatedAt: true,
+            resultPayload: true,
+        },
+    });
+
+    const deduped = new Map<string, AiReviewStrategyRetryStateView>();
+
+    for (const item of items) {
+        const payload = parseRetryRunItemTaskPayload(item.resultPayload);
+
+        if (!payload) {
+            continue;
+        }
+
+        const key = buildRetryStateKey(
+            payload.runId,
+            payload.stepId,
+            payload.itemIndex,
+        );
+
+        if (deduped.has(key)) {
+            continue;
+        }
+
+        deduped.set(key, {
+            key,
+            runId: payload.runId,
+            stepId: payload.stepId,
+            itemIndex: payload.itemIndex,
+            batchRunId: item.batchRunId,
+            status: item.status,
+            errorMessage: item.errorMessage,
+            updatedAt: item.updatedAt.toISOString(),
+        });
+    }
+
+    return [...deduped.values()];
+}
+
 export async function cancelAiReviewStrategyBatchRun(batchRunId: string) {
     const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
         where: {
@@ -723,6 +981,7 @@ async function claimNextBatchRun(workerId: string) {
                 createdById: true,
                 concurrency: true,
                 status: true,
+                requestPayload: true,
             },
         });
     }
@@ -778,19 +1037,37 @@ async function executeBatchRunItem(
         id: string;
         strategyId: string;
         createdById: string;
+        requestPayload: Prisma.JsonValue;
     },
     item: {
         id: string;
         questionId: string;
+        resultPayload: Prisma.JsonValue | null;
     },
 ) {
     const startedAt = Date.now();
+    const retryPayload =
+        parseRetryRunItemTaskPayload(item.resultPayload) ??
+        parseRetryRunItemTaskPayload(batchRun.requestPayload);
+
     try {
-        const result = await executeAiReviewStrategy(
-            batchRun.strategyId,
-            item.questionId,
-            batchRun.createdById,
-        );
+        const execution = retryPayload
+            ? await retryAiReviewStrategyRunItem(
+                  retryPayload.runId,
+                  retryPayload.stepId,
+                  retryPayload.itemIndex,
+              )
+            : await executeAiReviewStrategy(
+                  batchRun.strategyId,
+                  item.questionId,
+                  batchRun.createdById,
+              );
+        const executionRunId = "runId" in execution ? execution.runId : execution.id;
+        const executionParsedResult = execution.parsedResult;
+
+        if (!executionParsedResult) {
+            throw new Error("重试后的运行结果为空。");
+        }
 
         await prisma.aiReviewStrategyBatchRunItem.update({
             where: {
@@ -798,15 +1075,30 @@ async function executeBatchRunItem(
             },
             data: {
                 status: BatchRunItemStatus.SUCCESS,
-                runId: result.runId,
+                runId: executionRunId,
                 errorMessage: null,
-                resultPayload: serializeJson({
-                    runId: result.runId,
-                    status: result.parsedResult.status,
-                    finalRecommendation:
-                        result.parsedResult.finalRecommendation,
-                    reviewPersistence: result.parsedResult.reviewPersistence,
-                }),
+                resultPayload: serializeJson(
+                    retryPayload
+                        ? {
+                              ...retryPayload,
+                              result: {
+                                  runId: executionRunId,
+                                  status: executionParsedResult.status,
+                                  finalRecommendation:
+                                      executionParsedResult.finalRecommendation,
+                                  reviewPersistence:
+                                      executionParsedResult.reviewPersistence,
+                              },
+                          }
+                        : {
+                              runId: executionRunId,
+                              status: executionParsedResult.status,
+                              finalRecommendation:
+                                  executionParsedResult.finalRecommendation,
+                              reviewPersistence:
+                                  executionParsedResult.reviewPersistence,
+                          },
+                ),
                 finishedAt: new Date(),
             },
         });
@@ -814,7 +1106,8 @@ async function executeBatchRunItem(
             batchRunId: batchRun.id,
             itemId: item.id,
             questionId: item.questionId,
-            runId: result.runId,
+            runId: executionRunId,
+            mode: retryPayload ? "RETRY_RUN_ITEM" : "EXECUTE_STRATEGY",
             durationMs: Date.now() - startedAt,
         });
     } catch (error) {
@@ -827,6 +1120,14 @@ async function executeBatchRunItem(
             data: {
                 status: BatchRunItemStatus.FAILED,
                 errorMessage: message,
+                resultPayload: retryPayload
+                    ? serializeJson({
+                          ...retryPayload,
+                          result: {
+                              errorMessage: message,
+                          },
+                      })
+                    : item.resultPayload ?? undefined,
                 finishedAt: new Date(),
             },
         });
@@ -834,6 +1135,7 @@ async function executeBatchRunItem(
             batchRunId: batchRun.id,
             itemId: item.id,
             questionId: item.questionId,
+            mode: retryPayload ? "RETRY_RUN_ITEM" : "EXECUTE_STRATEGY",
             durationMs: Date.now() - startedAt,
             error: message,
         });
@@ -894,6 +1196,7 @@ async function processBatchRun(batchRunId: string, workerId: string) {
                 pendingCount: true,
                 runningCount: true,
                 workerId: true,
+                requestPayload: true,
             },
         });
 
@@ -998,6 +1301,7 @@ async function processBatchRun(batchRunId: string, workerId: string) {
                     executeBatchRunItem(batchRun, {
                         id: item.id,
                         questionId: item.questionId,
+                        resultPayload: item.resultPayload,
                     }),
                 ),
             ),

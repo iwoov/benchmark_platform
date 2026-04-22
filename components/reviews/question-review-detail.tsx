@@ -14,6 +14,7 @@ import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import { AiChatSidebar } from "@/components/reviews/ai-chat-sidebar";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
+import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import type {
     ReviewQuestionDetail,
@@ -235,6 +236,7 @@ export function QuestionReviewDetail({
     fieldPreference,
     reviewStrategies,
     strategyRuns,
+    retryStates,
     chatConfigs,
 }: {
     question: ReviewQuestionDetail;
@@ -251,6 +253,7 @@ export function QuestionReviewDetail({
         stepCount: number;
         datasourceIds: string[];
     }>;
+    retryStates: AiReviewStrategyRetryStateView[];
     strategyRuns: Array<{
         id: string;
         status: string;
@@ -372,6 +375,7 @@ export function QuestionReviewDetail({
         return initial;
     });
     const [isSubmitting, startSubmitting] = useTransition();
+    const [isNavigatingList, startNavigatingList] = useTransition();
     const abortControllersRef = useRef<Record<string, AbortController>>({});
     const detailBasePath = listPath.split("?")[0];
     const listQuery = listPath.includes("?")
@@ -436,7 +440,9 @@ export function QuestionReviewDetail({
     }
 
     function goBackToList() {
-        router.push(listPath);
+        startNavigatingList(() => {
+            router.push(listPath);
+        });
     }
 
     async function translateField(fieldKey: string, value: unknown) {
@@ -597,6 +603,7 @@ export function QuestionReviewDetail({
                             icon={<ArrowLeft size={16} />}
                             size="middle"
                             onClick={goBackToList}
+                            loading={isNavigatingList}
                         >
                             返回列表
                         </Button>
@@ -808,6 +815,7 @@ export function QuestionReviewDetail({
                                     questionId={question.id}
                                     strategies={reviewStrategies}
                                     runs={strategyRuns}
+                                    retryStates={retryStates}
                                     hideHeader
                                 />
                             </>

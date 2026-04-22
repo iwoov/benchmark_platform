@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 import { getAiReviewStrategyRunsForQuestion } from "@/lib/ai/review-strategies";
+import { getAiReviewStrategyRetryStatesForQuestion } from "@/lib/ai/review-strategy-batches";
 
 const querySchema = z.object({
     questionId: z.string().trim().min(1, "缺少题目 ID"),
@@ -68,9 +69,13 @@ export async function GET(request: Request) {
         );
     }
 
-    const runs = await getAiReviewStrategyRunsForQuestion(question.id);
+    const [runs, retryStates] = await Promise.all([
+        getAiReviewStrategyRunsForQuestion(question.id),
+        getAiReviewStrategyRetryStatesForQuestion(question.id),
+    ]);
 
     return Response.json({
         runs,
+        retryStates,
     });
 }

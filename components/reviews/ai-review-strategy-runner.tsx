@@ -8,6 +8,7 @@ import {
     runAiReviewStrategyAction,
     retryAiReviewStrategyRunItemAction,
 } from "@/app/actions/ai-review-strategies";
+import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
 
 type StrategyRunResult = {
     version: 1;
@@ -84,6 +85,8 @@ type RunnerRun = {
     triggeredByName: string;
     parsedResult: StrategyRunResult | null;
 };
+
+type RetryState = AiReviewStrategyRetryStateView;
 
 function formatJson(value: unknown) {
     try {
@@ -651,6 +654,7 @@ export function AiReviewStrategyRunner({
     questionId,
     strategies,
     runs,
+    retryStates,
     hideHeader,
 }: {
     questionId: string;
@@ -663,6 +667,7 @@ export function AiReviewStrategyRunner({
         datasourceIds: string[];
     }>;
     runs: RunnerRun[];
+    retryStates: RetryState[];
     hideHeader?: boolean;
 }) {
     const router = useRouter();
@@ -672,6 +677,7 @@ export function AiReviewStrategyRunner({
         strategies[0]?.id ?? "",
     );
     const [liveRuns, setLiveRuns] = useState(runs);
+    const [liveRetryStates, setLiveRetryStates] = useState(retryStates);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pollingEnabled, setPollingEnabled] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
@@ -688,6 +694,9 @@ export function AiReviewStrategyRunner({
     const hasActiveRun = liveRuns.some(
         (run) => run.status === "RUNNING" || run.status === "PENDING",
     );
+    const hasActiveRetry = liveRetryStates.some(
+        (state) => state.status === "RUNNING" || state.status === "PENDING",
+    );
 
     useEffect(() => {
         notificationRef.current = notification;
@@ -700,7 +709,19 @@ export function AiReviewStrategyRunner({
     }, [runs]);
 
     useEffect(() => {
-        if (!pollingEnabled && !hasActiveRun) {
+        setLiveRetryStates((current) =>
+            areRunsEqual(current, retryStates) ? current : retryStates,
+        );
+    }, [retryStates]);
+
+    useEffect(() => {
+        if (!hasActiveRun && !hasActiveRetry) {
+            setPollingEnabled(false);
+        }
+    }, [hasActiveRetry, hasActiveRun]);
+
+    useEffect(() => {
+        if (!pollingEnabled && !hasActiveRun && !hasActiveRetry) {
             return;
         }
 
@@ -718,6 +739,7 @@ export function AiReviewStrategyRunner({
                 const payload = (await response.json().catch(() => null)) as {
                     error?: string;
                     runs?: typeof runs;
+                    retryStates?: RetryState[];
                 } | null;
 
                 if (!response.ok) {
@@ -726,6 +748,10 @@ export function AiReviewStrategyRunner({
 
                 if (!disposed && payload?.runs) {
                     setLiveRuns(payload.runs);
+                }
+
+                if (!disposed) {
+                    setLiveRetryStates(payload?.retryStates ?? []);
                 }
             } catch (error) {
                 if (!disposed) {
@@ -753,7 +779,7 @@ export function AiReviewStrategyRunner({
                 clearTimeout(timer);
             }
         };
-    }, [hasActiveRun, pollingEnabled, questionId]);
+    }, [hasActiveRetry, hasActiveRun, pollingEnabled, questionId]);
 
     async function refreshRuns(manual = false) {
         if (manual) {
@@ -770,6 +796,7 @@ export function AiReviewStrategyRunner({
             const payload = (await response.json().catch(() => null)) as {
                 error?: string;
                 runs?: typeof runs;
+                retryStates?: RetryState[];
             } | null;
 
             if (!response.ok) {
@@ -780,6 +807,11 @@ export function AiReviewStrategyRunner({
                 areRunsEqual(current, payload?.runs ?? [])
                     ? current
                     : (payload?.runs ?? []),
+            );
+            setLiveRetryStates((current) =>
+                areRunsEqual(current, payload?.retryStates ?? [])
+                    ? current
+                    : (payload?.retryStates ?? []),
             );
         } catch (error) {
             notification.error({
@@ -809,6 +841,35 @@ export function AiReviewStrategyRunner({
 
     function buildRetryKey(runId: string, stepId: string, itemIndex: number) {
         return `${runId}:${stepId}:${itemIndex}`;
+    }
+
+    function getRetryState(runId: string, stepId: string, itemIndex: number) {
+        const key = buildRetryKey(runId, stepId, itemIndex);
+        return liveRetryStates.find((state) => state.key === key) ?? null;
+    }
+
+    function getRetryStateMeta(state: RetryState | null) {
+        if (!state) {
+            return null;
+        }
+
+        if (state.status === "PENDING") {
+            return { color: "processing" as const, label: "已排队重试" };
+        }
+
+        if (state.status === "RUNNING") {
+            return { color: "processing" as const, label: "重试执行中" };
+        }
+
+        if (state.status === "FAILED") {
+            return { color: "error" as const, label: "最近重试失败" };
+        }
+
+        if (state.status === "SUCCESS") {
+            return { color: "success" as const, label: "最近重试成功" };
+        }
+
+        return null;
     }
 
     function replaceRun(run: RunnerRun) {
@@ -879,9 +940,24 @@ export function AiReviewStrategyRunner({
             ...current,
             [retryKey]: true,
         }));
+        setLiveRetryStates((current) => {
+            const next = current.filter((item) => item.key !== retryKey);
+            next.unshift({
+                key: retryKey,
+                runId,
+                stepId,
+                itemIndex,
+                batchRunId: "",
+                status: "PENDING",
+                errorMessage: null,
+                updatedAt: new Date().toISOString(),
+            });
+            return next;
+        });
 
         startRetryTransition(async () => {
             try {
+                setPollingEnabled(true);
                 const result = await retryAiReviewStrategyRunItemAction({
                     runId,
                     stepId,
@@ -889,6 +965,9 @@ export function AiReviewStrategyRunner({
                 });
 
                 if (result.error) {
+                    setLiveRetryStates((current) =>
+                        current.filter((item) => item.key !== retryKey),
+                    );
                     notification.error({
                         message: "重试失败",
                         description: result.error,
@@ -904,10 +983,11 @@ export function AiReviewStrategyRunner({
                 }
 
                 notification.success({
-                    message: "重试成功",
-                    description: result.success ?? "失败请求已重新执行。",
+                    message: "已提交后台重试",
+                    description: result.success ?? "后台任务已创建。",
                     placement: "topRight",
                 });
+                await refreshRuns();
             } finally {
                 setRetryingKeys((current) => {
                     const next = { ...current };
@@ -1136,6 +1216,16 @@ export function AiReviewStrategyRunner({
                                                                                           (
                                                                                               item,
                                                                                           ) => {
+                                                                                              const retryState =
+                                                                                                  getRetryState(
+                                                                                                      run.id,
+                                                                                                      step.stepId,
+                                                                                                      item.index,
+                                                                                                  );
+                                                                                              const retryMeta =
+                                                                                                  getRetryStateMeta(
+                                                                                                      retryState,
+                                                                                                  );
                                                                                               const inlineTags =
                                                                                                   getStepItemInlineTags(
                                                                                                       step.stepType,
@@ -1171,6 +1261,17 @@ export function AiReviewStrategyRunner({
                                                                                                               "FAILED" ? (
                                                                                                                   <Tag color="error">
                                                                                                                       FAILED
+                                                                                                                  </Tag>
+                                                                                                              ) : null}
+                                                                                                              {retryMeta ? (
+                                                                                                                  <Tag
+                                                                                                                      color={
+                                                                                                                          retryMeta.color
+                                                                                                                      }
+                                                                                                                  >
+                                                                                                                      {
+                                                                                                                          retryMeta.label
+                                                                                                                      }
                                                                                                                   </Tag>
                                                                                                               ) : null}
                                                                                                           </div>
@@ -1252,6 +1353,12 @@ export function AiReviewStrategyRunner({
                                                                                                                                   )
                                                                                                                               ]
                                                                                                                           }
+                                                                                                                          disabled={
+                                                                                                                              retryState?.status ===
+                                                                                                                                  "PENDING" ||
+                                                                                                                              retryState?.status ===
+                                                                                                                                  "RUNNING"
+                                                                                                                          }
                                                                                                                           onClick={() =>
                                                                                                                               retryRunItem(
                                                                                                                                   run.id,
@@ -1260,7 +1367,13 @@ export function AiReviewStrategyRunner({
                                                                                                                               )
                                                                                                                           }
                                                                                                                       >
-                                                                                                                          重试
+                                                                                                                          {retryState?.status ===
+                                                                                                                          "PENDING"
+                                                                                                                              ? "排队中"
+                                                                                                                              : retryState?.status ===
+                                                                                                                                  "RUNNING"
+                                                                                                                                ? "重试中"
+                                                                                                                                : "重试"}
                                                                                                                       </Button>
                                                                                                                   ) : null}
                                                                                                               </Space>
@@ -1278,6 +1391,15 @@ export function AiReviewStrategyRunner({
                                                                                                                   <div className="strategy-run-error">
                                                                                                                       {
                                                                                                                           item.error
+                                                                                                                      }
+                                                                                                                  </div>
+                                                                                                              ) : null}
+                                                                                                              {retryState?.status ===
+                                                                                                                  "FAILED" &&
+                                                                                                              retryState.errorMessage ? (
+                                                                                                                  <div className="strategy-run-error">
+                                                                                                                      {
+                                                                                                                          retryState.errorMessage
                                                                                                                       }
                                                                                                                   </div>
                                                                                                               ) : null}
@@ -1415,6 +1537,16 @@ export function AiReviewStrategyRunner({
                                                                                                   (
                                                                                                       item,
                                                                                                   ) => {
+                                                                                                      const retryState =
+                                                                                                          getRetryState(
+                                                                                                              run.id,
+                                                                                                              step.stepId,
+                                                                                                              item.index,
+                                                                                                          );
+                                                                                                      const retryMeta =
+                                                                                                          getRetryStateMeta(
+                                                                                                              retryState,
+                                                                                                          );
                                                                                                       const inlineTags =
                                                                                                           getStepItemInlineTags(
                                                                                                               step.stepType,
@@ -1450,6 +1582,17 @@ export function AiReviewStrategyRunner({
                                                                                                                       "FAILED" ? (
                                                                                                                           <Tag color="error">
                                                                                                                               FAILED
+                                                                                                                          </Tag>
+                                                                                                                      ) : null}
+                                                                                                                      {retryMeta ? (
+                                                                                                                          <Tag
+                                                                                                                              color={
+                                                                                                                                  retryMeta.color
+                                                                                                                              }
+                                                                                                                          >
+                                                                                                                              {
+                                                                                                                                  retryMeta.label
+                                                                                                                              }
                                                                                                                           </Tag>
                                                                                                                       ) : null}
                                                                                                                   </div>
@@ -1531,6 +1674,12 @@ export function AiReviewStrategyRunner({
                                                                                                                                           )
                                                                                                                                       ]
                                                                                                                                   }
+                                                                                                                                  disabled={
+                                                                                                                                      retryState?.status ===
+                                                                                                                                          "PENDING" ||
+                                                                                                                                      retryState?.status ===
+                                                                                                                                          "RUNNING"
+                                                                                                                                  }
                                                                                                                                   onClick={() =>
                                                                                                                                       retryRunItem(
                                                                                                                                           run.id,
@@ -1539,7 +1688,13 @@ export function AiReviewStrategyRunner({
                                                                                                                                       )
                                                                                                                                   }
                                                                                                                               >
-                                                                                                                                  重试
+                                                                                                                                  {retryState?.status ===
+                                                                                                                                  "PENDING"
+                                                                                                                                      ? "排队中"
+                                                                                                                                      : retryState?.status ===
+                                                                                                                                          "RUNNING"
+                                                                                                                                        ? "重试中"
+                                                                                                                                        : "重试"}
                                                                                                                               </Button>
                                                                                                                           ) : null}
                                                                                                                       </Space>
@@ -1557,6 +1712,15 @@ export function AiReviewStrategyRunner({
                                                                                                                           <div className="strategy-run-error">
                                                                                                                               {
                                                                                                                                   item.error
+                                                                                                                              }
+                                                                                                                          </div>
+                                                                                                                      ) : null}
+                                                                                                                      {retryState?.status ===
+                                                                                                                          "FAILED" &&
+                                                                                                                      retryState.errorMessage ? (
+                                                                                                                          <div className="strategy-run-error">
+                                                                                                                              {
+                                                                                                                                  retryState.errorMessage
                                                                                                                               }
                                                                                                                           </div>
                                                                                                                       ) : null}

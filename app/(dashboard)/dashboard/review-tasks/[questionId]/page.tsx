@@ -5,6 +5,7 @@ import {
     getAiReviewStrategyRunsForQuestion,
     getApplicableAiReviewStrategies,
 } from "@/lib/ai/review-strategies";
+import { getAiReviewStrategyRetryStatesForQuestion } from "@/lib/ai/review-strategy-batches";
 import { getEnabledAiChatConfigs } from "@/lib/ai/chat-config";
 import { getHomePathByRole } from "@/lib/auth/navigation";
 import { isAdminRole } from "@/lib/auth/roles";
@@ -69,10 +70,17 @@ export default async function ReviewTaskDetailPage({
         }
     }
 
-    const [reviewStrategies, strategyRuns, fieldPreference, chatConfigs] =
+    const [
+        reviewStrategies,
+        strategyRuns,
+        retryStates,
+        fieldPreference,
+        chatConfigs,
+    ] =
         await Promise.all([
             getApplicableAiReviewStrategies(question),
             getAiReviewStrategyRunsForQuestion(question.id),
+            getAiReviewStrategyRetryStatesForQuestion(question.id),
             getResolvedUserProjectReviewFieldPreference(
                 session.user.id,
                 question.project.id,
@@ -93,6 +101,7 @@ export default async function ReviewTaskDetailPage({
             fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
             strategyRuns={strategyRuns}
+            retryStates={retryStates}
             chatConfigs={chatConfigs}
         />
     );

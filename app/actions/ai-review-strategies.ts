@@ -13,12 +13,12 @@ import {
 } from "@/lib/ai/review-strategy-schema";
 import {
     executeAiReviewStrategy,
-    retryAiReviewStrategyRunItem,
     type AiReviewStrategyRunView,
 } from "@/lib/ai/review-strategies";
 import {
     cancelAiReviewStrategyBatchRun,
     createAiReviewStrategyBatchRun,
+    createAiReviewStrategyRetryRunItemBatchRun,
     deleteAiReviewStrategyBatchRun,
 } from "@/lib/ai/review-strategy-batches";
 
@@ -565,17 +565,18 @@ export async function retryAiReviewStrategyRunItemAction(
     }
 
     try {
-        const updatedRun = await retryAiReviewStrategyRunItem(
-            parsed.data.runId,
-            parsed.data.stepId,
-            parsed.data.itemIndex,
-        );
+        const batchRun = await createAiReviewStrategyRetryRunItemBatchRun({
+            runId: parsed.data.runId,
+            stepId: parsed.data.stepId,
+            itemIndex: parsed.data.itemIndex,
+            createdById: session.user.id,
+        });
 
         revalidateStrategyPaths(run.questionId);
 
         return {
-            success: "单次执行项已重试，结果已更新。",
-            run: updatedRun,
+            success: "单次执行项已提交后台重试，结果会自动刷新。",
+            batchRunId: batchRun.id,
         };
     } catch (error) {
         revalidateStrategyPaths(run.questionId);
