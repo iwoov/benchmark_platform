@@ -468,8 +468,8 @@ function normalizeForImageMatch(value: string) {
     return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
 }
 
-function stripZipExt(value: string) {
-    return value.replace(/\.zip$/i, "");
+function stripArchiveExt(value: string) {
+    return value.replace(/\.(zip|rar)$/i, "");
 }
 
 function lookupImageUrlsFromMap(
@@ -480,14 +480,14 @@ function lookupImageUrlsFromMap(
     if (exact?.length) return exact;
 
     const normalized = normalizeForImageMatch(value);
-    const normalizedNoZip = stripZipExt(normalized);
+    const normalizedNoArchive = stripArchiveExt(normalized);
     for (const [key, urls] of Object.entries(imageMap)) {
         if (!urls.length) continue;
         const normalizedKey = normalizeForImageMatch(key);
         if (normalizedKey === normalized) {
             return urls;
         }
-        if (stripZipExt(normalizedKey) === normalizedNoZip) {
+        if (stripArchiveExt(normalizedKey) === normalizedNoArchive) {
             return urls;
         }
     }

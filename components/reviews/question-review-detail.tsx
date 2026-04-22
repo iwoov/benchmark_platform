@@ -118,9 +118,9 @@ function normalizeForMatch(value: string) {
     return value.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase();
 }
 
-/** Strip .zip extension for comparison when one side has it and the other doesn't. */
-function stripZipExt(value: string) {
-    return value.replace(/\.zip$/i, "");
+/** Strip archive extension for comparison when one side has it and the other doesn't. */
+function stripArchiveExt(value: string) {
+    return value.replace(/\.(zip|rar)$/i, "");
 }
 
 function lookupImageUrls(
@@ -136,7 +136,7 @@ function lookupImageUrls(
 
     // 2. Normalized match (handles : vs _ and similar filesystem differences)
     const normalizedValue = normalizeForMatch(value);
-    const normalizedValueNoZip = stripZipExt(normalizedValue);
+    const normalizedValueNoArchive = stripArchiveExt(normalizedValue);
 
     for (const [key, urls] of Object.entries(imageMap)) {
         if (!urls.length) continue;
@@ -144,8 +144,8 @@ function lookupImageUrls(
         if (normalizedKey === normalizedValue) {
             return urls;
         }
-        // Also try matching with/without .zip extension
-        if (stripZipExt(normalizedKey) === normalizedValueNoZip) {
+        // Also try matching with/without archive extension
+        if (stripArchiveExt(normalizedKey) === normalizedValueNoArchive) {
             return urls;
         }
     }

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { saveUploadedFile, toUploadUrl } from "@/lib/import/file-storage";
 import {
-    extractImagesFromZip,
+    extractImagesFromArchive,
     buildImageMap,
     type ExtractedImage,
 } from "@/lib/import/zip-archive";
@@ -14,6 +14,14 @@ export type ImagePackUploadState = {
     success?: string;
 };
 
+function isSupportedArchiveFileName(fileName: string) {
+    return /\.(zip|rar)$/i.test(fileName);
+}
+
+function stripArchiveExtension(value: string) {
+    return value.replace(/\.(zip|rar)$/i, "");
+}
+
 function revalidateImagePaths() {
     revalidatePath("/dashboard/datasources");
     revalidatePath("/dashboard/review-tasks");
@@ -21,9 +29,9 @@ function revalidateImagePaths() {
 }
 
 /**
- * Upload a zip image pack for a datasource.
+ * Upload an image pack archive for a datasource.
  *
- * Extracts all images (including from nested zips), stores them to disk,
+ * Extracts all images (including from nested archives), stores them to disk,
  * and writes the imageMap into the datasource's syncConfig.
  */
 export async function uploadDatasourceImagePackAction(
@@ -41,13 +49,13 @@ export async function uploadDatasourceImagePackAction(
         .filter((f): f is File => f instanceof File && f.size > 0);
 
     if (!files.length) {
-        return { error: "请选择要上传的 zip 图片包。" };
+        return { error: "请选择要上传的 zip 或 rar 图片包。" };
     }
 
     for (const f of files) {
-        if (!f.name.toLowerCase().endsWith(".zip")) {
+        if (!isSupportedArchiveFileName(f.name)) {
             return {
-                error: `仅支持 .zip 格式的图片包，"${f.name}" 不是 zip 文件。`,
+                error: `仅支持 .zip 或 .rar 格式的图片包，"${f.name}" 不是受支持的压缩文件。`,
             };
         }
     }
@@ -65,15 +73,20 @@ export async function uploadDatasourceImagePackAction(
         // Deduplicate: same buffer should only be saved once
         const bufferToUrl = new Map<string, string>();
         const allExtractedImages: ExtractedImage[] = [];
+        const extractedImagesByArchive = new Map<string, ExtractedImage[]>();
 
         for (const file of files) {
-            const zipBuffer = await file.arrayBuffer();
-            const extractedImages = await extractImagesFromZip(zipBuffer);
+            const archiveBuffer = await file.arrayBuffer();
+            const extractedImages = await extractImagesFromArchive(
+                archiveBuffer,
+                file.name,
+            );
             allExtractedImages.push(...extractedImages);
+            extractedImagesByArchive.set(file.name, extractedImages);
         }
 
         if (!allExtractedImages.length) {
-            return { error: "zip 包中没有找到任何图片文件。" };
+            return { error: "压缩包中没有找到任何图片文件。" };
         }
 
         const imageToUrl = new Map<ExtractedImage, string>();
@@ -97,23 +110,29 @@ export async function uploadDatasourceImagePackAction(
 
         const imageMap = buildImageMap(allExtractedImages, imageToUrl);
 
-        // When the uploaded zip itself is referenced by a raw field value
-        // (e.g. image_id = "abc.zip" and the user uploads abc.zip directly),
-        // the zip filename won't be in imageMap because the extraction only
-        // keys by inner file paths. Add the zip filename as an extra key
+        // When the uploaded archive itself is referenced by a raw field value
+        // (e.g. image_id = "abc.rar" and the user uploads abc.rar directly),
+        // the archive filename won't be in imageMap because the extraction only
+        // keys by inner file paths. Add the archive filename as an extra key
         // pointing to all extracted image URLs.
         for (const file of files) {
             if (!imageMap[file.name]) {
-                // Find URLs from images extracted from this specific file
-                const allUrls = [...new Set(Object.values(imageMap).flat())];
+                const extractedImages = extractedImagesByArchive.get(file.name) ?? [];
+                const archiveUrls = [
+                    ...new Set(
+                        extractedImages
+                            .map((image) => imageToUrl.get(image))
+                            .filter((url): url is string => Boolean(url)),
+                    ),
+                ];
 
-                if (allUrls.length) {
-                    imageMap[file.name] = allUrls;
+                if (archiveUrls.length) {
+                    imageMap[file.name] = archiveUrls;
                 }
             }
         }
 
-        // Merge with existing imageMap so that multiple zip uploads accumulate
+        // Merge with existing imageMap so that multiple archive uploads accumulate
         const existingSyncConfig =
             datasource.syncConfig &&
             typeof datasource.syncConfig === "object" &&
@@ -137,13 +156,12 @@ export async function uploadDatasourceImagePackAction(
                 k.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase(),
             ),
         );
-        // Also build a set without .zip extension for fuzzy matching
-        const normalizedImageMapKeysNoZip = new Set(
+        // Also build a set without archive extension for fuzzy matching
+        const normalizedImageMapKeysNoArchive = new Set(
             Object.keys(mergedImageMap).map((k) =>
-                k
-                    .replace(/[^a-zA-Z0-9.\-]/g, "_")
-                    .toLowerCase()
-                    .replace(/\.zip$/i, ""),
+                stripArchiveExtension(
+                    k.replace(/[^a-zA-Z0-9.\-]/g, "_").toLowerCase(),
+                ),
             ),
         );
         const sampleQuestions = await prisma.question.findMany({
@@ -181,12 +199,15 @@ export async function uploadDatasourceImagePackAction(
                     const normalized = trimmed
                         .replace(/[^a-zA-Z0-9.\-]/g, "_")
                         .toLowerCase();
-                    const normalizedNoZip = normalized.replace(/\.zip$/i, "");
+                    const normalizedNoArchive =
+                        stripArchiveExtension(normalized);
 
                     if (
                         imageMapKeys.has(trimmed) ||
                         normalizedImageMapKeys.has(normalized) ||
-                        normalizedImageMapKeysNoZip.has(normalizedNoZip)
+                        normalizedImageMapKeysNoArchive.has(
+                            normalizedNoArchive,
+                        )
                     ) {
                         detectedImageFields.add(key);
                     }
@@ -232,7 +253,7 @@ export async function uploadDatasourceImagePackAction(
             error:
                 error instanceof Error
                     ? error.message
-                    : "图片包处理失败，请检查 zip 文件后重试。",
+                    : "图片包处理失败，请检查压缩文件后重试。",
         };
     }
 }

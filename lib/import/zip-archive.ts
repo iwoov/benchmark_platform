@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import JSZip from "jszip";
 import path from "node:path";
 
@@ -12,13 +14,136 @@ const IMAGE_EXTENSIONS = new Set([
     ".ico",
     ".avif",
 ]);
+const ARCHIVE_EXTENSIONS = new Set([".zip", ".rar"]);
+const require = createRequire(import.meta.url);
+const runtimeRequire = new Function(
+    "req",
+    "id",
+    "return req(id);",
+) as (req: typeof require, id: string) => unknown;
+const runtimeRequireResolve = new Function(
+    "req",
+    "id",
+    "return req.resolve(id);",
+) as (req: typeof require, id: string) => string;
+
+let cachedUnrarWasmBinary: ArrayBuffer | null = null;
+let cachedCreateExtractorFromData: CreateExtractorFromData | null = null;
+let cachedUnrarEntryPath: string | null = null;
+let cachedUnrarWasmPath: string | null = null;
+
+type UnrarExtractedFile = {
+    fileHeader: {
+        name: string;
+        flags: {
+            directory: boolean;
+        };
+    };
+    extraction?: Uint8Array;
+};
+
+type CreateExtractorFromData = (input: {
+    data: ArrayBuffer;
+    wasmBinary?: ArrayBuffer;
+    password?: string;
+}) => Promise<{
+    extract(): {
+        files: Generator<UnrarExtractedFile>;
+    };
+}>;
 
 function isImageFile(fileName: string) {
     return IMAGE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
 }
 
-function isZipFile(fileName: string) {
-    return path.extname(fileName).toLowerCase() === ".zip";
+function getArchiveType(fileName: string): "zip" | "rar" | null {
+    const ext = path.extname(fileName).toLowerCase();
+
+    if (ext === ".zip") {
+        return "zip";
+    }
+
+    if (ext === ".rar") {
+        return "rar";
+    }
+
+    return null;
+}
+
+function isArchiveFile(fileName: string) {
+    return ARCHIVE_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+}
+
+function stripArchiveExtension(value: string) {
+    return value.replace(/\.(zip|rar)$/i, "");
+}
+
+function normalizeArchivePath(archivePath: string) {
+    return archivePath.replace(/\\/g, "/");
+}
+
+function toArrayBuffer(value: ArrayBuffer | Uint8Array | Buffer) {
+    if (value instanceof ArrayBuffer) {
+        return value;
+    }
+
+    return value.buffer.slice(
+        value.byteOffset,
+        value.byteOffset + value.byteLength,
+    ) as ArrayBuffer;
+}
+
+function getUnrarPackageDir() {
+    const packageJsonPath = runtimeRequireResolve(
+        require,
+        "node-unrar-js/package.json",
+    );
+
+    return path.dirname(packageJsonPath);
+}
+
+function getUnrarEntryPath() {
+    if (cachedUnrarEntryPath) {
+        return cachedUnrarEntryPath;
+    }
+
+    cachedUnrarEntryPath = path.join(getUnrarPackageDir(), "dist/index.js");
+
+    return cachedUnrarEntryPath;
+}
+
+function getUnrarWasmPath() {
+    if (cachedUnrarWasmPath) {
+        return cachedUnrarWasmPath;
+    }
+
+    cachedUnrarWasmPath = path.join(getUnrarPackageDir(), "dist/js/unrar.wasm");
+
+    return cachedUnrarWasmPath;
+}
+
+function getUnrarWasmBinary() {
+    if (cachedUnrarWasmBinary) {
+        return cachedUnrarWasmBinary;
+    }
+
+    cachedUnrarWasmBinary = toArrayBuffer(readFileSync(getUnrarWasmPath()));
+
+    return cachedUnrarWasmBinary;
+}
+
+function getCreateExtractorFromData() {
+    if (cachedCreateExtractorFromData) {
+        return cachedCreateExtractorFromData;
+    }
+
+    const { createExtractorFromData } = runtimeRequire(
+        require,
+        getUnrarEntryPath(),
+    ) as { createExtractorFromData: CreateExtractorFromData };
+    cachedCreateExtractorFromData = createExtractorFromData;
+
+    return cachedCreateExtractorFromData;
 }
 
 function isHiddenOrMeta(zipPath: string) {
@@ -26,6 +151,12 @@ function isHiddenOrMeta(zipPath: string) {
         .split("/")
         .some((segment) => segment.startsWith(".") || segment === "__MACOSX");
 }
+
+type ArchiveEntry = {
+    archivePath: string;
+    fileName: string;
+    buffer: Buffer;
+};
 
 export type ExtractedImage = {
     /** The key used to look up this image from a raw field value. */
@@ -37,80 +168,92 @@ export type ExtractedImage = {
 };
 
 /**
- * Extract all images from a zip buffer.
+ * Extract all images from a supported archive buffer.
  *
  * Handles two scenarios:
- *   1. Images directly in the zip (matchKey = relative path or filename)
- *   2. Nested .zip files that contain images (matchKey = the nested zip filename)
+ *   1. Images directly in the archive (matchKey = relative path or filename)
+ *   2. Nested .zip/.rar files that contain images (matchKey = nested archive filename)
  *
  * Returns a flat list of ExtractedImage entries.
  */
-export async function extractImagesFromZip(
-    zipBuffer: ArrayBuffer,
+export async function extractImagesFromArchive(
+    archiveBuffer: ArrayBuffer,
+    archiveFileName: string,
 ): Promise<ExtractedImage[]> {
-    const zip = await JSZip.loadAsync(zipBuffer);
+    const archiveType = getArchiveType(archiveFileName);
+
+    if (!archiveType) {
+        throw new Error(`仅支持 .zip 或 .rar 格式的图片包，"${archiveFileName}" 不受支持。`);
+    }
+
+    return extractImagesFromArchiveBuffer(archiveBuffer, archiveType, true);
+}
+
+async function extractImagesFromArchiveBuffer(
+    archiveBuffer: ArrayBuffer,
+    archiveType: "zip" | "rar",
+    allowNestedArchives: boolean,
+): Promise<ExtractedImage[]> {
+    const entries = await readArchiveEntries(archiveBuffer, archiveType);
     const results: ExtractedImage[] = [];
 
-    for (const [zipPath, zipEntry] of Object.entries(zip.files)) {
-        if (zipEntry.dir || isHiddenOrMeta(zipPath)) {
-            continue;
-        }
-
-        const fileName = zipPath.split("/").pop();
-
-        if (!fileName) {
-            continue;
-        }
-
-        if (isImageFile(fileName)) {
-            const buffer = Buffer.from(await zipEntry.async("arraybuffer"));
-
-            // Direct image: match by full relative path AND just filename
+    for (const entry of entries) {
+        if (isImageFile(entry.fileName)) {
             results.push({
-                matchKey: zipPath,
-                fileName,
-                buffer,
+                matchKey: entry.archivePath,
+                fileName: entry.fileName,
+                buffer: entry.buffer,
             });
 
-            if (zipPath !== fileName) {
+            if (entry.archivePath !== entry.fileName) {
                 results.push({
-                    matchKey: fileName,
-                    fileName,
-                    buffer,
+                    matchKey: entry.fileName,
+                    fileName: entry.fileName,
+                    buffer: entry.buffer,
                 });
             }
-        } else if (isZipFile(fileName)) {
-            // Nested zip: extract images inside, matchKey = this zip's filename
-            const nestedBuffer = await zipEntry.async("arraybuffer");
-            const nestedImages = await extractImagesFromNestedZip(nestedBuffer);
 
-            // Also add matchKey without .zip extension since Windows may strip it
-            const fileNameNoZip = fileName.replace(/\.zip$/i, "");
+            continue;
+        }
 
-            for (const image of nestedImages) {
+        if (!allowNestedArchives || !isArchiveFile(entry.fileName)) {
+            continue;
+        }
+
+        const nestedArchiveType = getArchiveType(entry.fileName);
+
+        if (!nestedArchiveType) {
+            continue;
+        }
+
+        const nestedImages = await extractImagesFromArchiveBuffer(
+            toArrayBuffer(entry.buffer),
+            nestedArchiveType,
+            false,
+        );
+        const archiveNameWithoutExtension = stripArchiveExtension(entry.fileName);
+
+        for (const image of nestedImages) {
+            results.push({
+                matchKey: entry.fileName,
+                fileName: image.fileName,
+                buffer: image.buffer,
+            });
+
+            if (archiveNameWithoutExtension !== entry.fileName) {
                 results.push({
-                    matchKey: fileName,
+                    matchKey: archiveNameWithoutExtension,
                     fileName: image.fileName,
                     buffer: image.buffer,
                 });
+            }
 
-                // Match without .zip extension
-                if (fileNameNoZip !== fileName) {
-                    results.push({
-                        matchKey: fileNameNoZip,
-                        fileName: image.fileName,
-                        buffer: image.buffer,
-                    });
-                }
-
-                // Also match by the full path of this nested zip
-                if (zipPath !== fileName) {
-                    results.push({
-                        matchKey: zipPath,
-                        fileName: image.fileName,
-                        buffer: image.buffer,
-                    });
-                }
+            if (entry.archivePath !== entry.fileName) {
+                results.push({
+                    matchKey: entry.archivePath,
+                    fileName: image.fileName,
+                    buffer: image.buffer,
+                });
             }
         }
     }
@@ -118,33 +261,77 @@ export async function extractImagesFromZip(
     return results;
 }
 
-/**
- * Extract images from a nested zip buffer (one level only, no further recursion).
- */
-async function extractImagesFromNestedZip(
-    zipBuffer: ArrayBuffer,
-): Promise<Array<{ fileName: string; buffer: Buffer }>> {
-    const zip = await JSZip.loadAsync(zipBuffer);
-    const images: Array<{ fileName: string; buffer: Buffer }> = [];
+async function readArchiveEntries(
+    archiveBuffer: ArrayBuffer,
+    archiveType: "zip" | "rar",
+): Promise<ArchiveEntry[]> {
+    if (archiveType === "zip") {
+        return readZipEntries(archiveBuffer);
+    }
 
-    for (const [zipPath, zipEntry] of Object.entries(zip.files)) {
-        if (zipEntry.dir || isHiddenOrMeta(zipPath)) {
+    return readRarEntries(archiveBuffer);
+}
+
+async function readZipEntries(archiveBuffer: ArrayBuffer): Promise<ArchiveEntry[]> {
+    const zip = await JSZip.loadAsync(archiveBuffer);
+    const entries: ArchiveEntry[] = [];
+
+    for (const [rawArchivePath, zipEntry] of Object.entries(zip.files)) {
+        const archivePath = normalizeArchivePath(rawArchivePath);
+
+        if (zipEntry.dir || isHiddenOrMeta(archivePath)) {
             continue;
         }
 
-        const fileName = zipPath.split("/").pop();
+        const fileName = archivePath.split("/").pop();
 
-        if (!fileName || !isImageFile(fileName)) {
+        if (!fileName) {
             continue;
         }
 
-        images.push({
+        entries.push({
+            archivePath,
             fileName,
             buffer: Buffer.from(await zipEntry.async("arraybuffer")),
         });
     }
 
-    return images;
+    return entries;
+}
+
+async function readRarEntries(archiveBuffer: ArrayBuffer): Promise<ArchiveEntry[]> {
+    const extractor = await getCreateExtractorFromData()({
+        data: archiveBuffer,
+        wasmBinary: getUnrarWasmBinary(),
+    });
+    const extracted = extractor.extract();
+    const entries: ArchiveEntry[] = [];
+
+    for (const file of extracted.files) {
+        const archivePath = normalizeArchivePath(file.fileHeader.name);
+
+        if (
+            file.fileHeader.flags.directory ||
+            isHiddenOrMeta(archivePath) ||
+            !file.extraction
+        ) {
+            continue;
+        }
+
+        const fileName = archivePath.split("/").pop();
+
+        if (!fileName) {
+            continue;
+        }
+
+        entries.push({
+            archivePath,
+            fileName,
+            buffer: Buffer.from(file.extraction),
+        });
+    }
+
+    return entries;
 }
 
 /**

@@ -493,8 +493,8 @@ export function ProjectDatasourceConsole({
                             className="muted"
                             style={{ marginTop: 4, fontSize: 13 }}
                         >
-                            上传 zip 格式的图片包。支持直接包含图片，或包含嵌套
-                            zip（每个 zip 内含图片）。
+                            上传 zip 或 rar 格式的图片包。支持直接包含图片，或包含嵌套
+                            zip / rar（每个压缩包内含图片）。
                         </div>
                     </div>
                 }
@@ -515,13 +515,13 @@ export function ProjectDatasourceConsole({
                                 className="field-label"
                                 htmlFor="image-pack-file"
                             >
-                                选择 zip 图片包
+                                选择 zip / rar 图片包
                             </label>
                             <input
                                 id="image-pack-file"
                                 name="file"
                                 type="file"
-                                accept=".zip"
+                                accept=".zip,.rar"
                                 multiple
                                 className="field-file"
                             />
@@ -531,7 +531,7 @@ export function ProjectDatasourceConsole({
                             <Tag color="blue">说明</Tag>
                             <span>
                                 上传后系统会自动解压提取所有图片文件（含嵌套
-                                zip），并建立文件名到图片的映射关系。之后需在「图片字段」中配置哪些原始字段关联图片。
+                                zip / rar），并建立文件名到图片的映射关系。之后需在「图片字段」中配置哪些原始字段关联图片。
                             </span>
                         </div>
 
