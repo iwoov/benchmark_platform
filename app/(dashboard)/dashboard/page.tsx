@@ -10,7 +10,7 @@ import {
     type RiskProject,
 } from "@/lib/dashboard/overview";
 import { isSuperAdminRole } from "@/lib/auth/roles";
-import { SubjectStatsChart } from "@/components/dashboard/subject-stats-chart";
+import { SubjectStatsPanel } from "@/components/dashboard/subject-stats-panel";
 import {
     Bot,
     BrainCircuit,
@@ -194,12 +194,22 @@ function RiskProjectList({ items }: { items: RiskProject[] }) {
     );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+    searchParams,
+}: {
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
     const session = await auth();
     const role = isSuperAdminRole(session?.user.platformRole)
         ? "SUPER_ADMIN"
         : "PLATFORM_ADMIN";
-    const overview = await getAdminOverview(role);
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const projectIdParam = resolvedSearchParams.projectId;
+    const projectId =
+        typeof projectIdParam === "string" && projectIdParam.length > 0
+            ? projectIdParam
+            : null;
+    const overview = await getAdminOverview(role, { projectId });
 
     if (overview.role === "SUPER_ADMIN") {
         return (
@@ -510,55 +520,11 @@ export default async function DashboardPage() {
                 </div>
             </section>
 
-            <section className="overview-two-column">
-                <div className="content-surface">
-                    <div className="section-head">
-                        <div>
-                            <h2
-                                style={{
-                                    margin: 0,
-                                    fontSize: 24,
-                                    lineHeight: 1.1,
-                                }}
-                            >
-                                人工审核通过率
-                            </h2>
-                            <div className="muted" style={{ marginTop: 8 }}>
-                                各学科人工审核通过占已审核总量的比例。
-                            </div>
-                        </div>
-                    </div>
-                    <SubjectStatsChart
-                        stats={overview.subjectStats}
-                        metric="passRate"
-                        barColor="var(--color-success, #52c41a)"
-                    />
-                </div>
-
-                <div className="content-surface">
-                    <div className="section-head">
-                        <div>
-                            <h2
-                                style={{
-                                    margin: 0,
-                                    fontSize: 24,
-                                    lineHeight: 1.1,
-                                }}
-                            >
-                                人工未审核率
-                            </h2>
-                            <div className="muted" style={{ marginTop: 8 }}>
-                                各学科尚无人工审核记录的题目占比。
-                            </div>
-                        </div>
-                    </div>
-                    <SubjectStatsChart
-                        stats={overview.subjectStats}
-                        metric="unreviewedRate"
-                        barColor="var(--color-warning, #faad14)"
-                    />
-                </div>
-            </section>
+            <SubjectStatsPanel
+                projects={overview.projects}
+                subjectStats={overview.subjectStats}
+                selectedProjectId={overview.selectedProjectId}
+            />
 
             <section className="overview-two-column">
                 <div className="content-surface">
