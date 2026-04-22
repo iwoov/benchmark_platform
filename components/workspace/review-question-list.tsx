@@ -236,8 +236,8 @@ export function ReviewQuestionList({
     const [reportFormat, setReportFormat] = useState<ReportFormat>("markdown");
     const [reportSubjectFieldKey, setReportSubjectFieldKey] = useState("");
     const [reportDetailFields, setReportDetailFields] = useState<string[]>([
-        "title",
-        "reviewDecision",
+        "raw:question_id",
+        "manualReviewStatus",
         "reviewComment",
         "datasourceId",
     ]);
