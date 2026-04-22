@@ -68,6 +68,39 @@ select {
     font: inherit;
 }
 
+/* ---------- Global thin / subtle scrollbars ---------- */
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+}
+
+/* WebKit / Blink (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background-color: rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(15, 23, 42, 0.32);
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 .page-shell {
     min-height: 100vh;
     background: transparent;
@@ -1059,7 +1092,7 @@ select {
     box-shadow: none !important;
 }
 
-.ant-input,
+.ant-input:not(textarea),
 .ant-input-affix-wrapper,
 .ant-picker,
 .ant-input-number,
@@ -1068,7 +1101,7 @@ select {
     font-size: 13px;
 }
 
-.ant-input-lg,
+.ant-input-lg:not(textarea),
 .ant-input-affix-wrapper-lg,
 .ant-picker-large,
 .ant-input-number-lg,
@@ -1078,7 +1111,7 @@ select {
     font-size: 13px !important;
 }
 
-.ant-input-sm,
+.ant-input-sm:not(textarea),
 .ant-input-affix-wrapper-sm,
 .ant-picker-small,
 .ant-input-number-sm,
@@ -1087,6 +1120,7 @@ select {
     height: 30px !important;
     font-size: 12px !important;
 }
+
 
 .ant-select-single .ant-select-selector,
 .ant-input-affix-wrapper,
