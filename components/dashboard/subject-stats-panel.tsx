@@ -10,8 +10,8 @@ import type {
 } from "@/lib/dashboard/overview";
 
 const PIE_HEIGHT = 280;
-const COLUMN_HEIGHT = 320;
-const COLUMN_MAX_WIDTH = 720;
+const COLUMN_HEIGHT = 360;
+const COLUMN_MAX_WIDTH = 960;
 
 const ALL_PROJECTS_VALUE = "__all__";
 
@@ -163,12 +163,14 @@ export function SubjectStatsPanel({
             },
         },
         label: {
-            text: "subject",
+            text: (d: { subject: string; value: number }) =>
+                `${d.subject}: ${d.value}`,
             position: "outside" as const,
             style: {
                 fontSize: 12,
             },
         },
+        tooltip: false as const,
     });
 
     return (
@@ -275,19 +277,21 @@ export function SubjectStatsPanel({
                             colorField="type"
                             group
                             height={COLUMN_HEIGHT}
-                            style={{ maxWidth: 28 }}
+                            style={{ maxWidth: 56 }}
                             axis={{
                                 x: { labelAutoRotate: true },
                                 y: { title: "题目数" },
                             }}
                             legend={{ color: { position: "top" } }}
+                            tooltip={false}
                             label={{
                                 text: "value",
                                 textBaseline: "bottom",
                                 position: "top",
                                 style: {
-                                    fontSize: 11,
-                                    fill: "var(--color-text-secondary, #555)",
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    fill: "var(--color-text-primary, #333)",
                                 },
                             }}
                         />
