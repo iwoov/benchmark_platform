@@ -94,12 +94,17 @@ function toArrayBuffer(value: ArrayBuffer | Uint8Array | Buffer) {
 }
 
 function getUnrarPackageDir() {
-    const packageJsonPath = runtimeRequireResolve(
-        require,
-        "node-unrar-js/package.json",
-    );
+    let entryPath: string;
 
-    return path.dirname(packageJsonPath);
+    try {
+        entryPath = runtimeRequireResolve(require, "node-unrar-js");
+    } catch {
+        throw new Error(
+            "RAR 支持依赖未安装：缺少 node-unrar-js。请在部署环境执行 pnpm install 后重启服务。",
+        );
+    }
+
+    return path.dirname(path.dirname(entryPath));
 }
 
 function getUnrarEntryPath() {
@@ -127,7 +132,13 @@ function getUnrarWasmBinary() {
         return cachedUnrarWasmBinary;
     }
 
-    cachedUnrarWasmBinary = toArrayBuffer(readFileSync(getUnrarWasmPath()));
+    try {
+        cachedUnrarWasmBinary = toArrayBuffer(readFileSync(getUnrarWasmPath()));
+    } catch {
+        throw new Error(
+            "RAR 支持文件缺失：未找到 node-unrar-js 的 unrar.wasm。请重新安装依赖并重新构建部署。",
+        );
+    }
 
     return cachedUnrarWasmBinary;
 }
@@ -137,10 +148,25 @@ function getCreateExtractorFromData() {
         return cachedCreateExtractorFromData;
     }
 
-    const { createExtractorFromData } = runtimeRequire(
-        require,
-        getUnrarEntryPath(),
-    ) as { createExtractorFromData: CreateExtractorFromData };
+    let createExtractorFromData: CreateExtractorFromData | undefined;
+
+    try {
+        ({ createExtractorFromData } = runtimeRequire(
+            require,
+            getUnrarEntryPath(),
+        ) as { createExtractorFromData?: CreateExtractorFromData });
+    } catch {
+        throw new Error(
+            "RAR 支持依赖未安装：缺少 node-unrar-js。请在部署环境执行 pnpm install 后重启服务。",
+        );
+    }
+
+    if (!createExtractorFromData) {
+        throw new Error(
+            "RAR 解压器初始化失败：node-unrar-js 未正确导出 createExtractorFromData。",
+        );
+    }
+
     cachedCreateExtractorFromData = createExtractorFromData;
 
     return cachedCreateExtractorFromData;
