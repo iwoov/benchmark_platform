@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import {
     invokeAiModel,
@@ -1792,8 +1792,7 @@ export async function getAiReviewStrategyRunsForQuestion(questionId: string) {
         where: {
             questionId,
         },
-        orderBy: [{ createdAt: "desc" }],
-        take: 6,
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         include: {
             strategy: {
                 select: {
@@ -1810,7 +1809,11 @@ export async function getAiReviewStrategyRunsForQuestion(questionId: string) {
         },
     });
 
-    return runs.map(buildRunView);
+    const latestRuns = Array.from(
+        new Map(runs.map((run) => [run.strategyId, run])).values(),
+    ).slice(0, 6);
+
+    return latestRuns.map(buildRunView);
 }
 
 async function loadStrategyForExecution(strategyId: string) {
@@ -2127,29 +2130,56 @@ export async function executeAiReviewStrategy(
         throw new Error("当前策略不适用于这道题目。");
     }
 
-    const run = await prisma.aiReviewStrategyRun.create({
-        data: {
-            strategyId: strategy.id,
-            questionId: question.id,
-            triggeredById,
-            status: "RUNNING",
-            startedAt: new Date(),
-            requestPayload: serializeJson({
-                strategy: {
-                    id: strategy.id,
-                    code: strategy.code,
-                    name: strategy.name,
-                    definition: strategy.definition,
-                },
-                question: {
-                    id: question.id,
-                    title: question.title,
-                    projectCode: question.project.code,
-                    datasourceName: question.datasource.name,
-                },
-            }),
+    const requestPayload = serializeJson({
+        strategy: {
+            id: strategy.id,
+            code: strategy.code,
+            name: strategy.name,
+            definition: strategy.definition,
+        },
+        question: {
+            id: question.id,
+            title: question.title,
+            projectCode: question.project.code,
+            datasourceName: question.datasource.name,
         },
     });
+    const existingRun = await prisma.aiReviewStrategyRun.findFirst({
+        where: {
+            strategyId: strategy.id,
+            questionId: question.id,
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: {
+            id: true,
+        },
+    });
+    const run = existingRun
+        ? await prisma.aiReviewStrategyRun.update({
+              where: {
+                  id: existingRun.id,
+              },
+              data: {
+                  triggeredById,
+                  status: "RUNNING",
+                  requestPayload,
+                  responsePayload: Prisma.JsonNull,
+                  parsedResult: Prisma.JsonNull,
+                  errorMessage: null,
+                  startedAt: new Date(),
+                  finishedAt: null,
+              },
+          })
+        : await prisma.aiReviewStrategyRun.create({
+              data: {
+                  strategyId: strategy.id,
+                  questionId: question.id,
+                  triggeredById,
+                  status: "RUNNING",
+                  startedAt: new Date(),
+                  requestPayload,
+              },
+          });
 
     const parsedResult = createExecutionResultShell(strategy, question);
     const stepResults = parsedResult.stepResults;
