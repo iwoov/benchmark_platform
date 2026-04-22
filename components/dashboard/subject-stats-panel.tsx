@@ -3,7 +3,8 @@
 import { useMemo, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Select, Spin } from "antd";
+import { Select, Spin, Table, Tooltip } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import type {
     PlatformAdminProjectOption,
     SubjectStat,
@@ -11,7 +12,6 @@ import type {
 
 const PIE_HEIGHT = 280;
 const COLUMN_HEIGHT = 360;
-const COLUMN_MAX_WIDTH = 960;
 
 const ALL_PROJECTS_VALUE = "__all__";
 
@@ -113,6 +113,108 @@ export function SubjectStatsPanel({
         }
         return out;
     }, [subjectStats]);
+
+    type SubjectTableRow = {
+        key: string;
+        subject: string;
+        total: number;
+        approved: number;
+        passRate: number;
+    };
+
+    const tableData = useMemo<SubjectTableRow[]>(
+        () =>
+            subjectStats.map((row) => ({
+                key: row.subject,
+                subject: row.subject,
+                total: row.total,
+                approved: row.approved,
+                passRate: row.passRate,
+            })),
+        [subjectStats],
+    );
+
+    const tableSummary = useMemo(() => {
+        const total = subjectStats.reduce((acc, row) => acc + row.total, 0);
+        const approved = subjectStats.reduce(
+            (acc, row) => acc + row.approved,
+            0,
+        );
+        const reviewed = subjectStats.reduce(
+            (acc, row) => acc + row.approved + row.rejected,
+            0,
+        );
+        const passRate = reviewed > 0 ? (approved / reviewed) * 100 : 0;
+        return { total, approved, passRate };
+    }, [subjectStats]);
+
+    const formatPassRate = (value: number) => `${value.toFixed(1)}%`;
+    const passRateColor = (value: number) => {
+        if (value >= 80) return "var(--color-success, #16a34a)";
+        if (value >= 50) return "var(--color-warning, #d97706)";
+        return "var(--color-danger, #dc2626)";
+    };
+
+    const tableColumns: ColumnsType<SubjectTableRow> = [
+        {
+            title: "学科",
+            dataIndex: "subject",
+            key: "subject",
+            width: 96,
+            ellipsis: true,
+            render: (value: string) => (
+                <span style={{ fontWeight: 500 }}>{value}</span>
+            ),
+        },
+        {
+            title: "总题目",
+            dataIndex: "total",
+            key: "total",
+            align: "right",
+            width: 80,
+            sorter: (a, b) => a.total - b.total,
+            render: (value: number) => value.toLocaleString(),
+        },
+        {
+            title: "通过题目",
+            dataIndex: "approved",
+            key: "approved",
+            align: "right",
+            width: 88,
+            sorter: (a, b) => a.approved - b.approved,
+            render: (value: number) => value.toLocaleString(),
+        },
+        {
+            title: (
+                <Tooltip title="通过率 = 通过 / 已审核(通过 + 驳回),不计入未审核题目。">
+                    <span
+                        style={{
+                            cursor: "help",
+                            borderBottom: "1px dashed currentColor",
+                        }}
+                    >
+                        通过率
+                    </span>
+                </Tooltip>
+            ),
+            dataIndex: "passRate",
+            key: "passRate",
+            align: "right",
+            width: 100,
+            sorter: (a, b) => a.passRate - b.passRate,
+            render: (value: number) => (
+                <span
+                    style={{
+                        color: passRateColor(value),
+                        fontVariantNumeric: "tabular-nums",
+                        fontWeight: 500,
+                    }}
+                >
+                    {formatPassRate(value)}
+                </span>
+            ),
+        },
+    ];
 
     const projectOptions = useMemo(
         () => [
@@ -269,32 +371,86 @@ export function SubjectStatsPanel({
                 {columnData.length === 0 ? (
                     <EmptyState text="暂无学科数据。" height={COLUMN_HEIGHT} />
                 ) : (
-                    <div style={{ maxWidth: COLUMN_MAX_WIDTH, margin: "0 auto", width: "100%" }}>
-                        <Column
-                            data={columnData}
-                            xField="subject"
-                            yField="value"
-                            colorField="type"
-                            group
-                            height={COLUMN_HEIGHT}
-                            style={{ maxWidth: 56 }}
-                            axis={{
-                                x: { labelAutoRotate: true },
-                                y: { title: "题目数" },
-                            }}
-                            legend={{ color: { position: "top" } }}
-                            tooltip={false}
-                            label={{
-                                text: "value",
-                                textBaseline: "bottom",
-                                position: "top",
-                                style: {
-                                    fontSize: 12,
-                                    fontWeight: 500,
-                                    fill: "var(--color-text-primary, #333)",
-                                },
-                            }}
-                        />
+                    <div className="overview-two-column">
+                        <div style={{ minWidth: 0 }}>
+                            <Column
+                                data={columnData}
+                                xField="subject"
+                                yField="value"
+                                colorField="type"
+                                group
+                                height={COLUMN_HEIGHT}
+                                style={{ maxWidth: 56 }}
+                                axis={{
+                                    x: { labelAutoRotate: true },
+                                    y: { title: "题目数" },
+                                }}
+                                legend={{ color: { position: "top" } }}
+                                tooltip={false}
+                                label={{
+                                    text: "value",
+                                    textBaseline: "bottom",
+                                    position: "top",
+                                    style: {
+                                        fontSize: 12,
+                                        fontWeight: 500,
+                                        fill: "var(--color-text-primary, #333)",
+                                    },
+                                }}
+                            />
+                        </div>
+                        <div className="subject-stats-table">
+                            <Table<SubjectTableRow>
+                                size="small"
+                                bordered
+                                pagination={false}
+                                columns={tableColumns}
+                                dataSource={tableData}
+                                scroll={{ y: COLUMN_HEIGHT - 40 }}
+                                rowClassName={(_, index) =>
+                                    index % 2 === 1
+                                        ? "subject-stats-table__row--alt"
+                                        : ""
+                                }
+                                summary={() => (
+                                    <Table.Summary fixed>
+                                        <Table.Summary.Row className="subject-stats-table__summary">
+                                            <Table.Summary.Cell index={0}>
+                                                合计
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell
+                                                index={1}
+                                                align="right"
+                                            >
+                                                {tableSummary.total.toLocaleString()}
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell
+                                                index={2}
+                                                align="right"
+                                            >
+                                                {tableSummary.approved.toLocaleString()}
+                                            </Table.Summary.Cell>
+                                            <Table.Summary.Cell
+                                                index={3}
+                                                align="right"
+                                            >
+                                                <span
+                                                    style={{
+                                                        color: passRateColor(
+                                                            tableSummary.passRate,
+                                                        ),
+                                                    }}
+                                                >
+                                                    {formatPassRate(
+                                                        tableSummary.passRate,
+                                                    )}
+                                                </span>
+                                            </Table.Summary.Cell>
+                                        </Table.Summary.Row>
+                                    </Table.Summary>
+                                )}
+                            />
+                        </div>
                     </div>
                 )}
             </div>
