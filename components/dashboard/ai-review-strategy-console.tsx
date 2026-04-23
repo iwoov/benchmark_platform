@@ -149,6 +149,20 @@ function getDatasourceFieldSet(
     );
 }
 
+function summarizeScope(count: number, total: number, emptyLabel: string) {
+    if (!count) {
+        return emptyLabel;
+    }
+
+    return `${count} / ${total}`;
+}
+
+function getStepTypeLabel(step: AiReviewStrategyStep) {
+    return step.kind === "AI_TOOL"
+        ? aiReviewToolLabels[step.toolType]
+        : aiReviewRuleLabels[step.ruleType];
+}
+
 const systemFieldOptions = [
     { value: "title", label: "系统字段 / title" },
     { value: "content", label: "系统字段 / content" },
@@ -301,16 +315,8 @@ export function AiReviewStrategyConsole({
         ];
     }, [datasources, form.datasourceIds]);
 
-    const datasourceNameMap = useMemo(
-        () =>
-            Object.fromEntries(
-                datasources.map((datasource) => [
-                    datasource.id,
-                    `${datasource.projectCode} / ${datasource.name}`,
-                ]),
-            ) as Record<string, string>,
-        [datasources],
-    );
+    const totalProjectCount = projects.length;
+    const totalDatasourceCount = datasources.length;
 
     function notifyResult(result: { error?: string; success?: string }) {
         if (result.error) {
@@ -613,7 +619,7 @@ export function AiReviewStrategyConsole({
                         {strategies.map((strategy) => (
                             <div key={strategy.id} className="strategy-card">
                                 <div className="strategy-card-head">
-                                    <div>
+                                    <div style={{ minWidth: 0, flex: 1 }}>
                                         <div className="strategy-title-row">
                                             <h3
                                                 style={{
@@ -642,6 +648,11 @@ export function AiReviewStrategyConsole({
                                                 style={{
                                                     margin: "8px 0 0",
                                                     lineHeight: 1.7,
+                                                    display: "-webkit-box",
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient:
+                                                        "vertical",
+                                                    overflow: "hidden",
                                                 }}
                                             >
                                                 {strategy.description}
@@ -686,6 +697,23 @@ export function AiReviewStrategyConsole({
                                         个步骤
                                     </Tag>
                                     <Tag bordered={false}>
+                                        AI 步骤：
+                                        {
+                                            strategy.definition.steps.filter(
+                                                (step) =>
+                                                    step.kind === "AI_TOOL",
+                                            ).length
+                                        }
+                                    </Tag>
+                                    <Tag bordered={false}>
+                                        规则步骤：
+                                        {
+                                            strategy.definition.steps.filter(
+                                                (step) => step.kind === "RULE",
+                                            ).length
+                                        }
+                                    </Tag>
+                                    <Tag bordered={false}>
                                         维护人：{strategy.createdByName}
                                     </Tag>
                                     <Tag bordered={false}>
@@ -696,95 +724,78 @@ export function AiReviewStrategyConsole({
                                     </Tag>
                                 </div>
 
-                                {strategy.projectIds.length ? (
-                                    <div className="strategy-scope-block">
-                                        <div className="strategy-scope-label">
+                                <div className="strategy-overview-grid">
+                                    <div className="strategy-overview-card">
+                                        <div className="strategy-overview-label">
                                             适用项目
                                         </div>
-                                        <div className="strategy-tag-wrap">
-                                            {strategy.projectIds.map(
-                                                (projectId) => {
-                                                    const project =
-                                                        projects.find(
-                                                            (item) =>
-                                                                item.id ===
-                                                                projectId,
-                                                        );
-                                                    return (
-                                                        <Tag key={projectId}>
-                                                            {project
-                                                                ? `${project.name} (${project.code})`
-                                                                : projectId}
-                                                        </Tag>
-                                                    );
-                                                },
+                                        <div className="strategy-overview-value">
+                                            {summarizeScope(
+                                                strategy.projectIds.length,
+                                                totalProjectCount,
+                                                "全部项目",
                                             )}
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="strategy-scope-inline">
-                                        适用项目：全部项目
-                                    </div>
-                                )}
-
-                                {strategy.datasourceIds.length ? (
-                                    <div className="strategy-scope-block">
-                                        <div className="strategy-scope-label">
+                                    <div className="strategy-overview-card">
+                                        <div className="strategy-overview-label">
                                             适用数据源
                                         </div>
-                                        <div className="strategy-tag-wrap">
-                                            {strategy.datasourceIds.map(
-                                                (datasourceId) => (
-                                                    <Tag key={datasourceId}>
-                                                        {datasourceNameMap[
-                                                            datasourceId
-                                                        ] ?? datasourceId}
-                                                    </Tag>
-                                                ),
+                                        <div className="strategy-overview-value">
+                                            {summarizeScope(
+                                                strategy.datasourceIds.length,
+                                                totalDatasourceCount,
+                                                "全部数据源",
                                             )}
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="strategy-scope-inline">
-                                        适用数据源：全部数据源
+                                    <div className="strategy-overview-card">
+                                        <div className="strategy-overview-label">
+                                            首步执行
+                                        </div>
+                                        <div className="strategy-overview-value">
+                                            {strategy.definition.steps[0]
+                                                ? getStepTypeLabel(
+                                                      strategy.definition
+                                                          .steps[0],
+                                                  )
+                                                : "未配置"}
+                                        </div>
                                     </div>
-                                )}
+                                    <div className="strategy-overview-card">
+                                        <div className="strategy-overview-label">
+                                            末步输出
+                                        </div>
+                                        <div className="strategy-overview-value">
+                                            {strategy.definition.steps.at(-1)
+                                                ? getStepTypeLabel(
+                                                      strategy.definition.steps.at(
+                                                          -1,
+                                                      )!,
+                                                  )
+                                                : "未配置"}
+                                        </div>
+                                    </div>
+                                </div>
 
-                                <div className="strategy-step-stack">
-                                    {strategy.definition.steps.map(
-                                        (step, index) => (
-                                            <div
-                                                key={step.id}
-                                                className="strategy-step-preview"
-                                            >
-                                                <div className="strategy-step-index">
-                                                    {index + 1}
-                                                </div>
-                                                <div style={{ minWidth: 0 }}>
-                                                    <div className="strategy-step-title">
-                                                        {step.name}
-                                                        <Tag>
-                                                            {step.kind ===
-                                                            "AI_TOOL"
-                                                                ? aiReviewToolLabels[
-                                                                      step
-                                                                          .toolType
-                                                                  ]
-                                                                : aiReviewRuleLabels[
-                                                                      step
-                                                                          .ruleType
-                                                                  ]}
-                                                        </Tag>
-                                                    </div>
-                                                    <div className="muted strategy-step-copy">
-                                                        {step.kind === "AI_TOOL"
-                                                            ? `模型 ${step.modelCode || "未配置"} · 字段 ${step.fieldKeys.join("、")}`
-                                                            : `来源步骤 ${step.sourceStepId || "未配置"} · 指标 ${step.metric}`}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ),
-                                    )}
+                                <div className="strategy-scope-inline">
+                                    具体适用项目、数据源、字段和提示词已收纳到编辑弹窗中。
+                                </div>
+
+                                <div className="strategy-tag-wrap">
+                                    {strategy.definition.steps
+                                        .slice(0, 3)
+                                        .map((step, index) => (
+                                            <Tag key={step.id} color="blue">
+                                                {index + 1}. {step.name}
+                                            </Tag>
+                                        ))}
+                                    {strategy.definition.steps.length > 3 ? (
+                                        <Tag>
+                                            +{strategy.definition.steps.length - 3}{" "}
+                                            个步骤
+                                        </Tag>
+                                    ) : null}
                                 </div>
                             </div>
                         ))}

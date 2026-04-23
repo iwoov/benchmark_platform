@@ -1879,6 +1879,35 @@ select {
     gap: 8px;
 }
 
+.strategy-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.strategy-overview-card {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.85);
+    border: 1px solid var(--line-soft);
+    min-width: 0;
+}
+
+.strategy-overview-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.strategy-overview-value {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
 .strategy-scope-block {
     display: grid;
     gap: 8px;
@@ -3063,6 +3092,9 @@ a.overview-detail-item:hover {
     .strategy-switch-row {
         flex-direction: column;
         align-items: flex-start;
+    }
+    .strategy-overview-grid {
+        grid-template-columns: 1fr;
     }
     .sidebar-footer {
         margin-top: 18px;
