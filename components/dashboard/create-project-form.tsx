@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Modal, Space } from "antd";
+import { Button, Checkbox, Input, Modal, Space } from "antd";
 import { FolderPlus, Hash, Plus, Type } from "lucide-react";
 import {
   createProjectAction,
@@ -112,6 +112,15 @@ export function CreateProjectForm() {
                   rows={4}
                   placeholder="可选，用于说明项目范围、数据来源或业务目标"
                 />
+              </div>
+
+              <div>
+                <Checkbox name="autoApplyAiStrategies" defaultChecked>
+                  自动加入现有审核策略范围
+                </Checkbox>
+                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                  勾选后，当前项目会自动加入已配置“适用项目”的审核策略，无需再到审核策略页手动添加。
+                </div>
               </div>
 
               <div

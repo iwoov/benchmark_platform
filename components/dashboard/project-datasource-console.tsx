@@ -8,7 +8,17 @@ import {
     useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Input, Modal, Select, Space, Tag } from "antd";
+import {
+    App,
+    Button,
+    Checkbox,
+    Empty,
+    Input,
+    Modal,
+    Select,
+    Space,
+    Tag,
+} from "antd";
 import {
     FileUp,
     Image as ImageIcon,
@@ -483,6 +493,21 @@ export function ProjectDatasourceConsole({
                                 size="large"
                                 placeholder="留空则默认使用文件名"
                             />
+                        </div>
+
+                        <div className="import-form-full">
+                            <Checkbox
+                                name="autoApplyAiStrategies"
+                                defaultChecked
+                            >
+                                自动加入现有审核策略范围
+                            </Checkbox>
+                            <div
+                                className="muted"
+                                style={{ marginTop: 6, fontSize: 12 }}
+                            >
+                                勾选后，新导入的数据源会自动加入已配置“适用数据源”的审核策略；如策略同时限定了项目范围，也会自动补上当前项目。
+                            </div>
                         </div>
 
                         <div className="import-file-field">

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { isAdminRole } from "@/lib/auth/roles";
+import { attachProjectToScopedStrategies } from "@/lib/ai/strategy-scope";
 const createProjectSchema = z.object({
     name: z
         .string()
@@ -108,6 +109,9 @@ export async function createProjectAction(
         };
     }
 
+    const autoApplyAiStrategies =
+        formData.get("autoApplyAiStrategies") === "on";
+
     const parsed = createProjectSchema.safeParse({
         name: formData.get("name"),
         code: formData.get("code"),
@@ -137,29 +141,51 @@ export async function createProjectAction(
         };
     }
 
-    const project = await prisma.project.create({
-        data: {
-            name: parsed.data.name,
-            code,
-            description: parsed.data.description,
-            createdById: session.user.id,
-            status: "ACTIVE",
-        },
-        select: {
-            name: true,
-        },
+    const result = await prisma.$transaction(async (tx) => {
+        const project = await tx.project.create({
+            data: {
+                name: parsed.data.name,
+                code,
+                description: parsed.data.description,
+                createdById: session.user.id,
+                status: "ACTIVE",
+            },
+            select: {
+                id: true,
+                name: true,
+            },
+        });
+
+        const updatedStrategyCount = autoApplyAiStrategies
+            ? await attachProjectToScopedStrategies(tx, project.id)
+            : 0;
+
+        return {
+            project,
+            updatedStrategyCount,
+        };
     });
 
     revalidatePath("/admin");
     revalidatePath("/admin/projects");
     revalidatePath("/admin/datasources");
+    revalidatePath("/dashboard/projects");
+    revalidatePath("/dashboard/datasources");
+    revalidatePath("/dashboard/ai-strategies");
+    revalidatePath("/admin/ai-strategies");
     revalidatePath("/workspace");
     revalidatePath("/workspace/projects");
     revalidatePath("/workspace/submissions");
     revalidatePath("/workspace/reviews");
 
     return {
-        success: `项目 ${project.name} 已创建。`,
+        success: `项目 ${result.project.name} 已创建。${
+            autoApplyAiStrategies
+                ? result.updatedStrategyCount
+                    ? ` 已自动加入 ${result.updatedStrategyCount} 条审核策略范围。`
+                    : " 当前没有需要补充项目范围的审核策略。"
+                : ""
+        }`,
     };
 }
 

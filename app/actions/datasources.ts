@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { parseImportedProjectData } from "@/lib/import/project-data";
 import { deleteDatasourceUploads } from "@/lib/import/file-storage";
 import { getProjectManagerScope } from "@/lib/auth/project-permissions";
+import { attachDatasourceToScopedStrategies } from "@/lib/ai/strategy-scope";
 
 const importProjectDataSchema = z.object({
     projectId: z.string().min(1, "请选择项目。"),
@@ -60,6 +61,9 @@ export async function importProjectDataAction(
     _prevState: ImportProjectDataFormState,
     formData: FormData,
 ): Promise<ImportProjectDataFormState> {
+    const autoApplyAiStrategies =
+        formData.get("autoApplyAiStrategies") === "on";
+
     const parsed = importProjectDataSchema.safeParse({
         projectId: formData.get("projectId"),
         name: formData.get("name") || undefined,
@@ -175,13 +179,29 @@ export async function importProjectDataAction(
                 },
             });
 
-            return datasource;
+            const updatedStrategyCount = autoApplyAiStrategies
+                ? await attachDatasourceToScopedStrategies(tx, {
+                      projectId: project.id,
+                      datasourceId: datasource.id,
+                  })
+                : 0;
+
+            return {
+                datasource,
+                updatedStrategyCount,
+            };
         });
 
         revalidateImportPaths();
 
         return {
-            success: `已为项目 ${project.name} 导入 ${importedPayload.rows.length} 条题目，并创建数据源 ${result.name}。`,
+            success: `已为项目 ${project.name} 导入 ${importedPayload.rows.length} 条题目，并创建数据源 ${result.datasource.name}。${
+                autoApplyAiStrategies
+                    ? result.updatedStrategyCount
+                        ? ` 已自动加入 ${result.updatedStrategyCount} 条审核策略范围。`
+                        : " 当前没有需要补充数据源范围的审核策略。"
+                    : ""
+            }`,
         };
     } catch (error) {
         return {
