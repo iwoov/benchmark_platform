@@ -4,7 +4,7 @@ import {
     readOriginalFileName,
     readRawFieldOrder,
     readImageFields,
-    readImagePackFileName,
+    readImageCount,
 } from "@/lib/datasources/sync-config";
 
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ export default async function DataSourcesPage() {
                 originalFileName: readOriginalFileName(datasource.syncConfig),
                 rawFieldOrder: readRawFieldOrder(datasource.syncConfig),
                 imageFields: readImageFields(datasource.syncConfig),
-                imagePackFileName: readImagePackFileName(datasource.syncConfig),
+                imageCount: readImageCount(datasource.syncConfig),
                 lastSyncAt:
                     datasource.syncLogs[0]?.createdAt.toLocaleString("zh-CN") ??
                     null,

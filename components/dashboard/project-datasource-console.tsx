@@ -57,7 +57,7 @@ type DataSourceItem = {
     lastSyncStatus?: "SUCCESS" | "FAILED" | null;
     rawFieldOrder?: string[];
     imageFields?: string[];
-    imagePackFileName?: string | null;
+    imageCount?: number;
 };
 
 const initialState: ImportProjectDataFormState = {};
@@ -97,6 +97,14 @@ export function ProjectDatasourceConsole({
     const [deletingDatasourceId, setDeletingDatasourceId] = useState<
         string | null
     >(null);
+    const datasourceGroups = projects
+        .map((project) => ({
+            project,
+            datasources: datasources.filter(
+                (datasource) => datasource.project.id === project.id,
+            ),
+        }))
+        .filter((group) => group.datasources.length > 0);
 
     useActionNotification(state, {
         successTitle: "导入成功",
@@ -265,111 +273,142 @@ export function ProjectDatasourceConsole({
                 </div>
 
                 {datasources.length ? (
-                    <div className="table-surface">
-                        <div className="datasource-list-head">
-                            <div>数据源</div>
-                            <div>所属项目</div>
-                            <div>类型</div>
-                            <div>状态</div>
-                            <div>题目数</div>
-                            <div>原始文件</div>
-                            <div>操作</div>
-                        </div>
-
-                        {datasources.map((datasource) => (
-                            <div
-                                key={datasource.id}
-                                className="datasource-list-row"
-                            >
-                                <div>
-                                    <div style={{ fontWeight: 700 }}>
-                                        {datasource.name}
-                                    </div>
+                    <div
+                        style={{ display: "grid", gap: 20 }}
+                    >
+                        {datasourceGroups.map(({ project, datasources }) => (
+                            <div key={project.id}>
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        marginBottom: 10,
+                                    }}
+                                >
                                     <div
-                                        className="muted"
-                                        style={{ marginTop: 4 }}
+                                        style={{
+                                            fontSize: 16,
+                                            fontWeight: 700,
+                                        }}
                                     >
-                                        创建于 {datasource.createdAt}
+                                        {project.name}
                                     </div>
+                                    <Tag color="blue">{project.code}</Tag>
+                                    <span className="muted">
+                                        {datasources.length} 个数据源
+                                    </span>
                                 </div>
-                                <div>
-                                    {datasource.project.name} (
-                                    {datasource.project.code})
-                                </div>
-                                <div>
-                                    <Tag
-                                        color={getDataSourceTypeColor(
-                                            datasource.type,
-                                        )}
-                                    >
-                                        {getDataSourceTypeLabel(
-                                            datasource.type,
-                                        )}
-                                    </Tag>
-                                </div>
-                                <div>
-                                    <Tag
-                                        color={getDataSourceStatusColor(
-                                            datasource.status,
-                                        )}
-                                    >
-                                        {getDataSourceStatusLabel(
-                                            datasource.status,
-                                        )}
-                                    </Tag>
-                                </div>
-                                <div>{datasource.questionCount}</div>
-                                <div className="muted">
-                                    {datasource.originalFileName ?? "—"}
-                                    {datasource.imagePackFileName ? (
-                                        <div style={{ marginTop: 4 }}>
-                                            <Tag color="green">
-                                                图片包:{" "}
-                                                {datasource.imagePackFileName}
-                                            </Tag>
+
+                                <div className="table-surface">
+                                    <div className="datasource-list-head">
+                                        <div>数据源</div>
+                                        <div>类型</div>
+                                        <div>状态</div>
+                                        <div>题目数</div>
+                                        <div>原始文件</div>
+                                        <div>操作</div>
+                                    </div>
+
+                                    {datasources.map((datasource) => (
+                                        <div
+                                            key={datasource.id}
+                                            className="datasource-list-row"
+                                        >
+                                            <div>
+                                                <div style={{ fontWeight: 700 }}>
+                                                    {datasource.name}
+                                                </div>
+                                                <div
+                                                    className="muted"
+                                                    style={{ marginTop: 4 }}
+                                                >
+                                                    创建于 {datasource.createdAt}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <Tag
+                                                    color={getDataSourceTypeColor(
+                                                        datasource.type,
+                                                    )}
+                                                >
+                                                    {getDataSourceTypeLabel(
+                                                        datasource.type,
+                                                    )}
+                                                </Tag>
+                                            </div>
+                                            <div>
+                                                <Tag
+                                                    color={getDataSourceStatusColor(
+                                                        datasource.status,
+                                                    )}
+                                                >
+                                                    {getDataSourceStatusLabel(
+                                                        datasource.status,
+                                                    )}
+                                                </Tag>
+                                            </div>
+                                            <div>{datasource.questionCount}</div>
+                                            <div className="muted">
+                                                {datasource.originalFileName ??
+                                                    "—"}
+                                                {typeof datasource.imageCount ===
+                                                    "number" &&
+                                                datasource.imageCount > 0 ? (
+                                                    <div style={{ marginTop: 4 }}>
+                                                        <Tag color="green">
+                                                            已关联{" "}
+                                                            {datasource.imageCount}{" "}
+                                                            张图片
+                                                        </Tag>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <div>
+                                                <Space size={4} wrap>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<ImageIcon size={14} />}
+                                                        onClick={() => {
+                                                            setImagePackDatasourceId(
+                                                                datasource.id,
+                                                            );
+                                                            setImagePackOpen(true);
+                                                        }}
+                                                    >
+                                                        上传图片包
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<Settings size={14} />}
+                                                        onClick={() =>
+                                                            openImageFieldModal(
+                                                                datasource,
+                                                            )
+                                                        }
+                                                    >
+                                                        图片字段
+                                                    </Button>
+                                                    <Button
+                                                        danger
+                                                        size="small"
+                                                        icon={<Trash2 size={14} />}
+                                                        loading={
+                                                            deletingDatasourceId ===
+                                                            datasource.id
+                                                        }
+                                                        onClick={() =>
+                                                            confirmDeleteDatasource(
+                                                                datasource,
+                                                            )
+                                                        }
+                                                    >
+                                                        删除
+                                                    </Button>
+                                                </Space>
+                                            </div>
                                         </div>
-                                    ) : null}
-                                </div>
-                                <div>
-                                    <Space size={4} wrap>
-                                        <Button
-                                            size="small"
-                                            icon={<ImageIcon size={14} />}
-                                            onClick={() => {
-                                                setImagePackDatasourceId(
-                                                    datasource.id,
-                                                );
-                                                setImagePackOpen(true);
-                                            }}
-                                        >
-                                            上传图片包
-                                        </Button>
-                                        <Button
-                                            size="small"
-                                            icon={<Settings size={14} />}
-                                            onClick={() =>
-                                                openImageFieldModal(datasource)
-                                            }
-                                        >
-                                            图片字段
-                                        </Button>
-                                        <Button
-                                            danger
-                                            size="small"
-                                            icon={<Trash2 size={14} />}
-                                            loading={
-                                                deletingDatasourceId ===
-                                                datasource.id
-                                            }
-                                            onClick={() =>
-                                                confirmDeleteDatasource(
-                                                    datasource,
-                                                )
-                                            }
-                                        >
-                                            删除
-                                        </Button>
-                                    </Space>
+                                    ))}
                                 </div>
                             </div>
                         ))}

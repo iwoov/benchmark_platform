@@ -67,3 +67,17 @@ export function readImageMap(syncConfig: Prisma.JsonValue | null) {
 
     return obj.imageMap as Record<string, string[]>;
 }
+
+export function readImageCount(syncConfig: Prisma.JsonValue | null) {
+    const imageMap = readImageMap(syncConfig);
+
+    if (!imageMap) {
+        return 0;
+    }
+
+    return new Set(
+        Object.values(imageMap)
+            .flatMap((urls) => (Array.isArray(urls) ? urls : []))
+            .filter((url): url is string => typeof url === "string" && Boolean(url)),
+    ).size;
+}
