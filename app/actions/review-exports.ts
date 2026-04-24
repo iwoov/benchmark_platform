@@ -858,6 +858,8 @@ export async function exportReviewReportAction(
         return { error: "请先勾选至少 1 条题目后再导出。" };
     }
 
+    const projectId = parsed.data.projectId;
+
     // --- Query questions ---
     const statusCondition = parsed.data.filters.find(
         (condition) => condition.fieldKey === "status",
@@ -877,7 +879,7 @@ export async function exportReviewReportAction(
 
     const questions = await prisma.question.findMany({
         where: {
-            projectId: parsed.data.projectId,
+            projectId,
             ...(parsed.data.scope === "selected"
                 ? { id: { in: uniqueQuestionIds } }
                 : {}),
@@ -922,7 +924,7 @@ export async function exportReviewReportAction(
 
     const reviewSummaryMap = await getLatestReviewSummaryMap(
         visibleQuestions.map((question) => ({
-            projectId: parsed.data.projectId,
+            projectId,
             datasourceId: question.datasource.id,
             externalRecordId: question.externalRecordId,
         })),
@@ -934,7 +936,7 @@ export async function exportReviewReportAction(
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
         const reviewSummary = reviewSummaryMap.get(
             buildReviewCompositeKey({
-                projectId: parsed.data.projectId,
+                projectId,
                 datasourceId: question.datasource.id,
                 externalRecordId: question.externalRecordId,
             }),
@@ -1040,7 +1042,7 @@ export async function exportReviewReportAction(
 
     // --- Compute stats ---
     const projectName =
-        orderedQuestions[0]?.project.name ?? parsed.data.projectId;
+        orderedQuestions[0]?.project.name ?? projectId;
 
     function computeGroupStats(
         subject: string,
@@ -1050,9 +1052,17 @@ export async function exportReviewReportAction(
         let rejected = 0;
 
         for (const question of items) {
-            if (question.status === "APPROVED") {
+            const manualReview = reviewSummaryMap.get(
+                buildReviewCompositeKey({
+                    projectId,
+                    datasourceId: question.datasource.id,
+                    externalRecordId: question.externalRecordId,
+                }),
+            )?.manualReview;
+
+            if (manualReview?.decision === "PASS") {
                 approved += 1;
-            } else if (question.status === "REJECTED") {
+            } else if (manualReview?.decision === "REJECT") {
                 rejected += 1;
             }
         }
@@ -1090,7 +1100,7 @@ export async function exportReviewReportAction(
             const sourceRowNumber = extractSourceRowNumber(question.metadata);
             const reviewSummary = reviewSummaryMap.get(
                 buildReviewCompositeKey({
-                    projectId: parsed.data.projectId,
+                    projectId,
                     datasourceId: question.datasource.id,
                     externalRecordId: question.externalRecordId,
                 }),
