@@ -1,13 +1,21 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import {
+    useActionState,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Space, Tag } from "antd";
-import { KeyRound, Mail, UserRound } from "lucide-react";
+import { App, Button, Input, Select, Space, Tag } from "antd";
+import { BookOpen, KeyRound, Mail, UserRound } from "lucide-react";
 import {
     type AccountFormState,
+    getDistinctSubjectsAction,
     updateOwnPasswordAction,
     updateOwnProfileAction,
+    updateSubjectPreferencesAction,
 } from "@/app/actions/account-settings";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
 import {
@@ -29,10 +37,20 @@ export function AccountSettingsForms({
         email: string | null;
         platformRole: PlatformRoleValue;
         projectRoles: ProjectRoleValue[];
+        subjectPreferences: string[];
     };
 }) {
     const router = useRouter();
+    const { notification } = App.useApp();
     const passwordFormRef = useRef<HTMLFormElement>(null);
+    const [subjectOptions, setSubjectOptions] = useState<
+        Array<{ value: string; label: string }>
+    >([]);
+    const [selectedSubjects, setSelectedSubjects] = useState<string[]>(
+        user.subjectPreferences,
+    );
+    const [subjectLoading, setSubjectLoading] = useState(false);
+    const [subjectSaving, setSubjectSaving] = useState(false);
     const [profileState, profileAction, profilePending] = useActionState(
         updateOwnProfileAction,
         initialState,
@@ -63,6 +81,49 @@ export function AccountSettingsForms({
             router.refresh();
         }
     }, [passwordState.success, router]);
+
+    const loadSubjects = useCallback(async () => {
+        setSubjectLoading(true);
+
+        try {
+            const subjects = await getDistinctSubjectsAction();
+            setSubjectOptions(subjects.map((s) => ({ value: s, label: s })));
+        } finally {
+            setSubjectLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadSubjects();
+    }, [loadSubjects]);
+
+    async function saveSubjectPreferences() {
+        setSubjectSaving(true);
+
+        try {
+            const result =
+                await updateSubjectPreferencesAction(selectedSubjects);
+
+            if (result.error) {
+                notification.error({
+                    message: "保存失败",
+                    description: result.error,
+                    placement: "topRight",
+                });
+                return;
+            }
+
+            notification.success({
+                message: "学科偏好已保存",
+                description:
+                    result.success ?? "题目列表将自动按此偏好筛选学科。",
+                placement: "topRight",
+            });
+            router.refresh();
+        } finally {
+            setSubjectSaving(false);
+        }
+    }
 
     return (
         <div style={{ display: "grid", gap: 16 }}>
@@ -254,6 +315,67 @@ export function AccountSettingsForms({
                         </Button>
                     </div>
                 </form>
+            </section>
+
+            <section className="content-surface">
+                <div>
+                    <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
+                        学科偏好
+                    </h2>
+                    <p
+                        className="muted"
+                        style={{ margin: "10px 0 0", lineHeight: 1.7 }}
+                    >
+                        选择你关注的学科，题目列表页面将自动按此偏好筛选，无需每次手动选择。
+                    </p>
+                </div>
+
+                <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+                    <div>
+                        <label
+                            className="field-label"
+                            htmlFor="settings-subjects"
+                        >
+                            学科选择（可多选）
+                        </label>
+                        <Select
+                            id="settings-subjects"
+                            mode="multiple"
+                            size="large"
+                            value={selectedSubjects}
+                            onChange={(value) => setSelectedSubjects(value)}
+                            options={subjectOptions}
+                            loading={subjectLoading}
+                            placeholder={
+                                subjectLoading
+                                    ? "加载学科列表中..."
+                                    : "请选择关注的学科"
+                            }
+                            style={{ width: "100%" }}
+                            optionFilterProp="label"
+                            showSearch
+                            allowClear
+                            suffixIcon={<BookOpen size={16} />}
+                        />
+                    </div>
+
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            marginTop: 6,
+                        }}
+                    >
+                        <Button
+                            type="primary"
+                            size="large"
+                            loading={subjectSaving}
+                            onClick={saveSubjectPreferences}
+                        >
+                            保存学科偏好
+                        </Button>
+                    </div>
+                </div>
             </section>
         </div>
     );

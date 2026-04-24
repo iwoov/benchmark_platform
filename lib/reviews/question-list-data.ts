@@ -409,12 +409,14 @@ export async function getReviewQuestionListPageData({
     page = 1,
     pageSize = 50,
     conditions = [],
+    subjectTitles,
 }: {
     projectId: string;
     datasourceId?: string;
     page?: number;
     pageSize?: number;
     conditions?: ReviewQuestionFilterCondition[];
+    subjectTitles?: string[];
 }): Promise<ReviewQuestionListPageData> {
     if (!process.env.DATABASE_URL || !projectId) {
         return {
@@ -459,6 +461,10 @@ export async function getReviewQuestionListPageData({
     const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
+            title:
+                subjectTitles && subjectTitles.length
+                    ? { in: subjectTitles }
+                    : undefined,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { isAdminRole } from "@/lib/auth/roles";
@@ -212,4 +213,76 @@ export async function updateOwnPasswordAction(
     return {
         success: "密码已更新，下次登录请使用新密码。",
     };
+}
+
+export async function getDistinctSubjectsAction(): Promise<string[]> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return [];
+    }
+
+    const rows = await prisma.question.findMany({
+        select: {
+            title: true,
+        },
+        distinct: ["title"],
+        orderBy: {
+            title: "asc",
+        },
+    });
+
+    return rows
+        .map((row) => row.title.trim())
+        .filter((title) => Boolean(title));
+}
+
+export async function updateSubjectPreferencesAction(
+    subjects: string[],
+): Promise<AccountFormState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "登录状态已失效，请重新登录。",
+        };
+    }
+
+    const sanitized = subjects.map((s) => s.trim()).filter((s) => Boolean(s));
+
+    await prisma.user.update({
+        where: {
+            id: session.user.id,
+        },
+        data: {
+            subjectPreferences: sanitized.length ? sanitized : Prisma.DbNull,
+        },
+    });
+
+    revalidateAccountPaths(session.user.platformRole);
+
+    return {
+        success: "学科偏好已保存。",
+    };
+}
+
+export async function getUserSubjectPreferences(
+    userId: string,
+): Promise<string[]> {
+    if (!process.env.DATABASE_URL || !userId) {
+        return [];
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { subjectPreferences: true },
+    });
+
+    if (!user?.subjectPreferences || !Array.isArray(user.subjectPreferences)) {
+        return [];
+    }
+
+    return user.subjectPreferences.filter(
+        (item): item is string => typeof item === "string",
+    );
 }

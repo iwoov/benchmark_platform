@@ -114,6 +114,7 @@ model User {
   status                    UserStatus                         @default(ACTIVE)
   platformRole              PlatformRole                       @default(USER)
   ownerAdminId              String?
+  subjectPreferences        Json?
   createdProjects           Project[]                          @relation("ProjectCreator")
   memberships               ProjectMember[]
   reviews                   Review[]

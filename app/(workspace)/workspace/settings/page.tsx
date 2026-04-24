@@ -35,6 +35,11 @@ export default async function WorkspaceSettingsPage() {
                         user.memberships.map((membership) => membership.role),
                     ),
                 ],
+                subjectPreferences: Array.isArray(user.subjectPreferences)
+                    ? user.subjectPreferences.filter(
+                          (item): item is string => typeof item === "string",
+                      )
+                    : [],
             }}
         />
     );
