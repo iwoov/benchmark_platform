@@ -31,7 +31,10 @@ export default async function WorkspaceReviewDetailPage({
     }
 
     const { questionId } = await params;
-    const question = await getReviewQuestionDetail(questionId);
+    const question = await getReviewQuestionDetail(questionId, {
+        userId: session.user.id,
+        platformRole: session.user.platformRole,
+    });
     if (!question) {
         notFound();
     }
@@ -47,6 +50,10 @@ export default async function WorkspaceReviewDetailPage({
                 ? resolvedSearchParams.filters[0]
                 : resolvedSearchParams.filters,
         ),
+        viewer: {
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+        },
     });
 
     const canReview = await canUserReviewProject(

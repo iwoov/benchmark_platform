@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Modal, Space } from "antd";
+import { Button, Input, Modal, Select, Space, Tag } from "antd";
 import { KeyRound, Mail, Plus, UserRound } from "lucide-react";
 import {
     createUserAction,
@@ -26,12 +26,17 @@ const createRoleOptionsByCurrentRole: Record<
 export function CreateUserForm({
     currentPlatformRole,
     adminOptions,
+    subjects,
 }: {
     currentPlatformRole: PlatformRoleValue;
     adminOptions: Array<{
         id: string;
         name: string;
         username: string | null;
+    }>;
+    subjects: Array<{
+        id: string;
+        name: string;
     }>;
 }) {
     const router = useRouter();
@@ -47,6 +52,7 @@ export function CreateUserForm({
     const [selectedRole, setSelectedRole] = useState<PlatformRoleValue>(
         availablePlatformRoles[0],
     );
+    const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
 
     useActionNotification(state, {
         successTitle: "用户创建成功",
@@ -60,6 +66,7 @@ export function CreateUserForm({
                 setOpen(false);
                 setDialogKey((value) => value + 1);
                 setSelectedRole(availablePlatformRoles[0]);
+                setSelectedSubjectIds([]);
                 router.refresh();
             });
 
@@ -76,6 +83,7 @@ export function CreateUserForm({
                 onClick={() => {
                     setDialogKey((value) => value + 1);
                     setSelectedRole(availablePlatformRoles[0]);
+                    setSelectedSubjectIds([]);
                     setOpen(true);
                 }}
             >
@@ -258,6 +266,65 @@ export function CreateUserForm({
                                     </select>
                                 </div>
                             </div>
+
+                            {selectedRole !== "SUPER_ADMIN" ? (
+                                <div>
+                                    <label
+                                        htmlFor="subjectIds"
+                                        style={{
+                                            display: "block",
+                                            marginBottom: 8,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        学科标签
+                                    </label>
+                                    <Select
+                                        id="subjectIds"
+                                        mode="multiple"
+                                        size="large"
+                                        value={selectedSubjectIds}
+                                        onChange={setSelectedSubjectIds}
+                                        placeholder="选择该用户可见的学科"
+                                        options={subjects.map((subject) => ({
+                                            value: subject.id,
+                                            label: subject.name,
+                                        }))}
+                                        style={{ width: "100%" }}
+                                        maxTagCount="responsive"
+                                    />
+                                    {selectedSubjectIds.map((subjectId) => (
+                                        <input
+                                            key={subjectId}
+                                            type="hidden"
+                                            name="subjectIds"
+                                            value={subjectId}
+                                        />
+                                    ))}
+                                    <div
+                                        className="muted"
+                                        style={{
+                                            marginTop: 8,
+                                            fontSize: 12,
+                                            lineHeight: 1.6,
+                                        }}
+                                    >
+                                        未分配学科的普通用户或平台管理员将看不到任何题目。学科定义可在超级管理员的“学科管理”页面维护。
+                                    </div>
+                                    {!subjects.length ? (
+                                        <div
+                                            className="workspace-tip"
+                                            style={{ marginTop: 12 }}
+                                        >
+                                            <Tag color="gold">提示</Tag>
+                                            <span>
+                                                当前还没有可分配的学科，请先由超级管理员创建学科并绑定
+                                                `primary` 取值。
+                                            </span>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : null}
 
                             {currentPlatformRole === "SUPER_ADMIN" &&
                             selectedRole === "USER" ? (

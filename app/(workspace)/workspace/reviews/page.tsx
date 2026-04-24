@@ -8,7 +8,6 @@ import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
 import { getResolvedUserProjectReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
-import { getUserSubjectPreferences } from "@/app/actions/account-settings";
 
 function parsePositiveInt(
     value: string | string[] | undefined,
@@ -58,11 +57,6 @@ export default async function WorkspaceReviewsPage({
             : resolvedSearchParams.filters,
     );
 
-    const subjectPreferences = session?.user?.id
-        ? await getUserSubjectPreferences(session.user.id)
-        : [];
-    const hasUrlFilters = filters.length > 0;
-
     const [questionPage, reviewStrategies, filterMeta, fieldPreference] =
         selectedProjectId
             ? await Promise.all([
@@ -71,10 +65,10 @@ export default async function WorkspaceReviewsPage({
                       page: requestedPage,
                       pageSize: requestedPageSize,
                       conditions: filters,
-                      subjectTitles:
-                          !hasUrlFilters && subjectPreferences.length
-                              ? subjectPreferences
-                              : undefined,
+                      viewer: {
+                          userId: session?.user?.id ?? "",
+                          platformRole: session?.user?.platformRole ?? "USER",
+                      },
                   }),
                   getReviewQuestionListAiStrategies([selectedProjectId], {
                       userId: session?.user?.id ?? "",
@@ -129,11 +123,6 @@ export default async function WorkspaceReviewsPage({
             rawFieldOptions={filterMeta.rawFieldOptions}
             fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
-            activeSubjectPreferences={
-                !hasUrlFilters && subjectPreferences.length
-                    ? subjectPreferences
-                    : undefined
-            }
         />
     );
 }

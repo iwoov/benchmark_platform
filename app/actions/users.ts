@@ -44,6 +44,7 @@ const createUserSchema = z.object({
         .trim()
         .optional()
         .transform((value) => value || undefined),
+    subjectIds: z.array(z.string().trim().min(1)).default([]),
 });
 
 const updateUserSchema = z.object({
@@ -83,6 +84,7 @@ const updateUserSchema = z.object({
         .trim()
         .optional()
         .transform((value) => value || undefined),
+    subjectIds: z.array(z.string().trim().min(1)).default([]),
 });
 
 export type CreateUserFormState = {
@@ -92,6 +94,31 @@ export type CreateUserFormState = {
 
 function canManageAdminRoles(platformRole: PlatformRoleValue) {
     return isSuperAdminRole(platformRole);
+}
+
+async function resolveValidSubjectIds(subjectIds: string[]) {
+    const uniqueSubjectIds = [...new Set(subjectIds)];
+
+    if (!uniqueSubjectIds.length) {
+        return [];
+    }
+
+    const subjects = await prisma.subject.findMany({
+        where: {
+            id: {
+                in: uniqueSubjectIds,
+            },
+        },
+        select: {
+            id: true,
+        },
+    });
+
+    if (subjects.length !== uniqueSubjectIds.length) {
+        return null;
+    }
+
+    return uniqueSubjectIds;
 }
 
 export async function createUserAction(
@@ -114,6 +141,9 @@ export async function createUserAction(
         platformRole: formData.get("platformRole"),
         status: formData.get("status"),
         ownerAdminId: formData.get("ownerAdminId") || undefined,
+        subjectIds: formData
+            .getAll("subjectIds")
+            .filter((value): value is string => typeof value === "string"),
     });
 
     if (!parsed.success) {
@@ -199,6 +229,17 @@ export async function createUserAction(
         }
     }
 
+    const subjectIds =
+        parsed.data.platformRole === "SUPER_ADMIN"
+            ? []
+            : await resolveValidSubjectIds(parsed.data.subjectIds);
+
+    if (subjectIds === null) {
+        return {
+            error: "所选学科不存在，请刷新后重试。",
+        };
+    }
+
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
     const createdUser = await prisma.user.create({
@@ -210,6 +251,13 @@ export async function createUserAction(
             platformRole: parsed.data.platformRole,
             status: parsed.data.status,
             ownerAdminId,
+            subjectAssignments: subjectIds.length
+                ? {
+                      create: subjectIds.map((subjectId) => ({
+                          subjectId,
+                      })),
+                  }
+                : undefined,
         },
         select: {
             id: true,
@@ -228,6 +276,8 @@ export async function createUserAction(
     }
 
     revalidatePath("/admin/users");
+    revalidatePath("/admin/subjects");
+    revalidatePath("/workspace/reviews");
 
     return {
         success: `用户 ${username} 已创建。`,
@@ -255,6 +305,9 @@ export async function updateUserAction(
         platformRole: formData.get("platformRole"),
         status: formData.get("status"),
         ownerAdminId: formData.get("ownerAdminId") || undefined,
+        subjectIds: formData
+            .getAll("subjectIds")
+            .filter((value): value is string => typeof value === "string"),
     });
 
     if (!parsed.success) {
@@ -381,6 +434,17 @@ export async function updateUserAction(
         }
     }
 
+    const subjectIds =
+        parsed.data.platformRole === "SUPER_ADMIN"
+            ? []
+            : await resolveValidSubjectIds(parsed.data.subjectIds);
+
+    if (subjectIds === null) {
+        return {
+            error: "所选学科不存在，请刷新后重试。",
+        };
+    }
+
     const passwordHash = parsed.data.password
         ? await bcrypt.hash(parsed.data.password, 10)
         : user.passwordHash;
@@ -388,7 +452,34 @@ export async function updateUserAction(
     let ownerAdminId: string | null = null;
 
     if (parsed.data.platformRole === "PLATFORM_ADMIN") {
-        ownerAdminId = user.ownerAdminId ?? session.user.id;
+        if (currentPlatformRole !== "SUPER_ADMIN") {
+            ownerAdminId = user.ownerAdminId ?? session.user.id;
+        } else {
+            if (!parsed.data.ownerAdminId) {
+                return {
+                    error: "请为平台管理员选择所属超级管理员。",
+                };
+            }
+
+            const ownerAdmin = await prisma.user.findFirst({
+                where: {
+                    id: parsed.data.ownerAdminId,
+                    platformRole: "SUPER_ADMIN",
+                    status: "ACTIVE",
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (!ownerAdmin) {
+                return {
+                    error: "所属超级管理员不存在，请刷新后重试。",
+                };
+            }
+
+            ownerAdminId = ownerAdmin.id;
+        }
     } else if (parsed.data.platformRole === "USER") {
         if (currentPlatformRole === "PLATFORM_ADMIN") {
             ownerAdminId = session.user.id;
@@ -431,6 +522,16 @@ export async function updateUserAction(
             platformRole: parsed.data.platformRole,
             status: parsed.data.status,
             ownerAdminId,
+            subjectAssignments: {
+                deleteMany: {},
+                ...(subjectIds.length
+                    ? {
+                          create: subjectIds.map((subjectId) => ({
+                              subjectId,
+                          })),
+                      }
+                    : {}),
+            },
         },
         select: {
             id: true,
@@ -449,6 +550,7 @@ export async function updateUserAction(
     }
 
     revalidatePath("/admin/users");
+    revalidatePath("/admin/subjects");
     revalidatePath("/admin/projects");
     revalidatePath("/workspace");
     revalidatePath("/workspace/projects");

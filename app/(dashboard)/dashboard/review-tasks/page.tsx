@@ -8,7 +8,6 @@ import {
 import { getReviewQuestionListAiStrategies } from "@/lib/ai/review-strategies";
 import { getResolvedUserProjectReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
-import { getUserSubjectPreferences } from "@/app/actions/account-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -66,11 +65,6 @@ export default async function ReviewTasksPage({
             : resolvedSearchParams.filters,
     );
 
-    const subjectPreferences = session?.user?.id
-        ? await getUserSubjectPreferences(session.user.id)
-        : [];
-    const hasUrlFilters = filters.length > 0;
-
     const [questionPage, reviewStrategies, filterMeta, fieldPreference] =
         selectedProjectId
             ? await Promise.all([
@@ -79,10 +73,6 @@ export default async function ReviewTasksPage({
                       page: requestedPage,
                       pageSize: requestedPageSize,
                       conditions: filters,
-                      subjectTitles:
-                          !hasUrlFilters && subjectPreferences.length
-                              ? subjectPreferences
-                              : undefined,
                   }),
                   getReviewQuestionListAiStrategies([selectedProjectId], {
                       userId: session?.user?.id ?? "",
@@ -131,11 +121,6 @@ export default async function ReviewTasksPage({
             rawFieldOptions={filterMeta.rawFieldOptions}
             fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
-            activeSubjectPreferences={
-                !hasUrlFilters && subjectPreferences.length
-                    ? subjectPreferences
-                    : undefined
-            }
         />
     );
 }

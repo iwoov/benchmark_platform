@@ -194,7 +194,6 @@ export function ReviewQuestionList({
     rawFieldOptions,
     fieldPreference,
     reviewStrategies,
-    activeSubjectPreferences,
 }: {
     canReview: boolean;
     scopeLabel?: string;
@@ -210,7 +209,6 @@ export function ReviewQuestionList({
     rawFieldOptions: Array<{ key: string; label: string }>;
     fieldPreference: ResolvedReviewFieldPreference;
     reviewStrategies: ReviewStrategyOption[];
-    activeSubjectPreferences?: string[];
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
@@ -970,19 +968,6 @@ export function ReviewQuestionList({
                                     </Tag>
                                 );
                             })}
-                        </div>
-                    ) : null}
-
-                    {activeSubjectPreferences?.length &&
-                    !activeConditions.length ? (
-                        <div className="review-filter-tags">
-                            <Tag color="purple">
-                                学科偏好筛选中：
-                                {activeSubjectPreferences.join("、")}
-                            </Tag>
-                            <span className="muted" style={{ fontSize: 12 }}>
-                                基于账户设置中的学科偏好自动筛选，设置筛选条件后将覆盖此偏好
-                            </span>
                         </div>
                     ) : null}
 

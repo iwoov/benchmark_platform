@@ -125,6 +125,7 @@ model User {
   aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[]         @relation("AiReviewStrategyBatchRunCreator")
   dingtalkAccounts          DingtalkAccount[]
   reviewFieldPreferences    UserProjectReviewFieldPreference[]
+  subjectAssignments        UserSubjectAssignment[]
   ownerAdmin                User?                              @relation("UserOwnedAccounts", fields: [ownerAdminId], references: [id], onDelete: SetNull)
   managedUsers              User[]                             @relation("UserOwnedAccounts")
   createdAt                 DateTime                           @default(now())
@@ -152,6 +153,39 @@ model Project {
   reviewFieldPreferences    UserProjectReviewFieldPreference[]
   createdAt                 DateTime                           @default(now())
   updatedAt                 DateTime                           @updatedAt
+}
+
+model Subject {
+  id              String                 @id @default(cuid())
+  name            String                 @unique
+  description     String?
+  primaryValues   SubjectPrimaryValue[]
+  userAssignments UserSubjectAssignment[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+}
+
+model SubjectPrimaryValue {
+  id        String   @id @default(cuid())
+  subjectId String
+  value     String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([subjectId, value])
+  @@index([value])
+}
+
+model UserSubjectAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, subjectId])
+  @@index([subjectId])
 }
 
 model UserProjectReviewFieldPreference {

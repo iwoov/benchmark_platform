@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { CreateUserForm } from "@/components/dashboard/create-user-form";
 import { UserManagementTable } from "@/components/dashboard/user-management-table";
-import { getUserOwnerAdminOptions } from "@/lib/auth/admin-scope";
+import {
+    getSuperAdminOptions,
+    getUserOwnerAdminOptions,
+} from "@/lib/auth/admin-scope";
 import { getHomePathByRole } from "@/lib/auth/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { isAdminRole } from "@/lib/auth/roles";
@@ -20,7 +23,7 @@ export default async function UsersPage() {
         redirect(getHomePathByRole(session.user.platformRole));
     }
 
-    const [users, adminOptions] = process.env.DATABASE_URL
+    const [users, adminOptions, superAdminOptions, subjects] = process.env.DATABASE_URL
         ? await Promise.all([
               prisma.user.findMany({
                   where:
@@ -60,11 +63,31 @@ export default async function UsersPage() {
                               role: true,
                           },
                       },
+                      subjectAssignments: {
+                          select: {
+                              subject: {
+                                  select: {
+                                      id: true,
+                                      name: true,
+                                  },
+                              },
+                          },
+                      },
                   },
               }),
               getUserOwnerAdminOptions(),
+              getSuperAdminOptions(),
+              prisma.subject.findMany({
+                  orderBy: {
+                      name: "asc",
+                  },
+                  select: {
+                      id: true,
+                      name: true,
+                  },
+              }),
           ])
-        : [[], []];
+        : [[], [], [], []];
 
     return (
         <section className="content-surface users-table-surface">
@@ -83,6 +106,7 @@ export default async function UsersPage() {
                 <CreateUserForm
                     currentPlatformRole={session.user.platformRole}
                     adminOptions={adminOptions}
+                    subjects={subjects}
                 />
             </div>
 
@@ -90,6 +114,8 @@ export default async function UsersPage() {
                 currentPlatformRole={session.user.platformRole}
                 currentUserId={session.user.id}
                 adminOptions={adminOptions}
+                superAdminOptions={superAdminOptions}
+                subjects={subjects}
                 users={users.map((user) => ({
                     id: user.id,
                     username: user.username,
@@ -108,6 +134,9 @@ export default async function UsersPage() {
                         ),
                     ],
                     projectCount: user.memberships.length,
+                    subjectTags: user.subjectAssignments.map(
+                        (assignment) => assignment.subject,
+                    ),
                 }))}
             />
         </section>

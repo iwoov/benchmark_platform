@@ -95,3 +95,24 @@ export async function getUserOwnerAdminOptions() {
 
     return admins satisfies AdminScopeOption[];
 }
+
+export async function getSuperAdminOptions() {
+    if (!process.env.DATABASE_URL) {
+        return [] as AdminScopeOption[];
+    }
+
+    const admins = await prisma.user.findMany({
+        where: {
+            platformRole: "SUPER_ADMIN",
+            status: "ACTIVE",
+        },
+        orderBy: [{ name: "asc" }, { username: "asc" }],
+        select: {
+            id: true,
+            name: true,
+            username: true,
+        },
+    });
+
+    return admins satisfies AdminScopeOption[];
+}

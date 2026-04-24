@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    canUserAccessQuestionByMetadata,
+    canUserReviewProject,
+} from "@/lib/reviews/permissions";
 import { invokeAiModel } from "@/lib/ai/invoke";
 
 const requestSchema = z.object({
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
 
     const question = await prisma.question.findUnique({
         where: { id: questionId },
-        select: { id: true, projectId: true },
+        select: { id: true, projectId: true, metadata: true },
     });
 
     if (!question) {
@@ -155,6 +158,19 @@ export async function POST(request: Request) {
     if (!canReview) {
         return Response.json(
             { error: "你当前没有该项目的查看或审核权限。" },
+            { status: 403 },
+        );
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return Response.json(
+            { error: "你当前没有该学科题目的查看权限。" },
             { status: 403 },
         );
     }

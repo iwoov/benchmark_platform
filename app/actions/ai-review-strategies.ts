@@ -5,7 +5,10 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { canAccessAdminScope } from "@/lib/auth/admin-scope";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    canUserAccessQuestionByMetadata,
+    canUserReviewProject,
+} from "@/lib/reviews/permissions";
 import { isAdminRole } from "@/lib/auth/roles";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import {
@@ -497,6 +500,7 @@ export async function runAiReviewStrategyAction(
             id: true,
             projectId: true,
             title: true,
+            metadata: true,
         },
     });
 
@@ -515,6 +519,18 @@ export async function runAiReviewStrategyAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return {
+            error: "你当前不能执行该学科的题目。",
         };
     }
 
@@ -639,6 +655,7 @@ export async function retryAiReviewStrategyRunItemAction(
             question: {
                 select: {
                     projectId: true,
+                    metadata: true,
                 },
             },
         },
@@ -659,6 +676,18 @@ export async function retryAiReviewStrategyRunItemAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        run.question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return {
+            error: "你当前不能重试该学科的题目。",
         };
     }
 
@@ -732,6 +761,7 @@ export async function createAiReviewStrategyBatchRunAction(
             id: true,
             projectId: true,
             externalRecordId: true,
+            metadata: true,
         },
     });
 
@@ -767,6 +797,26 @@ export async function createAiReviewStrategyBatchRunAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const invisibleQuestion = (
+        await Promise.all(
+            questions.map(async (question) =>
+                (await canUserAccessQuestionByMetadata(
+                    session.user.id,
+                    session.user.platformRole,
+                    question.metadata,
+                ))
+                    ? null
+                    : question.id,
+            ),
+        )
+    ).find(Boolean);
+
+    if (invisibleQuestion) {
+        return {
+            error: "所选题目中包含当前用户无权访问的学科记录。",
         };
     }
 

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    canUserAccessQuestionByMetadata,
+    canUserReviewProject,
+} from "@/lib/reviews/permissions";
 import { getAiReviewStrategyRunsForQuestion } from "@/lib/ai/review-strategies";
 import { getAiReviewStrategyRetryStatesForQuestion } from "@/lib/ai/review-strategy-batches";
 
@@ -42,6 +45,7 @@ export async function GET(request: Request) {
         select: {
             id: true,
             projectId: true,
+            metadata: true,
         },
     });
 
@@ -64,6 +68,21 @@ export async function GET(request: Request) {
         return Response.json(
             {
                 error: "你当前没有该项目的审核权限。",
+            },
+            { status: 403 },
+        );
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return Response.json(
+            {
+                error: "你当前没有该学科题目的查看权限。",
             },
             { status: 403 },
         );

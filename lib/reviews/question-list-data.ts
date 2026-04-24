@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
 import { getProjectReviewFieldCatalog } from "@/lib/reviews/field-preferences";
 import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
@@ -9,6 +10,10 @@ import {
     type ReviewSummary,
     type ReviewStatusValue,
 } from "@/lib/reviews/review-summary";
+import {
+    getAccessiblePrimaryValueSet,
+    questionMatchesPrimaryValueScope,
+} from "@/lib/subjects/access";
 
 function normalizeRawValue(value: unknown): string {
     if (value === null || value === undefined) {
@@ -338,6 +343,7 @@ type NavigationContext = {
     questionId: string;
     projectId?: string;
     conditions?: ReviewQuestionFilterCondition[];
+    viewer?: ReviewQuestionListViewer;
 };
 
 export type ReviewQuestionListPageData = {
@@ -356,6 +362,11 @@ export type ReviewQuestionListFilterMeta = {
         key: string;
         label: string;
     }>;
+};
+
+type ReviewQuestionListViewer = {
+    userId: string;
+    platformRole: PlatformRoleValue;
 };
 
 export async function getReviewQuestionListData(projectIds?: string[]) {
@@ -462,14 +473,14 @@ export async function getReviewQuestionListPageData({
     page = 1,
     pageSize = 50,
     conditions = [],
-    subjectTitles,
+    viewer,
 }: {
     projectId: string;
     datasourceId?: string;
     page?: number;
     pageSize?: number;
     conditions?: ReviewQuestionFilterCondition[];
-    subjectTitles?: string[];
+    viewer?: ReviewQuestionListViewer;
 }): Promise<ReviewQuestionListPageData> {
     if (!process.env.DATABASE_URL || !projectId) {
         return {
@@ -511,13 +522,12 @@ export async function getReviewQuestionListPageData({
             ? manualReviewStatusCondition.value
             : null
         : null;
+    const allowedPrimaryValues = viewer
+        ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
+        : null;
     const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
-            title:
-                subjectTitles && subjectTitles.length
-                    ? { in: subjectTitles }
-                    : undefined,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {
@@ -564,14 +574,17 @@ export async function getReviewQuestionListPageData({
             },
         },
     });
+    const visibleRows = candidateRows.filter((question) =>
+        questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues),
+    );
     const reviewSummaryMap = await getLatestReviewSummaryMap(
-        candidateRows.map((question) => ({
+        visibleRows.map((question) => ({
             projectId: question.project.id,
             datasourceId: question.datasource.id,
             externalRecordId: question.externalRecordId,
         })),
     );
-    const sortedRows = candidateRows
+    const sortedRows = visibleRows
         .map<ReviewQuestionListItem>((question) => {
             const reviewSummary = reviewSummaryMap.get(
                 buildReviewCompositeKey({
@@ -707,7 +720,10 @@ export async function getReviewQuestionListFilterMeta(
     };
 }
 
-export async function getReviewQuestionDetail(questionId: string) {
+export async function getReviewQuestionDetail(
+    questionId: string,
+    viewer?: ReviewQuestionListViewer,
+) {
     if (!process.env.DATABASE_URL) {
         return null;
     }
@@ -756,6 +772,16 @@ export async function getReviewQuestionDetail(questionId: string) {
         return null;
     }
 
+    const allowedPrimaryValues = viewer
+        ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
+        : null;
+
+    if (
+        !questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues)
+    ) {
+        return null;
+    }
+
     return {
         id: question.id,
         title: question.title,
@@ -793,6 +819,7 @@ export async function getReviewQuestionNavigation({
     questionId,
     projectId,
     conditions = [],
+    viewer,
 }: NavigationContext) {
     if (!process.env.DATABASE_URL) {
         return {
@@ -833,6 +860,9 @@ export async function getReviewQuestionNavigation({
         statusCondition?.value === "REJECTED"
             ? statusCondition.value
             : null;
+    const allowedPrimaryValues = viewer
+        ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
+        : null;
     const orderedQuestions = await prisma.question.findMany({
         where: {
             projectId: scopedProjectId,
@@ -874,6 +904,12 @@ export async function getReviewQuestionNavigation({
         })),
     );
     const filteredOrderedQuestions = orderedQuestions
+        .filter((question) =>
+            questionMatchesPrimaryValueScope(
+                question.metadata,
+                allowedPrimaryValues,
+            ),
+        )
         .filter((question) =>
             conditions.every((condition) =>
                 matchesQuestionCondition(

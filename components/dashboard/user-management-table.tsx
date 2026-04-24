@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Input, Modal, Space, Tag } from "antd";
+import { Button, Input, Modal, Select, Space, Tag } from "antd";
 import { PencilLine } from "lucide-react";
 import {
     type CreateUserFormState,
@@ -29,6 +29,10 @@ type UserItem = {
     createdAt: string;
     projectRoleSummary: Array<"AUTHOR" | "REVIEWER">;
     projectCount: number;
+    subjectTags: Array<{
+        id: string;
+        name: string;
+    }>;
 };
 
 const initialState: CreateUserFormState = {};
@@ -47,6 +51,8 @@ export function UserManagementTable({
     currentPlatformRole,
     currentUserId,
     adminOptions,
+    superAdminOptions,
+    subjects,
 }: {
     users: UserItem[];
     currentPlatformRole: PlatformRoleValue;
@@ -55,6 +61,15 @@ export function UserManagementTable({
         id: string;
         name: string;
         username: string | null;
+    }>;
+    superAdminOptions: Array<{
+        id: string;
+        name: string;
+        username: string | null;
+    }>;
+    subjects: Array<{
+        id: string;
+        name: string;
     }>;
 }) {
     const router = useRouter();
@@ -67,6 +82,7 @@ export function UserManagementTable({
     );
     const formRef = useRef<HTMLFormElement>(null);
     const [dialogKey, setDialogKey] = useState(0);
+    const [editingSubjectIds, setEditingSubjectIds] = useState<string[]>([]);
 
     useActionNotification(state, {
         successTitle: "用户更新成功",
@@ -92,6 +108,7 @@ export function UserManagementTable({
                 formRef.current?.reset();
                 setActiveUserId(null);
                 setEditingPlatformRole("USER");
+                setEditingSubjectIds([]);
                 setDialogKey((value) => value + 1);
                 router.refresh();
             });
@@ -100,6 +117,15 @@ export function UserManagementTable({
         }
     }, [router, state.success]);
 
+    useEffect(() => {
+        if (!activeUser) {
+            setEditingSubjectIds([]);
+            return;
+        }
+
+        setEditingSubjectIds(activeUser.subjectTags.map((subject) => subject.id));
+    }, [activeUser]);
+
     return (
         <>
             <div className="table-surface">
@@ -107,7 +133,7 @@ export function UserManagementTable({
                     style={{
                         display: "grid",
                         gridTemplateColumns:
-                            "1fr 0.95fr 1.1fr 0.85fr 1fr 1.1fr 0.7fr 0.9fr",
+                            "0.95fr 0.9fr 1fr 0.8fr 1fr 1fr 1fr 0.7fr 0.8fr",
                         gap: 16,
                         padding: "14px 16px",
                         background: "rgba(248, 250, 252, 0.9)",
@@ -119,6 +145,7 @@ export function UserManagementTable({
                     <div>邮箱</div>
                     <div>平台角色</div>
                     <div>所属管理员</div>
+                    <div>学科标签</div>
                     <div>项目功能角色</div>
                     <div>状态</div>
                     <div>操作</div>
@@ -135,7 +162,7 @@ export function UserManagementTable({
                             style={{
                                 display: "grid",
                                 gridTemplateColumns:
-                                    "1fr 0.95fr 1.1fr 0.85fr 1fr 1.1fr 0.7fr 0.9fr",
+                                    "0.95fr 0.9fr 1fr 0.8fr 1fr 1fr 1fr 0.7fr 0.8fr",
                                 gap: 16,
                                 padding: "16px",
                                 borderTop:
@@ -161,6 +188,23 @@ export function UserManagementTable({
                                 {user.platformRole !== "SUPER_ADMIN"
                                     ? user.ownerAdminName ?? "-"
                                     : "-"}
+                            </div>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                }}
+                            >
+                                {user.subjectTags.length ? (
+                                    user.subjectTags.map((subject) => (
+                                        <Tag key={subject.id} color="blue">
+                                            {subject.name}
+                                        </Tag>
+                                    ))
+                                ) : (
+                                    <span className="muted">未分配</span>
+                                )}
                             </div>
                             <div
                                 style={{
@@ -320,6 +364,39 @@ export function UserManagementTable({
                                     />
                                 </div>
 
+                                {editingPlatformRole !== "SUPER_ADMIN" ? (
+                                    <div>
+                                        <label
+                                            className="field-label"
+                                            htmlFor="edit-subjectIds"
+                                        >
+                                            学科标签
+                                        </label>
+                                        <Select
+                                            id="edit-subjectIds"
+                                            mode="multiple"
+                                            size="large"
+                                            value={editingSubjectIds}
+                                            onChange={setEditingSubjectIds}
+                                            placeholder="选择该用户可见的学科"
+                                            options={subjects.map((subject) => ({
+                                                value: subject.id,
+                                                label: subject.name,
+                                            }))}
+                                            style={{ width: "100%" }}
+                                            maxTagCount="responsive"
+                                        />
+                                        {editingSubjectIds.map((subjectId) => (
+                                            <input
+                                                key={subjectId}
+                                                type="hidden"
+                                                name="subjectIds"
+                                                value={subjectId}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : null}
+
                                 <div className="member-form-grid">
                                     <div>
                                         <label
@@ -391,17 +468,36 @@ export function UserManagementTable({
                                       editingPlatformRole ===
                                           "PLATFORM_ADMIN" ? (
                                         <div>
-                                            <label className="field-label">
+                                            <label
+                                                className="field-label"
+                                                htmlFor="edit-platform-ownerAdminId"
+                                            >
                                                 所属管理员
                                             </label>
-                                            <Input
-                                                size="large"
-                                                value={
-                                                    activeUser.ownerAdminName ??
-                                                    "超级管理员"
+                                            <select
+                                                id="edit-platform-ownerAdminId"
+                                                name="ownerAdminId"
+                                                defaultValue={
+                                                    activeUser.ownerAdminId ??
+                                                    superAdminOptions[0]?.id ??
+                                                    ""
                                                 }
-                                                disabled
-                                            />
+                                                className="field-select"
+                                            >
+                                                {superAdminOptions.map(
+                                                    (admin) => (
+                                                        <option
+                                                            key={admin.id}
+                                                            value={admin.id}
+                                                        >
+                                                            {admin.name}
+                                                            {admin.username
+                                                                ? ` (${admin.username})`
+                                                                : ""}
+                                                        </option>
+                                                    ),
+                                                )}
+                                            </select>
                                         </div>
                                     ) : editingPlatformRole === "USER" ? (
                                         <input
@@ -456,6 +552,9 @@ export function UserManagementTable({
                                         {isSuperAdminRole(currentPlatformRole)
                                             ? "超级管理员可维护管理员角色与用户归属。"
                                             : "平台管理员只可维护自己名下的普通账号。"}
+                                        {editingPlatformRole !== "SUPER_ADMIN"
+                                            ? " 未分配学科时，该用户将无法看到任何题目。"
+                                            : ""}
                                         功能角色不在这里设置，请到项目管理页中的“成员管理”进行分配。
                                     </span>
                                 </div>

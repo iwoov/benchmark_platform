@@ -14,6 +14,10 @@ import {
 } from "@/lib/ai/review-strategies";
 import { aiReviewStrategyDefinitionSchema } from "@/lib/ai/review-strategy-schema";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
+import {
+    getAccessiblePrimaryValueSet,
+    questionMatchesPrimaryValueScope,
+} from "@/lib/subjects/access";
 
 const TERMINAL_BATCH_STATUSES = new Set<BatchRunStatus>([
     BatchRunStatus.SUCCESS,
@@ -286,6 +290,9 @@ export async function getAiReviewStrategyBatchRunsForProject(
     const scopeAdminId = viewer
         ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
         : null;
+    const allowedPrimaryValues = viewer
+        ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
+        : null;
 
     const runs = await prisma.aiReviewStrategyBatchRun.findMany({
         where: {
@@ -331,6 +338,7 @@ export async function getAiReviewStrategyBatchRunsForProject(
                         select: {
                             id: true,
                             externalRecordId: true,
+                            metadata: true,
                         },
                     },
                 },
@@ -338,7 +346,18 @@ export async function getAiReviewStrategyBatchRunsForProject(
         },
     });
 
-    return runs.map(mapBatchRunView);
+    return runs
+        .map((run) => ({
+            ...run,
+            items: run.items.filter((item) =>
+                questionMatchesPrimaryValueScope(
+                    item.question.metadata,
+                    allowedPrimaryValues,
+                ),
+            ),
+        }))
+        .filter((run) => allowedPrimaryValues === null || run.items.length > 0)
+        .map(mapBatchRunView);
 }
 
 async function syncBatchRunState(batchRunId: string) {

@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    canUserAccessQuestionByMetadata,
+    canUserReviewProject,
+} from "@/lib/reviews/permissions";
 
 const submitReviewSchema = z.object({
     questionId: z.string().min(1, "缺少题目 ID"),
@@ -50,6 +53,7 @@ export async function submitReviewAction(
             datasourceId: true,
             externalRecordId: true,
             title: true,
+            metadata: true,
         },
     });
 
@@ -68,6 +72,18 @@ export async function submitReviewAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return {
+            error: "你当前不能审核该学科的题目。",
         };
     }
 

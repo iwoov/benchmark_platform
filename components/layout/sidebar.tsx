@@ -36,7 +36,10 @@ const adminSections = [
     },
     {
         title: "组织与权限",
-        items: [{ href: "/admin/users", label: "用户管理", icon: UsersRound }],
+        items: [
+            { href: "/admin/users", label: "用户管理", icon: UsersRound },
+            { href: "/admin/subjects", label: "学科管理", icon: ScrollText },
+        ],
     },
     {
         title: "项目与数据源",
@@ -149,7 +152,8 @@ export function Sidebar({
                   ...section,
                   items: section.items.filter((item) =>
                       item.href === "/admin/ai/models" ||
-                      item.href === "/admin/ai/routes"
+                      item.href === "/admin/ai/routes" ||
+                      item.href === "/admin/subjects"
                           ? isSuperAdminRole(currentUser?.platformRole)
                           : true,
                   ),

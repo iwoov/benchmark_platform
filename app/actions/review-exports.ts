@@ -4,7 +4,10 @@ import { z } from "zod";
 import * as XLSX from "xlsx";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
+import {
+    canUserAccessQuestionByMetadata,
+    canUserReviewProject,
+} from "@/lib/reviews/permissions";
 import {
     buildReviewCompositeKey,
     getLatestReviewSummaryMap,
@@ -259,14 +262,27 @@ export async function exportReviewQuestionsAction(
             },
         },
     });
+    const visibleQuestions = (
+        await Promise.all(
+            questions.map(async (question) =>
+                (await canUserAccessQuestionByMetadata(
+                    session.user.id,
+                    session.user.platformRole,
+                    question.metadata,
+                ))
+                    ? question
+                    : null,
+            ),
+        )
+    ).filter((question) => question !== null);
     const reviewSummaryMap = await getLatestReviewSummaryMap(
-        questions.map((question) => ({
+        visibleQuestions.map((question) => ({
             projectId: parsed.data.projectId,
             datasourceId: question.datasource.id,
             externalRecordId: question.externalRecordId,
         })),
     );
-    const filteredQuestions = questions.filter((question) => {
+    const filteredQuestions = visibleQuestions.filter((question) => {
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
         const reviewSummary = reviewSummaryMap.get(
@@ -890,9 +906,22 @@ export async function exportReviewReportAction(
             datasource: { select: { id: true, name: true } },
         },
     });
+    const visibleQuestions = (
+        await Promise.all(
+            questions.map(async (question) =>
+                (await canUserAccessQuestionByMetadata(
+                    session.user.id,
+                    session.user.platformRole,
+                    question.metadata,
+                ))
+                    ? question
+                    : null,
+            ),
+        )
+    ).filter((question) => question !== null);
 
     const reviewSummaryMap = await getLatestReviewSummaryMap(
-        questions.map((question) => ({
+        visibleQuestions.map((question) => ({
             projectId: parsed.data.projectId,
             datasourceId: question.datasource.id,
             externalRecordId: question.externalRecordId,
@@ -900,7 +929,7 @@ export async function exportReviewReportAction(
     );
 
     // --- Apply in-memory filters ---
-    const filteredQuestions = questions.filter((question) => {
+    const filteredQuestions = visibleQuestions.filter((question) => {
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
         const reviewSummary = reviewSummaryMap.get(
