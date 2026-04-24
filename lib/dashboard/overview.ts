@@ -532,7 +532,7 @@ async function getPlatformAdminOverview(
         projectIdFilter
             ? prisma.$queryRaw<
                   Array<{
-                      subject: string;
+                      primary_value: string | null;
                       total: bigint;
                       manual_reviewed: bigint;
                       manual_approved: bigint;
@@ -554,10 +554,7 @@ async function getPlatformAdminOverview(
                     ORDER BY "projectId", "datasourceId", "externalRecordId", "createdAt" DESC
                 )
                 SELECT
-                    COALESCE(
-                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
-                        '(未知学科)'
-                    ) AS subject,
+                    NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '') AS primary_value,
                     COUNT(*)::bigint AS total,
                     COUNT(lm.decision)::bigint AS manual_reviewed,
                     COUNT(*) FILTER (WHERE lm.decision = 'PASS'::"ReviewDecision")::bigint AS manual_approved,
@@ -568,16 +565,12 @@ async function getPlatformAdminOverview(
                     AND lm."datasourceId" = q."datasourceId"
                     AND lm."externalRecordId" = q."externalRecordId"
                 WHERE q."projectId" = ${projectIdFilter}
-                GROUP BY
-                    COALESCE(
-                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
-                        '(未知学科)'
-                    )
+                GROUP BY NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '')
                 ORDER BY COUNT(*) DESC
             `
             : prisma.$queryRaw<
                   Array<{
-                      subject: string;
+                      primary_value: string | null;
                       total: bigint;
                       manual_reviewed: bigint;
                       manual_approved: bigint;
@@ -596,10 +589,7 @@ async function getPlatformAdminOverview(
                     ORDER BY "projectId", "datasourceId", "externalRecordId", "createdAt" DESC
                 )
                 SELECT
-                    COALESCE(
-                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
-                        '(未知学科)'
-                    ) AS subject,
+                    NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '') AS primary_value,
                     COUNT(*)::bigint AS total,
                     COUNT(lm.decision)::bigint AS manual_reviewed,
                     COUNT(*) FILTER (WHERE lm.decision = 'PASS'::"ReviewDecision")::bigint AS manual_approved,
@@ -609,11 +599,7 @@ async function getPlatformAdminOverview(
                     ON lm."projectId" = q."projectId"
                     AND lm."datasourceId" = q."datasourceId"
                     AND lm."externalRecordId" = q."externalRecordId"
-                GROUP BY
-                    COALESCE(
-                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
-                        '(未知学科)'
-                    )
+                GROUP BY NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '')
                 ORDER BY COUNT(*) DESC
             `;
 
@@ -628,6 +614,7 @@ async function getPlatformAdminOverview(
         failedSyncByProjectRows,
         failedBatchByProjectRows,
         subjectReviewRows,
+        subjects,
         projectOptions,
     ] = await Promise.all([
         prisma.project.count({
@@ -734,6 +721,20 @@ async function getPlatformAdminOverview(
         }),
         // Per-subject stats based on manual (non-AI) reviews, optionally scoped to one project
         subjectStatsQuery,
+        prisma.subject.findMany({
+            orderBy: {
+                name: "asc",
+            },
+            select: {
+                id: true,
+                name: true,
+                primaryValues: {
+                    select: {
+                        value: true,
+                    },
+                },
+            },
+        }),
         prisma.project.findMany({
             where: {
                 status: ProjectStatus.ACTIVE,
@@ -753,29 +754,82 @@ async function getPlatformAdminOverview(
     const failedSyncByProject = mapCountRows(failedSyncByProjectRows);
     const failedBatchByProject = mapCountRows(failedBatchByProjectRows);
 
-    // Build per-subject stats from manual review data
-    const subjectStats: SubjectStat[] = subjectReviewRows.map((row) => {
-        const total = Number(row.total);
-        const approved = Number(row.manual_approved);
-        const rejected = Number(row.manual_rejected);
-        const unreviewed = total - Number(row.manual_reviewed);
-        const reviewed = approved + rejected;
-        return {
-            subject: row.subject ?? "(未知学科)",
-            total,
-            approved,
-            rejected,
-            unreviewed,
-            passRate:
-                reviewed > 0
-                    ? Number(((approved / reviewed) * 100).toFixed(1))
-                    : 0,
-            unreviewedRate:
-                total > 0
-                    ? Number(((unreviewed / total) * 100).toFixed(1))
-                    : 0,
-        };
-    });
+    const primaryToSubjectNames = new Map<string, string[]>();
+
+    for (const subject of subjects) {
+        for (const primaryValue of subject.primaryValues) {
+            const existing = primaryToSubjectNames.get(primaryValue.value) ?? [];
+            existing.push(subject.name);
+            primaryToSubjectNames.set(primaryValue.value, existing);
+        }
+    }
+
+    const subjectAccumulator = new Map<
+        string,
+        {
+            total: number;
+            approved: number;
+            rejected: number;
+            manualReviewed: number;
+        }
+    >(
+        subjects.map((subject) => [
+            subject.name,
+            {
+                total: 0,
+                approved: 0,
+                rejected: 0,
+                manualReviewed: 0,
+            },
+        ]),
+    );
+
+    for (const row of subjectReviewRows) {
+        const targetSubjects =
+            (row.primary_value
+                ? primaryToSubjectNames.get(row.primary_value)
+                : undefined) ?? ["(未映射学科)"];
+
+        for (const subjectName of targetSubjects) {
+            const current = subjectAccumulator.get(subjectName) ?? {
+                total: 0,
+                approved: 0,
+                rejected: 0,
+                manualReviewed: 0,
+            };
+
+            current.total += Number(row.total);
+            current.manualReviewed += Number(row.manual_reviewed);
+            current.approved += Number(row.manual_approved);
+            current.rejected += Number(row.manual_rejected);
+
+            subjectAccumulator.set(subjectName, current);
+        }
+    }
+
+    const subjectStats: SubjectStat[] = [...subjectAccumulator.entries()]
+        .map(([subject, counts]) => {
+            const unreviewed = counts.total - counts.manualReviewed;
+            const reviewed = counts.approved + counts.rejected;
+
+            return {
+                subject,
+                total: counts.total,
+                approved: counts.approved,
+                rejected: counts.rejected,
+                unreviewed,
+                passRate:
+                    reviewed > 0
+                        ? Number(((counts.approved / reviewed) * 100).toFixed(1))
+                        : 0,
+                unreviewedRate:
+                    counts.total > 0
+                        ? Number(((unreviewed / counts.total) * 100).toFixed(1))
+                        : 0,
+            };
+        })
+        .filter((row) => row.total > 0)
+        .sort((left, right) => right.total - left.total);
 
     const riskProjects = activeProjectRows
         .map((project) => ({
