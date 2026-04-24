@@ -22,6 +22,15 @@ type ChatMessage = {
     phase?: "waiting" | "thinking" | "responding" | "done";
 };
 
+type ChatStreamEvent = {
+    delta?: string;
+    thinking?: string;
+    contentSnapshot?: string;
+    thinkingSnapshot?: string;
+    error?: string;
+    done?: boolean;
+};
+
 const fieldLabelMap: Record<string, string> = {
     title: "标题",
     content: "题干",
@@ -230,6 +239,67 @@ export function AiChatSidebar({
         abortControllerRef.current = controller;
         let accumulated = "";
         let accumulatedThinking = "";
+        let sawAnyPayload = false;
+        let sawDoneEvent = false;
+        let sawErrorEvent = false;
+        let requestFailed = false;
+        let requestAborted = false;
+        const applyStreamEvent = (parsed: ChatStreamEvent) => {
+            if (parsed.done) {
+                sawDoneEvent = true;
+            }
+
+            let nextPhase: ChatMessage["phase"] | null = null;
+
+            if (typeof parsed.thinkingSnapshot === "string") {
+                accumulatedThinking = parsed.thinkingSnapshot;
+                sawAnyPayload = true;
+                nextPhase = "thinking";
+            }
+
+            if (parsed.thinking) {
+                accumulatedThinking += parsed.thinking;
+                sawAnyPayload = true;
+                nextPhase = "thinking";
+            }
+
+            if (typeof parsed.contentSnapshot === "string") {
+                accumulated = parsed.contentSnapshot;
+                sawAnyPayload = true;
+                nextPhase = "responding";
+            }
+
+            if (parsed.delta) {
+                accumulated += parsed.delta;
+                sawAnyPayload = true;
+                nextPhase = "responding";
+            }
+
+            if (parsed.error) {
+                sawErrorEvent = true;
+                accumulated += `\n[错误] ${parsed.error}`;
+                nextPhase = "done";
+            }
+
+            if (!nextPhase) {
+                return;
+            }
+
+            const contentSnapshot = accumulated;
+            const thinkingSnapshot = accumulatedThinking;
+            setMessages((prev) =>
+                prev.map((m) =>
+                    m.id === assistantMsgId
+                        ? {
+                              ...m,
+                              content: contentSnapshot,
+                              thinking: thinkingSnapshot,
+                              phase: nextPhase,
+                          }
+                        : m,
+                ),
+            );
+        };
 
         try {
             const context = buildContextString(
@@ -300,56 +370,7 @@ export function AiChatSidebar({
                         if (!dataPart || dataPart === "[DONE]") continue;
 
                         try {
-                            const parsed = JSON.parse(dataPart);
-                            if (parsed.thinking) {
-                                accumulatedThinking += parsed.thinking;
-                                const thinkingSnapshot = accumulatedThinking;
-                                const contentSnapshot = accumulated;
-                                setMessages((prev) =>
-                                    prev.map((m) =>
-                                        m.id === assistantMsgId
-                                            ? {
-                                                  ...m,
-                                                  content: contentSnapshot,
-                                                  thinking: thinkingSnapshot,
-                                                  phase: "thinking",
-                                              }
-                                            : m,
-                                    ),
-                                );
-                            }
-                            if (parsed.delta) {
-                                accumulated += parsed.delta;
-                                const contentSnapshot = accumulated;
-                                const thinkingSnapshot = accumulatedThinking;
-                                setMessages((prev) =>
-                                    prev.map((m) =>
-                                        m.id === assistantMsgId
-                                            ? {
-                                                  ...m,
-                                                  content: contentSnapshot,
-                                                  thinking: thinkingSnapshot,
-                                                  phase: "responding",
-                                              }
-                                            : m,
-                                    ),
-                                );
-                            }
-                            if (parsed.error) {
-                                accumulated += `\n[错误] ${parsed.error}`;
-                                const snapshot = accumulated;
-                                setMessages((prev) =>
-                                    prev.map((m) =>
-                                        m.id === assistantMsgId
-                                            ? {
-                                                  ...m,
-                                                  content: snapshot,
-                                                  phase: "done",
-                                              }
-                                            : m,
-                                    ),
-                                );
-                            }
+                            applyStreamEvent(JSON.parse(dataPart));
                         } catch {
                             // ignore parse errors
                         }
@@ -368,63 +389,17 @@ export function AiChatSidebar({
                     if (!dataPart || dataPart === "[DONE]") continue;
 
                     try {
-                        const parsed = JSON.parse(dataPart);
-                        if (parsed.thinking) {
-                            accumulatedThinking += parsed.thinking;
-                            const thinkingSnapshot = accumulatedThinking;
-                            const contentSnapshot = accumulated;
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantMsgId
-                                        ? {
-                                              ...m,
-                                              content: contentSnapshot,
-                                              thinking: thinkingSnapshot,
-                                              phase: "thinking",
-                                          }
-                                        : m,
-                                ),
-                            );
-                        }
-                        if (parsed.delta) {
-                            accumulated += parsed.delta;
-                            const contentSnapshot = accumulated;
-                            const thinkingSnapshot = accumulatedThinking;
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantMsgId
-                                        ? {
-                                              ...m,
-                                              content: contentSnapshot,
-                                              thinking: thinkingSnapshot,
-                                              phase: "responding",
-                                          }
-                                        : m,
-                                ),
-                            );
-                        }
-                        if (parsed.error) {
-                            accumulated += `\n[错误] ${parsed.error}`;
-                            const snapshot = accumulated;
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.id === assistantMsgId
-                                        ? {
-                                              ...m,
-                                              content: snapshot,
-                                              phase: "done",
-                                          }
-                                        : m,
-                                ),
-                            );
-                        }
+                        applyStreamEvent(JSON.parse(dataPart));
                     } catch {
                         // ignore parse errors
                     }
                 }
             }
         } catch (error) {
-            if ((error as Error).name !== "AbortError") {
+            if ((error as Error).name === "AbortError") {
+                requestAborted = true;
+            } else {
+                requestFailed = true;
                 setMessages((prev) =>
                     prev.map((m) =>
                         m.id === assistantMsgId
@@ -439,13 +414,43 @@ export function AiChatSidebar({
                 );
             }
         } finally {
-            if (!accumulated && !accumulatedThinking) {
+            if (
+                !accumulated &&
+                !accumulatedThinking &&
+                !sawAnyPayload &&
+                !sawErrorEvent &&
+                !requestFailed &&
+                !requestAborted &&
+                sawDoneEvent
+            ) {
                 setMessages((prev) =>
                     prev.map((m) =>
                         m.id === assistantMsgId
                             ? {
                                   ...m,
-                                  content: "AI 返回了空内容。",
+                                  content: "AI 未返回可展示内容。",
+                                  phase: "done",
+                              }
+                            : m,
+                    ),
+                );
+            }
+
+            if (
+                !accumulated &&
+                !accumulatedThinking &&
+                !sawAnyPayload &&
+                !sawErrorEvent &&
+                !requestFailed &&
+                !requestAborted &&
+                !sawDoneEvent
+            ) {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantMsgId
+                            ? {
+                                  ...m,
+                                  content: "流式响应在返回内容前中断了。",
                                   phase: "done",
                               }
                             : m,
@@ -585,15 +590,15 @@ export function AiChatSidebar({
                                 isThinking={msg.phase === "thinking"}
                             />
                         ) : null}
-                        <div className="ai-chat-message-content">
-                            {msg.role === "assistant" ? (
-                                msg.content ? (
-                                    <MarkdownContent content={msg.content} />
-                                ) : null
-                            ) : (
-                                msg.content
-                            )}
-                        </div>
+                        {msg.role === "user" ? (
+                            <div className="ai-chat-message-content">
+                                {msg.content}
+                            </div>
+                        ) : msg.content ? (
+                            <div className="ai-chat-message-content">
+                                <MarkdownContent content={msg.content} />
+                            </div>
+                        ) : null}
                     </div>
                 ))}
                 <div ref={messagesEndRef} />

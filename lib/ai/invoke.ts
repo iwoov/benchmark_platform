@@ -279,6 +279,7 @@ function buildOpenAiResponsesPayload(
                   },
                   reasoning: {
                       effort: reasoningEffort,
+                      summary: "auto",
                   },
               }
             : {}),

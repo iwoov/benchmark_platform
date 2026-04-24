@@ -21,6 +21,8 @@ const requestSchema = z.object({
 function readOpenAiStreamDelta(raw: any): {
     delta: string;
     thinking: string;
+    contentSnapshot: string;
+    thinkingSnapshot: string;
     error: string;
 } {
     const delta = raw?.choices?.[0]?.delta?.content;
@@ -31,6 +33,8 @@ function readOpenAiStreamDelta(raw: any): {
     return {
         delta: typeof delta === "string" ? delta : "",
         thinking: typeof reasoning === "string" ? reasoning : "",
+        contentSnapshot: "",
+        thinkingSnapshot: "",
         error: "",
     };
 }
@@ -38,13 +42,21 @@ function readOpenAiStreamDelta(raw: any): {
 function readOpenAiResponsesStreamDelta(raw: any): {
     delta: string;
     thinking: string;
+    contentSnapshot: string;
+    thinkingSnapshot: string;
     error: string;
 } {
     if (
         raw?.type === "response.output_text.delta" &&
         typeof raw.delta === "string"
     ) {
-        return { delta: raw.delta, thinking: "", error: "" };
+        return {
+            delta: raw.delta,
+            thinking: "",
+            contentSnapshot: "",
+            thinkingSnapshot: "",
+            error: "",
+        };
     }
 
     if (
@@ -52,11 +64,37 @@ function readOpenAiResponsesStreamDelta(raw: any): {
             raw?.type === "response.reasoning_summary_text.delta") &&
         typeof raw.delta === "string"
     ) {
-        return { delta: "", thinking: raw.delta, error: "" };
+        return {
+            delta: "",
+            thinking: raw.delta,
+            contentSnapshot: "",
+            thinkingSnapshot: "",
+            error: "",
+        };
+    }
+
+    if (
+        (raw?.type === "response.reasoning_text.done" ||
+            raw?.type === "response.reasoning_summary_text.done") &&
+        typeof raw.text === "string"
+    ) {
+        return {
+            delta: "",
+            thinking: "",
+            contentSnapshot: "",
+            thinkingSnapshot: raw.text,
+            error: "",
+        };
     }
 
     if (raw?.type === "error" && typeof raw.message === "string") {
-        return { delta: "", thinking: "", error: raw.message };
+        return {
+            delta: "",
+            thinking: "",
+            contentSnapshot: "",
+            thinkingSnapshot: "",
+            error: raw.message,
+        };
     }
 
     if (
@@ -67,6 +105,8 @@ function readOpenAiResponsesStreamDelta(raw: any): {
         return {
             delta: "",
             thinking: "",
+            contentSnapshot: "",
+            thinkingSnapshot: "",
             error: raw.response.error.message,
         };
     }
@@ -90,7 +130,13 @@ function readOpenAiResponsesStreamDelta(raw: any): {
                 .join("");
 
             if (thinking) {
-                return { delta: "", thinking, error: "" };
+                return {
+                    delta: "",
+                    thinking: "",
+                    contentSnapshot: "",
+                    thinkingSnapshot: thinking,
+                    error: "",
+                };
             }
         }
 
@@ -114,7 +160,13 @@ function readOpenAiResponsesStreamDelta(raw: any): {
                 .join("");
 
             if (delta) {
-                return { delta, thinking: "", error: "" };
+                return {
+                    delta: "",
+                    thinking: "",
+                    contentSnapshot: delta,
+                    thinkingSnapshot: "",
+                    error: "",
+                };
             }
         }
     }
@@ -126,8 +178,10 @@ function readOpenAiResponsesStreamDelta(raw: any): {
 
     if (typeof completedResponse?.output_text === "string") {
         return {
-            delta: completedResponse.output_text,
+            delta: "",
             thinking: "",
+            contentSnapshot: completedResponse.output_text,
+            thinkingSnapshot: "",
             error: "",
         };
     }
@@ -166,19 +220,29 @@ function readOpenAiResponsesStreamDelta(raw: any): {
 
         if (delta) {
             return {
-                delta,
+                delta: "",
                 thinking: "",
+                contentSnapshot: delta,
+                thinkingSnapshot: "",
                 error: "",
             };
         }
     }
 
-    return { delta: "", thinking: "", error: "" };
+    return {
+        delta: "",
+        thinking: "",
+        contentSnapshot: "",
+        thinkingSnapshot: "",
+        error: "",
+    };
 }
 
 function readAnthropicStreamDelta(raw: any): {
     delta: string;
     thinking: string;
+    contentSnapshot: string;
+    thinkingSnapshot: string;
     error: string;
 } {
     if (raw?.type === "content_block_delta" && raw?.delta) {
@@ -186,22 +250,50 @@ function readAnthropicStreamDelta(raw: any): {
             raw.delta.type === "thinking_delta" &&
             typeof raw.delta.thinking === "string"
         ) {
-            return { delta: "", thinking: raw.delta.thinking, error: "" };
+            return {
+                delta: "",
+                thinking: raw.delta.thinking,
+                contentSnapshot: "",
+                thinkingSnapshot: "",
+                error: "",
+            };
         }
         if (typeof raw.delta.text === "string") {
-            return { delta: raw.delta.text, thinking: "", error: "" };
+            return {
+                delta: raw.delta.text,
+                thinking: "",
+                contentSnapshot: "",
+                thinkingSnapshot: "",
+                error: "",
+            };
         }
     }
-    return { delta: "", thinking: "", error: "" };
+    return {
+        delta: "",
+        thinking: "",
+        contentSnapshot: "",
+        thinkingSnapshot: "",
+        error: "",
+    };
 }
 
 function readGeminiStreamDelta(raw: any): {
     delta: string;
     thinking: string;
+    contentSnapshot: string;
+    thinkingSnapshot: string;
     error: string;
 } {
     const parts = raw?.candidates?.[0]?.content?.parts;
-    if (!Array.isArray(parts)) return { delta: "", thinking: "", error: "" };
+    if (!Array.isArray(parts)) {
+        return {
+            delta: "",
+            thinking: "",
+            contentSnapshot: "",
+            thinkingSnapshot: "",
+            error: "",
+        };
+    }
     let delta = "";
     let thinking = "";
     for (const p of parts) {
@@ -213,13 +305,25 @@ function readGeminiStreamDelta(raw: any): {
             }
         }
     }
-    return { delta, thinking, error: "" };
+    return {
+        delta,
+        thinking,
+        contentSnapshot: "",
+        thinkingSnapshot: "",
+        error: "",
+    };
 }
 
 function extractDelta(
     protocol: string,
     raw: unknown,
-): { delta: string; thinking: string; error: string } {
+): {
+    delta: string;
+    thinking: string;
+    contentSnapshot: string;
+    thinkingSnapshot: string;
+    error: string;
+} {
     switch (protocol) {
         case "OPENAI_COMPATIBLE":
             return readOpenAiStreamDelta(raw);
@@ -230,7 +334,13 @@ function extractDelta(
         case "GEMINI_COMPATIBLE":
             return readGeminiStreamDelta(raw);
         default:
-            return { delta: "", thinking: "", error: "" };
+            return {
+                delta: "",
+                thinking: "",
+                contentSnapshot: "",
+                thinkingSnapshot: "",
+                error: "",
+            };
     }
 }
 
@@ -372,6 +482,14 @@ export async function POST(request: Request) {
     const reader = upstreamBody.getReader();
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
+    const enqueueStreamPayload = (
+        controller: ReadableStreamDefaultController<Uint8Array>,
+        payload: Record<string, string | boolean>,
+    ) => {
+        controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+        );
+    };
 
     const stream = new ReadableStream({
         async pull(controller) {
@@ -391,42 +509,47 @@ export async function POST(request: Request) {
                             const jsonParsed = parseJsonSafely(dataPart);
 
                             if (jsonParsed !== null) {
-                                const { delta, thinking, error } = extractDelta(
-                                    protocol,
-                                    jsonParsed,
-                                );
+                                const {
+                                    delta,
+                                    thinking,
+                                    contentSnapshot,
+                                    thinkingSnapshot,
+                                    error,
+                                } = extractDelta(protocol, jsonParsed);
 
                                 if (thinking) {
-                                    controller.enqueue(
-                                        encoder.encode(
-                                            `data: ${JSON.stringify({ thinking })}\n\n`,
-                                        ),
-                                    );
+                                    enqueueStreamPayload(controller, {
+                                        thinking,
+                                    });
+                                }
+
+                                if (thinkingSnapshot) {
+                                    enqueueStreamPayload(controller, {
+                                        thinkingSnapshot,
+                                    });
                                 }
 
                                 if (delta) {
-                                    controller.enqueue(
-                                        encoder.encode(
-                                            `data: ${JSON.stringify({ delta })}\n\n`,
-                                        ),
-                                    );
+                                    enqueueStreamPayload(controller, {
+                                        delta,
+                                    });
+                                }
+
+                                if (contentSnapshot) {
+                                    enqueueStreamPayload(controller, {
+                                        contentSnapshot,
+                                    });
                                 }
 
                                 if (error) {
-                                    controller.enqueue(
-                                        encoder.encode(
-                                            `data: ${JSON.stringify({ error })}\n\n`,
-                                        ),
-                                    );
+                                    enqueueStreamPayload(controller, {
+                                        error,
+                                    });
                                 }
                             }
                         }
 
-                        controller.enqueue(
-                            encoder.encode(
-                                `data: ${JSON.stringify({ done: true })}\n\n`,
-                            ),
-                        );
+                        enqueueStreamPayload(controller, { done: true });
                         controller.close();
                         return;
                     }
@@ -453,44 +576,49 @@ export async function POST(request: Request) {
                         const jsonParsed = parseJsonSafely(dataPart);
                         if (jsonParsed === null) continue;
 
-                        const { delta, thinking, error } = extractDelta(
-                            protocol,
-                            jsonParsed,
-                        );
+                        const {
+                            delta,
+                            thinking,
+                            contentSnapshot,
+                            thinkingSnapshot,
+                            error,
+                        } = extractDelta(protocol, jsonParsed);
 
                         if (thinking) {
-                            controller.enqueue(
-                                encoder.encode(
-                                    `data: ${JSON.stringify({ thinking })}\n\n`,
-                                ),
-                            );
+                            enqueueStreamPayload(controller, {
+                                thinking,
+                            });
+                        }
+
+                        if (thinkingSnapshot) {
+                            enqueueStreamPayload(controller, {
+                                thinkingSnapshot,
+                            });
                         }
 
                         if (delta) {
-                            controller.enqueue(
-                                encoder.encode(
-                                    `data: ${JSON.stringify({ delta })}\n\n`,
-                                ),
-                            );
+                            enqueueStreamPayload(controller, {
+                                delta,
+                            });
+                        }
+
+                        if (contentSnapshot) {
+                            enqueueStreamPayload(controller, {
+                                contentSnapshot,
+                            });
                         }
 
                         if (error) {
-                            controller.enqueue(
-                                encoder.encode(
-                                    `data: ${JSON.stringify({ error })}\n\n`,
-                                ),
-                            );
+                            enqueueStreamPayload(controller, {
+                                error,
+                            });
                         }
                     }
                 }
             } catch (error) {
                 const message =
                     error instanceof Error ? error.message : "流式读取失败";
-                controller.enqueue(
-                    encoder.encode(
-                        `data: ${JSON.stringify({ error: message })}\n\n`,
-                    ),
-                );
+                enqueueStreamPayload(controller, { error: message });
                 controller.close();
             }
         },
