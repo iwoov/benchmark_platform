@@ -646,6 +646,7 @@ function renderStepItemOutput(stepType: string, output: unknown) {
 
 const CORE_STEP_TYPES = new Set([
     "COMPREHENSIVE_CHECK",
+    "TEXT_QUALITY_CHECK",
     "AI_SOLVE_QUESTION",
     "REVIEW_SUMMARY",
 ]);
