@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/admin-scope";
 import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
+import { ensureDefaultAiReviewStrategyForAdmin } from "@/lib/ai/default-review-strategy";
 import {
     invokeAiModel,
     resolveAiInvocationText,
@@ -1637,6 +1638,13 @@ export async function getAiReviewStrategyConsoleData(input: {
               null
             : input.userId;
 
+    if (activeScopeAdminId) {
+        await ensureDefaultAiReviewStrategyForAdmin({
+            scopeAdminId: activeScopeAdminId,
+            createdById: input.userId,
+        });
+    }
+
     const [models, projects, datasources, strategies] = await Promise.all([
         prisma.aiModel.findMany({
             orderBy: [{ label: "asc" }, { code: "asc" }],
@@ -1927,20 +1935,9 @@ export async function getAiReviewStrategyRunsForQuestion(
         return [];
     }
 
-    const scopeAdminId = viewer
-        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
-        : null;
-
     const runs = await prisma.aiReviewStrategyRun.findMany({
         where: {
             questionId,
-            ...(viewer?.platformRole === "SUPER_ADMIN"
-                ? {}
-                : {
-                      strategy: {
-                          scopeAdminId: scopeAdminId ?? "__no_scope__",
-                      },
-                  }),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         include: {
@@ -1959,11 +1956,7 @@ export async function getAiReviewStrategyRunsForQuestion(
         },
     });
 
-    const latestRuns = Array.from(
-        new Map(runs.map((run) => [run.strategyId, run])).values(),
-    ).slice(0, 6);
-
-    return latestRuns.map(buildRunView);
+    return runs.slice(0, 20).map(buildRunView);
 }
 
 async function loadStrategyForExecution(strategyId: string) {

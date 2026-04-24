@@ -726,10 +726,6 @@ export async function getAiReviewStrategyRetryStatesForQuestion(
         return [] as AiReviewStrategyRetryStateView[];
     }
 
-    const scopeAdminId = viewer
-        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
-        : null;
-
     const items = await prisma.aiReviewStrategyBatchRunItem.findMany({
         where: {
             questionId,
@@ -743,13 +739,6 @@ export async function getAiReviewStrategyRetryStatesForQuestion(
                         BatchRunStatus.FAILED,
                     ],
                 },
-                ...(viewer?.platformRole === "SUPER_ADMIN"
-                    ? {}
-                    : {
-                          strategy: {
-                              scopeAdminId: scopeAdminId ?? "__no_scope__",
-                          },
-                      }),
             },
         },
         orderBy: [{ updatedAt: "desc" }],

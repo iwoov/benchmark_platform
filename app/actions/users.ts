@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { ensureDefaultAiReviewStrategyForAdmin } from "@/lib/ai/default-review-strategy";
 import {
     isAdminRole,
     isSuperAdminRole,
@@ -200,7 +201,7 @@ export async function createUserAction(
 
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-    await prisma.user.create({
+    const createdUser = await prisma.user.create({
         data: {
             username,
             name: parsed.data.name,
@@ -210,7 +211,21 @@ export async function createUserAction(
             status: parsed.data.status,
             ownerAdminId,
         },
+        select: {
+            id: true,
+            platformRole: true,
+        },
     });
+
+    if (
+        createdUser.platformRole === "SUPER_ADMIN" ||
+        createdUser.platformRole === "PLATFORM_ADMIN"
+    ) {
+        await ensureDefaultAiReviewStrategyForAdmin({
+            scopeAdminId: createdUser.id,
+            createdById: session.user.id,
+        });
+    }
 
     revalidatePath("/admin/users");
 
@@ -404,7 +419,7 @@ export async function updateUserAction(
         }
     }
 
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
         where: {
             id: parsed.data.userId,
         },
@@ -417,7 +432,21 @@ export async function updateUserAction(
             status: parsed.data.status,
             ownerAdminId,
         },
+        select: {
+            id: true,
+            platformRole: true,
+        },
     });
+
+    if (
+        updatedUser.platformRole === "SUPER_ADMIN" ||
+        updatedUser.platformRole === "PLATFORM_ADMIN"
+    ) {
+        await ensureDefaultAiReviewStrategyForAdmin({
+            scopeAdminId: updatedUser.id,
+            createdById: session.user.id,
+        });
+    }
 
     revalidatePath("/admin/users");
     revalidatePath("/admin/projects");
