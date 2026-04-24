@@ -288,6 +288,26 @@ export function CreateUserForm({
                                         ))}
                                     </select>
                                 </div>
+                            ) : currentPlatformRole === "SUPER_ADMIN" &&
+                              selectedRole === "PLATFORM_ADMIN" ? (
+                                <div>
+                                    <label
+                                        htmlFor="platform-admin-owner"
+                                        style={{
+                                            display: "block",
+                                            marginBottom: 8,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        所属管理员
+                                    </label>
+                                    <Input
+                                        id="platform-admin-owner"
+                                        size="large"
+                                        value="当前超级管理员"
+                                        disabled
+                                    />
+                                </div>
                             ) : null}
 
                             <div

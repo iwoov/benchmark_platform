@@ -138,7 +138,15 @@ export async function createUserAction(
 
     let ownerAdminId: string | null = null;
 
-    if (parsed.data.platformRole === "USER") {
+    if (parsed.data.platformRole === "PLATFORM_ADMIN") {
+        if (currentPlatformRole !== "SUPER_ADMIN") {
+            return {
+                error: "只有超级管理员可以创建平台管理员。",
+            };
+        }
+
+        ownerAdminId = session.user.id;
+    } else if (parsed.data.platformRole === "USER") {
         if (currentPlatformRole === "PLATFORM_ADMIN") {
             ownerAdminId = session.user.id;
         } else {
@@ -364,7 +372,9 @@ export async function updateUserAction(
 
     let ownerAdminId: string | null = null;
 
-    if (parsed.data.platformRole === "USER") {
+    if (parsed.data.platformRole === "PLATFORM_ADMIN") {
+        ownerAdminId = user.ownerAdminId ?? session.user.id;
+    } else if (parsed.data.platformRole === "USER") {
         if (currentPlatformRole === "PLATFORM_ADMIN") {
             ownerAdminId = session.user.id;
         } else {

@@ -158,7 +158,7 @@ export function UserManagementTable({
                                 </Tag>
                             </div>
                             <div className="muted">
-                                {user.platformRole === "USER"
+                                {user.platformRole !== "SUPER_ADMIN"
                                     ? user.ownerAdminName ?? "-"
                                     : "-"}
                             </div>
@@ -355,7 +355,8 @@ export function UserManagementTable({
                                         </select>
                                     </div>
 
-                                    {currentPlatformRole === "SUPER_ADMIN" ? (
+                                    {currentPlatformRole === "SUPER_ADMIN" &&
+                                    editingPlatformRole === "USER" ? (
                                         <div>
                                             <label
                                                 className="field-label"
@@ -372,10 +373,6 @@ export function UserManagementTable({
                                                     ""
                                                 }
                                                 className="field-select"
-                                                disabled={
-                                                    editingPlatformRole !==
-                                                    "USER"
-                                                }
                                             >
                                                 {adminOptions.map((admin) => (
                                                     <option
@@ -389,6 +386,22 @@ export function UserManagementTable({
                                                     </option>
                                                 ))}
                                             </select>
+                                        </div>
+                                    ) : currentPlatformRole === "SUPER_ADMIN" &&
+                                      editingPlatformRole ===
+                                          "PLATFORM_ADMIN" ? (
+                                        <div>
+                                            <label className="field-label">
+                                                所属管理员
+                                            </label>
+                                            <Input
+                                                size="large"
+                                                value={
+                                                    activeUser.ownerAdminName ??
+                                                    "超级管理员"
+                                                }
+                                                disabled
+                                            />
                                         </div>
                                     ) : editingPlatformRole === "USER" ? (
                                         <input
