@@ -38,6 +38,11 @@ const createUserSchema = z.object({
     password: z.string().min(8, "密码至少 8 位").max(64, "密码不能超过 64 位"),
     platformRole: z.enum(["SUPER_ADMIN", "PLATFORM_ADMIN", "USER"]),
     status: z.enum(["ACTIVE", "INACTIVE"]),
+    ownerAdminId: z
+        .string()
+        .trim()
+        .optional()
+        .transform((value) => value || undefined),
 });
 
 const updateUserSchema = z.object({
@@ -72,6 +77,11 @@ const updateUserSchema = z.object({
         .refine((value) => !value || value.length >= 8, "新密码至少 8 位"),
     platformRole: z.enum(["SUPER_ADMIN", "PLATFORM_ADMIN", "USER"]),
     status: z.enum(["ACTIVE", "INACTIVE"]),
+    ownerAdminId: z
+        .string()
+        .trim()
+        .optional()
+        .transform((value) => value || undefined),
 });
 
 export type CreateUserFormState = {
@@ -102,6 +112,7 @@ export async function createUserAction(
         password: formData.get("password"),
         platformRole: formData.get("platformRole"),
         status: formData.get("status"),
+        ownerAdminId: formData.get("ownerAdminId") || undefined,
     });
 
     if (!parsed.success) {
@@ -123,6 +134,38 @@ export async function createUserAction(
         return {
             error: "只有超级管理员可以创建管理员账号。",
         };
+    }
+
+    let ownerAdminId: string | null = null;
+
+    if (parsed.data.platformRole === "USER") {
+        if (currentPlatformRole === "PLATFORM_ADMIN") {
+            ownerAdminId = session.user.id;
+        } else {
+            if (!parsed.data.ownerAdminId) {
+                return {
+                    error: "请为普通用户选择所属管理员。",
+                };
+            }
+
+            const ownerAdmin = await prisma.user.findFirst({
+                where: {
+                    id: parsed.data.ownerAdminId,
+                    platformRole: "PLATFORM_ADMIN",
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (!ownerAdmin) {
+                return {
+                    error: "所属管理员不存在，请刷新后重试。",
+                };
+            }
+
+            ownerAdminId = ownerAdmin.id;
+        }
     }
 
     const existingByUsername = await prisma.user.findUnique({
@@ -157,6 +200,7 @@ export async function createUserAction(
             passwordHash,
             platformRole: parsed.data.platformRole,
             status: parsed.data.status,
+            ownerAdminId,
         },
     });
 
@@ -187,6 +231,7 @@ export async function updateUserAction(
         password: formData.get("password") || undefined,
         platformRole: formData.get("platformRole"),
         status: formData.get("status"),
+        ownerAdminId: formData.get("ownerAdminId") || undefined,
     });
 
     if (!parsed.success) {
@@ -207,6 +252,7 @@ export async function updateUserAction(
             passwordHash: true,
             platformRole: true,
             status: true,
+            ownerAdminId: true,
         },
     });
 
@@ -218,9 +264,24 @@ export async function updateUserAction(
 
     const currentPlatformRole = session.user.platformRole;
 
+    if (!canManageAdminRoles(currentPlatformRole)) {
+        if (user.platformRole === "USER") {
+            if (user.ownerAdminId !== session.user.id) {
+                return {
+                    error: "你只能编辑自己名下的普通用户。",
+                };
+            }
+        } else if (user.id !== session.user.id) {
+            return {
+                error: "只有超级管理员可以编辑其他管理员账号。",
+            };
+        }
+    }
+
     if (
         !canManageAdminRoles(currentPlatformRole) &&
-        user.platformRole !== "USER"
+        user.platformRole !== "USER" &&
+        user.id !== session.user.id
     ) {
         return {
             error: "只有超级管理员可以编辑管理员账号。",
@@ -229,10 +290,20 @@ export async function updateUserAction(
 
     if (
         !canManageAdminRoles(currentPlatformRole) &&
-        parsed.data.platformRole !== "USER"
+        parsed.data.platformRole !== "USER" &&
+        user.id !== session.user.id
     ) {
         return {
             error: "只有超级管理员可以调整管理员角色。",
+        };
+    }
+
+    if (
+        !canManageAdminRoles(currentPlatformRole) &&
+        parsed.data.platformRole !== user.platformRole
+    ) {
+        return {
+            error: "你不能修改当前账号的平台角色。",
         };
     }
 
@@ -291,6 +362,38 @@ export async function updateUserAction(
         ? await bcrypt.hash(parsed.data.password, 10)
         : user.passwordHash;
 
+    let ownerAdminId: string | null = null;
+
+    if (parsed.data.platformRole === "USER") {
+        if (currentPlatformRole === "PLATFORM_ADMIN") {
+            ownerAdminId = session.user.id;
+        } else {
+            if (!parsed.data.ownerAdminId) {
+                return {
+                    error: "请为普通用户选择所属管理员。",
+                };
+            }
+
+            const ownerAdmin = await prisma.user.findFirst({
+                where: {
+                    id: parsed.data.ownerAdminId,
+                    platformRole: "PLATFORM_ADMIN",
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (!ownerAdmin) {
+                return {
+                    error: "所属管理员不存在，请刷新后重试。",
+                };
+            }
+
+            ownerAdminId = ownerAdmin.id;
+        }
+    }
+
     await prisma.user.update({
         where: {
             id: parsed.data.userId,
@@ -302,6 +405,7 @@ export async function updateUserAction(
             passwordHash,
             platformRole: parsed.data.platformRole,
             status: parsed.data.status,
+            ownerAdminId,
         },
     });
 

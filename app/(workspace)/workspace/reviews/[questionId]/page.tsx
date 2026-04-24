@@ -84,9 +84,18 @@ export default async function WorkspaceReviewDetailPage({
         chatConfigs,
     ] =
         await Promise.all([
-            getApplicableAiReviewStrategies(question),
-            getAiReviewStrategyRunsForQuestion(question.id),
-            getAiReviewStrategyRetryStatesForQuestion(question.id),
+            getApplicableAiReviewStrategies(question, {
+                userId: session.user.id,
+                platformRole: session.user.platformRole,
+            }),
+            getAiReviewStrategyRunsForQuestion(question.id, {
+                userId: session.user.id,
+                platformRole: session.user.platformRole,
+            }),
+            getAiReviewStrategyRetryStatesForQuestion(question.id, {
+                userId: session.user.id,
+                platformRole: session.user.platformRole,
+            }),
             getResolvedUserProjectReviewFieldPreference(
                 session.user.id,
                 question.project.id,

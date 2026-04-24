@@ -30,7 +30,15 @@ export default async function WorkspaceReviewBatchesPage({
         ? (requestedProjectId as string)
         : (projectIds[0] ?? "");
     const initialRuns = selectedProjectId
-        ? await getAiReviewStrategyBatchRunsForProject(selectedProjectId)
+        ? await getAiReviewStrategyBatchRunsForProject(
+              selectedProjectId,
+              session?.user
+                  ? {
+                        userId: session.user.id,
+                        platformRole: session.user.platformRole,
+                    }
+                  : undefined,
+          )
         : [];
 
     return (

@@ -3,6 +3,10 @@ import {
     BatchRunStatus,
     type Prisma,
 } from "@prisma/client";
+import {
+    resolveUserAdminScopeId,
+} from "@/lib/auth/admin-scope";
+import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import {
     executeAiReviewStrategy,
@@ -269,15 +273,30 @@ function mapBatchRunView(run: {
 
 export async function getAiReviewStrategyBatchRunsForProject(
     projectId: string,
+    viewer?: {
+        userId: string;
+        platformRole: PlatformRoleValue;
+    },
     limit = 10,
 ) {
     if (!process.env.DATABASE_URL) {
         return [];
     }
 
+    const scopeAdminId = viewer
+        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
+        : null;
+
     const runs = await prisma.aiReviewStrategyBatchRun.findMany({
         where: {
             projectId,
+            ...(viewer?.platformRole === "SUPER_ADMIN"
+                ? {}
+                : {
+                      strategy: {
+                          scopeAdminId: scopeAdminId ?? "__no_scope__",
+                      },
+                  }),
         },
         orderBy: [{ createdAt: "desc" }],
         take: limit,
@@ -697,11 +716,19 @@ export async function createAiReviewStrategyRetryRunItemBatchRun(input: {
 
 export async function getAiReviewStrategyRetryStatesForQuestion(
     questionId: string,
+    viewer?: {
+        userId: string;
+        platformRole: PlatformRoleValue;
+    },
     limit = 30,
 ) {
     if (!process.env.DATABASE_URL) {
         return [] as AiReviewStrategyRetryStateView[];
     }
+
+    const scopeAdminId = viewer
+        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
+        : null;
 
     const items = await prisma.aiReviewStrategyBatchRunItem.findMany({
         where: {
@@ -716,6 +743,13 @@ export async function getAiReviewStrategyRetryStatesForQuestion(
                         BatchRunStatus.FAILED,
                     ],
                 },
+                ...(viewer?.platformRole === "SUPER_ADMIN"
+                    ? {}
+                    : {
+                          strategy: {
+                              scopeAdminId: scopeAdminId ?? "__no_scope__",
+                          },
+                      }),
             },
         },
         orderBy: [{ updatedAt: "desc" }],

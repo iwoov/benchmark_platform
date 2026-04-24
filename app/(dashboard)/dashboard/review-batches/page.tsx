@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { AiReviewBatchRunConsole } from "@/components/reviews/ai-review-batch-run-console";
 import { getAiReviewStrategyBatchRunsForProject } from "@/lib/ai/review-strategy-batches";
@@ -9,6 +10,7 @@ export default async function ReviewBatchesPage({
 }: {
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+    const session = await auth();
     const projects = process.env.DATABASE_URL
         ? await prisma.project.findMany({
               where: {
@@ -33,7 +35,15 @@ export default async function ReviewBatchesPage({
         ? (requestedProjectId as string)
         : (projectIds[0] ?? "");
     const initialRuns = selectedProjectId
-        ? await getAiReviewStrategyBatchRunsForProject(selectedProjectId)
+        ? await getAiReviewStrategyBatchRunsForProject(
+              selectedProjectId,
+              session?.user
+                  ? {
+                        userId: session.user.id,
+                        platformRole: session.user.platformRole,
+                    }
+                  : undefined,
+          )
         : [];
 
     return (

@@ -70,8 +70,14 @@ export async function GET(request: Request) {
     }
 
     const [runs, retryStates] = await Promise.all([
-        getAiReviewStrategyRunsForQuestion(question.id),
-        getAiReviewStrategyRetryStatesForQuestion(question.id),
+        getAiReviewStrategyRunsForQuestion(question.id, {
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+        }),
+        getAiReviewStrategyRetryStatesForQuestion(question.id, {
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+        }),
     ]);
 
     return Response.json({

@@ -24,6 +24,8 @@ type UserItem = {
     email: string | null;
     platformRole: PlatformRoleValue;
     status: "ACTIVE" | "INACTIVE";
+    ownerAdminId: string | null;
+    ownerAdminName: string | null;
     createdAt: string;
     projectRoleSummary: Array<"AUTHOR" | "REVIEWER">;
     projectCount: number;
@@ -43,12 +45,22 @@ const editRoleOptionsByCurrentRole: Record<
 export function UserManagementTable({
     users,
     currentPlatformRole,
+    currentUserId,
+    adminOptions,
 }: {
     users: UserItem[];
     currentPlatformRole: PlatformRoleValue;
+    currentUserId: string;
+    adminOptions: Array<{
+        id: string;
+        name: string;
+        username: string | null;
+    }>;
 }) {
     const router = useRouter();
     const [activeUserId, setActiveUserId] = useState<string | null>(null);
+    const [editingPlatformRole, setEditingPlatformRole] =
+        useState<PlatformRoleValue>("USER");
     const [state, formAction, isPending] = useActionState(
         updateUserAction,
         initialState,
@@ -67,12 +79,19 @@ export function UserManagementTable({
     );
     const editablePlatformRoles =
         editRoleOptionsByCurrentRole[currentPlatformRole];
+    const activeEditablePlatformRoles =
+        activeUser &&
+        currentPlatformRole !== "SUPER_ADMIN" &&
+        activeUser.id === currentUserId
+            ? [activeUser.platformRole]
+            : editablePlatformRoles;
 
     useEffect(() => {
         if (state.success) {
             const frame = requestAnimationFrame(() => {
                 formRef.current?.reset();
                 setActiveUserId(null);
+                setEditingPlatformRole("USER");
                 setDialogKey((value) => value + 1);
                 router.refresh();
             });
@@ -88,7 +107,7 @@ export function UserManagementTable({
                     style={{
                         display: "grid",
                         gridTemplateColumns:
-                            "1fr 0.95fr 1.15fr 0.9fr 1.15fr 0.7fr 0.9fr",
+                            "1fr 0.95fr 1.1fr 0.85fr 1fr 1.1fr 0.7fr 0.9fr",
                         gap: 16,
                         padding: "14px 16px",
                         background: "rgba(248, 250, 252, 0.9)",
@@ -99,6 +118,7 @@ export function UserManagementTable({
                     <div>姓名</div>
                     <div>邮箱</div>
                     <div>平台角色</div>
+                    <div>所属管理员</div>
                     <div>项目功能角色</div>
                     <div>状态</div>
                     <div>操作</div>
@@ -115,7 +135,7 @@ export function UserManagementTable({
                             style={{
                                 display: "grid",
                                 gridTemplateColumns:
-                                    "1fr 0.95fr 1.15fr 0.9fr 1.15fr 0.7fr 0.9fr",
+                                    "1fr 0.95fr 1.1fr 0.85fr 1fr 1.1fr 0.7fr 0.9fr",
                                 gap: 16,
                                 padding: "16px",
                                 borderTop:
@@ -136,6 +156,11 @@ export function UserManagementTable({
                                 >
                                     {getPlatformRoleLabel(user.platformRole)}
                                 </Tag>
+                            </div>
+                            <div className="muted">
+                                {user.platformRole === "USER"
+                                    ? user.ownerAdminName ?? "-"
+                                    : "-"}
                             </div>
                             <div
                                 style={{
@@ -170,11 +195,15 @@ export function UserManagementTable({
                             </div>
                             <div>
                                 {currentPlatformRole === "SUPER_ADMIN" ||
-                                user.platformRole === "USER" ? (
+                                user.platformRole === "USER" ||
+                                user.id === currentUserId ? (
                                     <Button
                                         icon={<PencilLine size={16} />}
                                         onClick={() => {
                                             setDialogKey((value) => value + 1);
+                                            setEditingPlatformRole(
+                                                user.platformRole,
+                                            );
                                             setActiveUserId(user.id);
                                         }}
                                     >
@@ -302,12 +331,16 @@ export function UserManagementTable({
                                         <select
                                             id="edit-platformRole"
                                             name="platformRole"
-                                            defaultValue={
-                                                activeUser.platformRole
+                                            value={editingPlatformRole}
+                                            onChange={(event) =>
+                                                setEditingPlatformRole(
+                                                    event.target
+                                                        .value as PlatformRoleValue,
+                                                )
                                             }
                                             className="field-select"
                                         >
-                                            {editablePlatformRoles.map(
+                                            {activeEditablePlatformRoles.map(
                                                 (role) => (
                                                     <option
                                                         key={role}
@@ -321,6 +354,55 @@ export function UserManagementTable({
                                             )}
                                         </select>
                                     </div>
+
+                                    {currentPlatformRole === "SUPER_ADMIN" ? (
+                                        <div>
+                                            <label
+                                                className="field-label"
+                                                htmlFor="edit-ownerAdminId"
+                                            >
+                                                所属管理员
+                                            </label>
+                                            <select
+                                                id="edit-ownerAdminId"
+                                                name="ownerAdminId"
+                                                defaultValue={
+                                                    activeUser.ownerAdminId ??
+                                                    adminOptions[0]?.id ??
+                                                    ""
+                                                }
+                                                className="field-select"
+                                                disabled={
+                                                    editingPlatformRole !==
+                                                    "USER"
+                                                }
+                                            >
+                                                {adminOptions.map((admin) => (
+                                                    <option
+                                                        key={admin.id}
+                                                        value={admin.id}
+                                                    >
+                                                        {admin.name}
+                                                        {admin.username
+                                                            ? ` (${admin.username})`
+                                                            : ""}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ) : editingPlatformRole === "USER" ? (
+                                        <input
+                                            type="hidden"
+                                            name="ownerAdminId"
+                                            value={
+                                                activeUser.ownerAdminId ??
+                                                (currentPlatformRole ===
+                                                "PLATFORM_ADMIN"
+                                                    ? currentUserId
+                                                    : "")
+                                            }
+                                        />
+                                    ) : null}
 
                                     <div>
                                         <label
@@ -359,8 +441,8 @@ export function UserManagementTable({
                                         当前用户参与项目数：
                                         {activeUser.projectCount}。
                                         {isSuperAdminRole(currentPlatformRole)
-                                            ? "超级管理员可维护管理员角色。"
-                                            : "平台管理员只可维护普通账号。"}
+                                            ? "超级管理员可维护管理员角色与用户归属。"
+                                            : "平台管理员只可维护自己名下的普通账号。"}
                                         功能角色不在这里设置，请到项目管理页中的“成员管理”进行分配。
                                     </span>
                                 </div>

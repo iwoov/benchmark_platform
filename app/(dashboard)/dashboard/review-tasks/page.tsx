@@ -74,7 +74,10 @@ export default async function ReviewTasksPage({
                       pageSize: requestedPageSize,
                       conditions: filters,
                   }),
-                  getReviewQuestionListAiStrategies([selectedProjectId]),
+                  getReviewQuestionListAiStrategies([selectedProjectId], {
+                      userId: session?.user?.id ?? "",
+                      platformRole: session?.user?.platformRole ?? "USER",
+                  }),
                   getReviewQuestionListFilterMeta(selectedProjectId),
                   getResolvedUserProjectReviewFieldPreference(
                       session?.user?.id ?? "",

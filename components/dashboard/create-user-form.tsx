@@ -25,8 +25,14 @@ const createRoleOptionsByCurrentRole: Record<
 
 export function CreateUserForm({
     currentPlatformRole,
+    adminOptions,
 }: {
     currentPlatformRole: PlatformRoleValue;
+    adminOptions: Array<{
+        id: string;
+        name: string;
+        username: string | null;
+    }>;
 }) {
     const router = useRouter();
     const [state, formAction, isPending] = useActionState(
@@ -38,6 +44,9 @@ export function CreateUserForm({
     const [dialogKey, setDialogKey] = useState(0);
     const availablePlatformRoles =
         createRoleOptionsByCurrentRole[currentPlatformRole];
+    const [selectedRole, setSelectedRole] = useState<PlatformRoleValue>(
+        availablePlatformRoles[0],
+    );
 
     useActionNotification(state, {
         successTitle: "用户创建成功",
@@ -50,12 +59,13 @@ export function CreateUserForm({
                 formRef.current?.reset();
                 setOpen(false);
                 setDialogKey((value) => value + 1);
+                setSelectedRole(availablePlatformRoles[0]);
                 router.refresh();
             });
 
             return () => cancelAnimationFrame(frame);
         }
-    }, [router, state.success]);
+    }, [availablePlatformRoles, router, state.success]);
 
     return (
         <>
@@ -65,6 +75,7 @@ export function CreateUserForm({
                 icon={<Plus size={16} />}
                 onClick={() => {
                     setDialogKey((value) => value + 1);
+                    setSelectedRole(availablePlatformRoles[0]);
                     setOpen(true);
                 }}
             >
@@ -208,7 +219,13 @@ export function CreateUserForm({
                                     <select
                                         id="platformRole"
                                         name="platformRole"
-                                        defaultValue={availablePlatformRoles[0]}
+                                        value={selectedRole}
+                                        onChange={(event) =>
+                                            setSelectedRole(
+                                                event.target
+                                                    .value as PlatformRoleValue,
+                                            )
+                                        }
                                         className="field-select"
                                     >
                                         {availablePlatformRoles.map((role) => (
@@ -241,6 +258,37 @@ export function CreateUserForm({
                                     </select>
                                 </div>
                             </div>
+
+                            {currentPlatformRole === "SUPER_ADMIN" &&
+                            selectedRole === "USER" ? (
+                                <div>
+                                    <label
+                                        htmlFor="ownerAdminId"
+                                        style={{
+                                            display: "block",
+                                            marginBottom: 8,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        所属管理员
+                                    </label>
+                                    <select
+                                        id="ownerAdminId"
+                                        name="ownerAdminId"
+                                        defaultValue={adminOptions[0]?.id ?? ""}
+                                        className="field-select"
+                                    >
+                                        {adminOptions.map((admin) => (
+                                            <option key={admin.id} value={admin.id}>
+                                                {admin.name}
+                                                {admin.username
+                                                    ? ` (${admin.username})`
+                                                    : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : null}
 
                             <div
                                 style={{

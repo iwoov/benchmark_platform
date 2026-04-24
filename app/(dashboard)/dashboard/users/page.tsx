@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { CreateUserForm } from "@/components/dashboard/create-user-form";
 import { UserManagementTable } from "@/components/dashboard/user-management-table";
+import { getUserOwnerAdminOptions } from "@/lib/auth/admin-scope";
 import { getHomePathByRole } from "@/lib/auth/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { isAdminRole } from "@/lib/auth/roles";
@@ -19,27 +20,51 @@ export default async function UsersPage() {
         redirect(getHomePathByRole(session.user.platformRole));
     }
 
-    const users = process.env.DATABASE_URL
-        ? await prisma.user.findMany({
-              orderBy: {
-                  createdAt: "desc",
-              },
-              select: {
-                  id: true,
-                  username: true,
-                  name: true,
-                  email: true,
-                  platformRole: true,
-                  status: true,
-                  createdAt: true,
-                  memberships: {
-                      select: {
-                          role: true,
+    const [users, adminOptions] = process.env.DATABASE_URL
+        ? await Promise.all([
+              prisma.user.findMany({
+                  where:
+                      session.user.platformRole === "SUPER_ADMIN"
+                          ? undefined
+                          : {
+                                OR: [
+                                    {
+                                        id: session.user.id,
+                                    },
+                                    {
+                                        ownerAdminId: session.user.id,
+                                    },
+                                ],
+                            },
+                  orderBy: {
+                      createdAt: "desc",
+                  },
+                  select: {
+                      id: true,
+                      username: true,
+                      name: true,
+                      email: true,
+                      platformRole: true,
+                      status: true,
+                      createdAt: true,
+                      ownerAdminId: true,
+                      ownerAdmin: {
+                          select: {
+                              id: true,
+                              name: true,
+                              username: true,
+                          },
+                      },
+                      memberships: {
+                          select: {
+                              role: true,
+                          },
                       },
                   },
-              },
-          })
-        : [];
+              }),
+              getUserOwnerAdminOptions(),
+          ])
+        : [[], []];
 
     return (
         <section className="content-surface users-table-surface">
@@ -57,11 +82,14 @@ export default async function UsersPage() {
                 </div>
                 <CreateUserForm
                     currentPlatformRole={session.user.platformRole}
+                    adminOptions={adminOptions}
                 />
             </div>
 
             <UserManagementTable
                 currentPlatformRole={session.user.platformRole}
+                currentUserId={session.user.id}
+                adminOptions={adminOptions}
                 users={users.map((user) => ({
                     id: user.id,
                     username: user.username,
@@ -69,6 +97,8 @@ export default async function UsersPage() {
                     email: user.email,
                     platformRole: user.platformRole,
                     status: user.status,
+                    ownerAdminId: user.ownerAdminId,
+                    ownerAdminName: user.ownerAdmin?.name ?? null,
                     createdAt: user.createdAt.toLocaleString("zh-CN"),
                     projectRoleSummary: [
                         ...new Set(

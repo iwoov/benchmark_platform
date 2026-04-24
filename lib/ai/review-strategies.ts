@@ -1,6 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import {
+    getPlatformAdminScopeOptions,
+    resolveUserAdminScopeId,
+} from "@/lib/auth/admin-scope";
+import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import {
     invokeAiModel,
@@ -1574,7 +1579,11 @@ function isRunnableReviewStrategy(definition: AiReviewStrategyDefinition) {
     );
 }
 
-export async function getAiReviewStrategyConsoleData() {
+export async function getAiReviewStrategyConsoleData(input: {
+    userId: string;
+    platformRole: PlatformRoleValue;
+    scopeAdminId?: string;
+}) {
     if (!process.env.DATABASE_URL) {
         return {
             databaseEnabled: false,
@@ -1602,14 +1611,31 @@ export async function getAiReviewStrategyConsoleData() {
                 name: string;
                 description: string | null;
                 enabled: boolean;
+                scopeAdminId: string;
+                scopeAdminName: string;
                 projectIds: string[];
                 datasourceIds: string[];
                 definition: AiReviewStrategyDefinition;
                 createdByName: string;
                 updatedAt: string;
             }>,
+            adminScopeOptions: [] as Array<{
+                id: string;
+                name: string;
+                username: string | null;
+            }>,
+            activeScopeAdminId: null as string | null,
         };
     }
+
+    const adminScopeOptions = await getPlatformAdminScopeOptions();
+    const activeScopeAdminId =
+        input.platformRole === "SUPER_ADMIN"
+            ? input.scopeAdminId ??
+              adminScopeOptions.find((admin) => admin.id === input.userId)?.id ??
+              adminScopeOptions[0]?.id ??
+              null
+            : input.userId;
 
     const [models, projects, datasources, strategies] = await Promise.all([
         prisma.aiModel.findMany({
@@ -1650,9 +1676,23 @@ export async function getAiReviewStrategyConsoleData() {
             },
         }),
         prisma.aiReviewStrategy.findMany({
+            where:
+                input.platformRole === "SUPER_ADMIN" && !activeScopeAdminId
+                    ? undefined
+                    : {
+                          scopeAdminId:
+                              input.platformRole === "SUPER_ADMIN"
+                                  ? activeScopeAdminId ?? undefined
+                                  : input.userId,
+                      },
             orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
             include: {
                 createdBy: {
+                    select: {
+                        name: true,
+                    },
+                },
+                scopeAdmin: {
                     select: {
                         name: true,
                     },
@@ -1691,6 +1731,8 @@ export async function getAiReviewStrategyConsoleData() {
                     name: strategy.name,
                     description: strategy.description,
                     enabled: strategy.enabled,
+                    scopeAdminId: strategy.scopeAdminId,
+                    scopeAdminName: strategy.scopeAdmin.name,
                     projectIds: parseStringArray(strategy.projectIds),
                     datasourceIds: parseStringArray(strategy.datasourceIds),
                     definition,
@@ -1701,19 +1743,34 @@ export async function getAiReviewStrategyConsoleData() {
             .filter((strategy): strategy is NonNullable<typeof strategy> =>
                 Boolean(strategy),
             ),
+        adminScopeOptions,
+        activeScopeAdminId,
     };
 }
 
 export async function getApplicableAiReviewStrategies(
     question: ReviewQuestionDetail,
+    viewer?: {
+        userId: string;
+        platformRole: PlatformRoleValue;
+    },
 ) {
     if (!process.env.DATABASE_URL) {
         return [];
     }
 
+    const scopeAdminId = viewer
+        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
+        : null;
+
     const strategies = await prisma.aiReviewStrategy.findMany({
         where: {
             enabled: true,
+            ...(viewer?.platformRole === "SUPER_ADMIN"
+                ? {}
+                : {
+                      scopeAdminId: scopeAdminId ?? "__no_scope__",
+                  }),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
@@ -1797,15 +1854,29 @@ export async function getApplicableAiReviewStrategies(
         );
 }
 
-export async function getReviewQuestionListAiStrategies(projectIds?: string[]) {
+export async function getReviewQuestionListAiStrategies(
+    projectIds?: string[],
+    viewer?: {
+        userId: string;
+        platformRole: PlatformRoleValue;
+    },
+) {
     if (!process.env.DATABASE_URL) {
         return [];
     }
 
+    const scopeAdminId = viewer
+        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
+        : null;
     const allowedProjectIds = projectIds ? new Set(projectIds) : null;
     const strategies = await prisma.aiReviewStrategy.findMany({
         where: {
             enabled: true,
+            ...(viewer?.platformRole === "SUPER_ADMIN"
+                ? {}
+                : {
+                      scopeAdminId: scopeAdminId ?? "__no_scope__",
+                  }),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
@@ -1845,14 +1916,31 @@ export async function getReviewQuestionListAiStrategies(projectIds?: string[]) {
         );
 }
 
-export async function getAiReviewStrategyRunsForQuestion(questionId: string) {
+export async function getAiReviewStrategyRunsForQuestion(
+    questionId: string,
+    viewer?: {
+        userId: string;
+        platformRole: PlatformRoleValue;
+    },
+) {
     if (!process.env.DATABASE_URL) {
         return [];
     }
 
+    const scopeAdminId = viewer
+        ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
+        : null;
+
     const runs = await prisma.aiReviewStrategyRun.findMany({
         where: {
             questionId,
+            ...(viewer?.platformRole === "SUPER_ADMIN"
+                ? {}
+                : {
+                      strategy: {
+                          scopeAdminId: scopeAdminId ?? "__no_scope__",
+                      },
+                  }),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
         include: {
@@ -1889,6 +1977,7 @@ async function loadStrategyForExecution(strategyId: string) {
             name: true,
             description: true,
             enabled: true,
+            scopeAdminId: true,
             projectIds: true,
             datasourceIds: true,
             definition: true,

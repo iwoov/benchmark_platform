@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { canAccessAdminScope } from "@/lib/auth/admin-scope";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 import { isAdminRole } from "@/lib/auth/roles";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
@@ -45,6 +46,11 @@ function formatExternalRecordIdsForMessage(
 
 const saveStrategySchema = z.object({
     strategyId: z
+        .string()
+        .trim()
+        .optional()
+        .transform((value) => value || undefined),
+    scopeAdminId: z
         .string()
         .trim()
         .optional()
@@ -286,15 +292,46 @@ export async function saveAiReviewStrategyAction(
     }
 
     const session = await auth();
+    const scopeAdminId =
+        session!.user.platformRole === "SUPER_ADMIN"
+            ? parsed.data.scopeAdminId
+            : session!.user.id;
+
+    if (!scopeAdminId) {
+        return {
+            error: "请选择策略所属管理员。",
+        };
+    }
+
+    const scopeAdmin = await prisma.user.findFirst({
+        where: {
+            id: scopeAdminId,
+            platformRole: {
+                in: ["SUPER_ADMIN", "PLATFORM_ADMIN"],
+            },
+        },
+        select: {
+            id: true,
+        },
+    });
+
+    if (!scopeAdmin) {
+        return {
+            error: "策略所属管理员不存在，请刷新后重试。",
+        };
+    }
+
     const duplicate = await prisma.aiReviewStrategy.findFirst({
         where: parsed.data.strategyId
             ? {
+                  scopeAdminId,
                   code: parsed.data.payload.code,
                   NOT: {
                       id: parsed.data.strategyId,
                   },
               }
             : {
+                  scopeAdminId,
                   code: parsed.data.payload.code,
               },
         select: {
@@ -315,6 +352,7 @@ export async function saveAiReviewStrategyAction(
         enabled: parsed.data.payload.enabled,
         projectIds: parsed.data.payload.projectIds,
         datasourceIds: parsed.data.payload.datasourceIds,
+        scopeAdminId,
         definition: parsed.data.payload.definition,
     };
 
@@ -325,12 +363,22 @@ export async function saveAiReviewStrategyAction(
             },
             select: {
                 id: true,
+                scopeAdminId: true,
             },
         });
 
         if (!current) {
             return {
                 error: "要编辑的审核策略不存在。",
+            };
+        }
+
+        if (
+            session!.user.platformRole !== "SUPER_ADMIN" &&
+            current.scopeAdminId !== session!.user.id
+        ) {
+            return {
+                error: "你只能编辑自己名下的审核策略。",
             };
         }
 
@@ -360,6 +408,7 @@ export async function deleteAiReviewStrategyAction(
     input: z.input<typeof deleteStrategySchema>,
 ): Promise<AiReviewStrategyActionState> {
     const accessError = await requireStrategyAdminAccess();
+    const session = await auth();
 
     if (accessError) {
         return accessError;
@@ -380,12 +429,25 @@ export async function deleteAiReviewStrategyAction(
         select: {
             id: true,
             name: true,
+            scopeAdminId: true,
         },
     });
 
     if (!strategy) {
         return {
             error: "审核策略不存在。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session!.user.id,
+            session!.user.platformRole,
+            strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你只能删除自己管理员域下的审核策略。",
         };
     }
 
@@ -453,6 +515,33 @@ export async function runAiReviewStrategyAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const strategy = await prisma.aiReviewStrategy.findUnique({
+        where: {
+            id: parsed.data.strategyId,
+        },
+        select: {
+            scopeAdminId: true,
+        },
+    });
+
+    if (!strategy) {
+        return {
+            error: "审核策略不存在。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session.user.id,
+            session.user.platformRole,
+            strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你不能执行其他管理员域的审核策略。",
         };
     }
 
@@ -542,6 +631,11 @@ export async function retryAiReviewStrategyRunItemAction(
         select: {
             id: true,
             questionId: true,
+            strategy: {
+                select: {
+                    scopeAdminId: true,
+                },
+            },
             question: {
                 select: {
                     projectId: true,
@@ -565,6 +659,18 @@ export async function retryAiReviewStrategyRunItemAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session.user.id,
+            session.user.platformRole,
+            run.strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你不能重试其他管理员域的审核策略结果。",
         };
     }
 
@@ -661,6 +767,33 @@ export async function createAiReviewStrategyBatchRunAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const strategy = await prisma.aiReviewStrategy.findUnique({
+        where: {
+            id: parsed.data.strategyId,
+        },
+        select: {
+            scopeAdminId: true,
+        },
+    });
+
+    if (!strategy) {
+        return {
+            error: "审核策略不存在。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session.user.id,
+            session.user.platformRole,
+            strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你不能创建其他管理员域的批量审核任务。",
         };
     }
 
@@ -784,6 +917,11 @@ export async function cancelAiReviewStrategyBatchRunAction(
         select: {
             id: true,
             projectId: true,
+            strategy: {
+                select: {
+                    scopeAdminId: true,
+                },
+            },
         },
     });
 
@@ -802,6 +940,18 @@ export async function cancelAiReviewStrategyBatchRunAction(
     if (!canReview) {
         return {
             error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session.user.id,
+            session.user.platformRole,
+            batchRun.strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你不能取消其他管理员域的批量审核任务。",
         };
     }
 
@@ -865,12 +1015,29 @@ export async function deleteAiReviewStrategyBatchRunAction(
         select: {
             id: true,
             projectId: true,
+            strategy: {
+                select: {
+                    scopeAdminId: true,
+                },
+            },
         },
     });
 
     if (!batchRun) {
         return {
             error: "批量任务不存在。",
+        };
+    }
+
+    if (
+        !(await canAccessAdminScope(
+            session.user.id,
+            session.user.platformRole,
+            batchRun.strategy.scopeAdminId,
+        ))
+    ) {
+        return {
+            error: "你不能删除其他管理员域的批量审核任务。",
         };
     }
 

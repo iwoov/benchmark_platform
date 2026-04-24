@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
     App,
     Button,
@@ -55,6 +55,7 @@ import {
 
 type StrategyFormState = {
     strategyId?: string;
+    scopeAdminId: string;
     name: string;
     code: string;
     description: string;
@@ -64,8 +65,9 @@ type StrategyFormState = {
     definition: AiReviewStrategyDefinition;
 };
 
-function createDefaultStrategyForm(): StrategyFormState {
+function createDefaultStrategyForm(scopeAdminId = ""): StrategyFormState {
     return {
+        scopeAdminId,
         name: "",
         code: "",
         description: "",
@@ -81,6 +83,7 @@ function createDefaultStrategyForm(): StrategyFormState {
 
 function createStrategyFormState(strategy?: {
     id: string;
+    scopeAdminId: string;
     code: string;
     name: string;
     description: string | null;
@@ -95,6 +98,7 @@ function createStrategyFormState(strategy?: {
 
     return {
         strategyId: strategy.id,
+        scopeAdminId: strategy.scopeAdminId,
         name: strategy.name,
         code: strategy.code,
         description: strategy.description ?? "",
@@ -196,13 +200,17 @@ function createDefaultChatConfigForm(): ChatConfigFormState {
 
 export function AiReviewStrategyConsole({
     databaseEnabled,
+    currentPlatformRole,
     modelOptions,
     projects,
     datasources,
     strategies,
     chatConfigs,
+    adminScopeOptions,
+    activeScopeAdminId,
 }: {
     databaseEnabled: boolean;
+    currentPlatformRole: "SUPER_ADMIN" | "PLATFORM_ADMIN" | "USER";
     modelOptions: Array<{
         code: string;
         label: string;
@@ -223,6 +231,8 @@ export function AiReviewStrategyConsole({
     }>;
     strategies: Array<{
         id: string;
+        scopeAdminId: string;
+        scopeAdminName: string;
         code: string;
         name: string;
         description: string | null;
@@ -234,11 +244,18 @@ export function AiReviewStrategyConsole({
         updatedAt: string;
     }>;
     chatConfigs: AiChatConfigView[];
+    adminScopeOptions: Array<{
+        id: string;
+        name: string;
+        username: string | null;
+    }>;
+    activeScopeAdminId: string | null;
 }) {
+    const pathname = usePathname();
     const router = useRouter();
     const { notification } = App.useApp();
     const [form, setForm] = useState<StrategyFormState>(
-        createDefaultStrategyForm(),
+        createDefaultStrategyForm(activeScopeAdminId ?? ""),
     );
     const [modalOpen, setModalOpen] = useState(false);
     const [savingId, setSavingId] = useState<string | null>(null);
@@ -254,6 +271,8 @@ export function AiReviewStrategyConsole({
     const [isSavingChat, startSavingChat] = useTransition();
     const [isDeletingChat, startDeletingChat] = useTransition();
     const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+    const canSelectScope =
+        currentPlatformRole === "SUPER_ADMIN" && adminScopeOptions.length > 0;
 
     const projectOptions = useMemo(
         () =>
@@ -341,7 +360,7 @@ export function AiReviewStrategyConsole({
     }
 
     function openCreateModal() {
-        setForm(createDefaultStrategyForm());
+        setForm(createDefaultStrategyForm(activeScopeAdminId ?? ""));
         setModalOpen(true);
     }
 
@@ -352,7 +371,7 @@ export function AiReviewStrategyConsole({
 
     function closeModal() {
         setModalOpen(false);
-        setForm(createDefaultStrategyForm());
+        setForm(createDefaultStrategyForm(activeScopeAdminId ?? ""));
     }
 
     function updateStep(
@@ -484,6 +503,7 @@ export function AiReviewStrategyConsole({
         startSaving(async () => {
             const result = await saveAiReviewStrategyAction({
                 strategyId: form.strategyId,
+                scopeAdminId: form.scopeAdminId,
                 payload: {
                     name: form.name,
                     code: form.code,
@@ -502,6 +522,12 @@ export function AiReviewStrategyConsole({
                 closeModal();
             }
         });
+    }
+
+    function handleScopeChange(scopeAdminId: string) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("scopeAdminId", scopeAdminId);
+        router.replace(`${pathname}?${params.toString()}`);
     }
 
     function handleDelete(strategyId: string) {
@@ -601,13 +627,34 @@ export function AiReviewStrategyConsole({
                             工具和规则步骤。管理员创建策略，审核员在题目详情页选择并执行。
                         </p>
                     </div>
-                    <Button
-                        type="primary"
-                        icon={<Plus size={16} />}
-                        onClick={openCreateModal}
-                    >
-                        新建策略
-                    </Button>
+                    <Space size={12} align="end">
+                        {canSelectScope ? (
+                            <div style={{ minWidth: 280 }}>
+                                <div className="field-label">管理员域</div>
+                                <Select
+                                    size="large"
+                                    value={activeScopeAdminId ?? undefined}
+                                    options={adminScopeOptions.map((admin) => ({
+                                        value: admin.id,
+                                        label: `${admin.name}${
+                                            admin.username
+                                                ? ` (${admin.username})`
+                                                : ""
+                                        }`,
+                                    }))}
+                                    onChange={handleScopeChange}
+                                    style={{ width: "100%", marginTop: 8 }}
+                                />
+                            </div>
+                        ) : null}
+                        <Button
+                            type="primary"
+                            icon={<Plus size={16} />}
+                            onClick={openCreateModal}
+                        >
+                            新建策略
+                        </Button>
+                    </Space>
                 </div>
 
                 {!databaseEnabled ? (
@@ -715,6 +762,9 @@ export function AiReviewStrategyConsole({
                                     </Tag>
                                     <Tag bordered={false}>
                                         维护人：{strategy.createdByName}
+                                    </Tag>
+                                    <Tag bordered={false}>
+                                        生效管理员：{strategy.scopeAdminName}
                                     </Tag>
                                     <Tag bordered={false}>
                                         更新于{" "}
@@ -1072,6 +1122,30 @@ export function AiReviewStrategyConsole({
                 wrapClassName="strategy-modal-wrap"
             >
                 <form onSubmit={handleSave} className="strategy-form-shell">
+                    {canSelectScope ? (
+                        <div style={{ marginBottom: 20 }}>
+                            <label className="field-label">所属管理员域</label>
+                            <Select
+                                size="large"
+                                value={form.scopeAdminId || undefined}
+                                options={adminScopeOptions.map((admin) => ({
+                                    value: admin.id,
+                                    label: `${admin.name}${
+                                        admin.username
+                                            ? ` (${admin.username})`
+                                            : ""
+                                    }`,
+                                }))}
+                                onChange={(value) =>
+                                    setForm((current) => ({
+                                        ...current,
+                                        scopeAdminId: value,
+                                    }))
+                                }
+                                style={{ width: "100%", marginTop: 8 }}
+                            />
+                        </div>
+                    ) : null}
                     <div className="strategy-form-grid">
                         <div>
                             <label

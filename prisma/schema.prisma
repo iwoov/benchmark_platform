@@ -113,17 +113,23 @@ model User {
   dingtalkUserId            String?                            @unique
   status                    UserStatus                         @default(ACTIVE)
   platformRole              PlatformRole                       @default(USER)
+  ownerAdminId              String?
   createdProjects           Project[]                          @relation("ProjectCreator")
   memberships               ProjectMember[]
   reviews                   Review[]
   aiReviewRuns              AiReviewRun[]                      @relation("AiReviewRunTrigger")
   aiReviewStrategies        AiReviewStrategy[]                 @relation("AiReviewStrategyCreator")
+  scopedAiReviewStrategies  AiReviewStrategy[]                 @relation("AiReviewStrategyScopeAdmin")
   aiReviewStrategyRuns      AiReviewStrategyRun[]              @relation("AiReviewStrategyRunTrigger")
   aiReviewStrategyBatchRuns AiReviewStrategyBatchRun[]         @relation("AiReviewStrategyBatchRunCreator")
   dingtalkAccounts          DingtalkAccount[]
   reviewFieldPreferences    UserProjectReviewFieldPreference[]
+  ownerAdmin                User?                              @relation("UserOwnedAccounts", fields: [ownerAdminId], references: [id], onDelete: SetNull)
+  managedUsers              User[]                             @relation("UserOwnedAccounts")
   createdAt                 DateTime                           @default(now())
   updatedAt                 DateTime                           @updatedAt
+
+  @@index([ownerAdminId])
 }
 
 model Project {
@@ -346,7 +352,7 @@ model AiProviderEndpointModel {
 
 model AiReviewStrategy {
   id            String                     @id @default(cuid())
-  code          String                     @unique
+  code          String
   name          String
   description   String?
   enabled       Boolean                    @default(true)
@@ -355,13 +361,17 @@ model AiReviewStrategy {
   questionTypes Json?
   definition    Json
   createdById   String
+  scopeAdminId  String
   createdBy     User                       @relation("AiReviewStrategyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  scopeAdmin    User                       @relation("AiReviewStrategyScopeAdmin", fields: [scopeAdminId], references: [id], onDelete: Cascade)
   runs          AiReviewStrategyRun[]
   batchRuns     AiReviewStrategyBatchRun[]
   createdAt     DateTime                   @default(now())
   updatedAt     DateTime                   @updatedAt
 
+  @@unique([scopeAdminId, code])
   @@index([enabled, createdAt])
+  @@index([scopeAdminId, updatedAt])
 }
 
 model AiReviewStrategyRun {

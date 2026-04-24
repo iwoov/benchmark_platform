@@ -50,6 +50,10 @@ export async function GET(request: Request) {
 
     const runs = await getAiReviewStrategyBatchRunsForProject(
         parsed.data.projectId,
+        {
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+        },
     );
 
     return Response.json({
