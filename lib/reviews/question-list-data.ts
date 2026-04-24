@@ -77,6 +77,54 @@ function parseExternalRecordOrder(value: string) {
     return Number(match[1]);
 }
 
+function compareQuestionsByDatasource(
+    left: {
+        datasourceName?: string;
+        datasourceId: string;
+        sourceRowNumber?: number | null;
+        externalRecordId: string;
+    },
+    right: {
+        datasourceName?: string;
+        datasourceId: string;
+        sourceRowNumber?: number | null;
+        externalRecordId: string;
+    },
+) {
+    const datasourceNameDiff = (left.datasourceName ?? "").localeCompare(
+        right.datasourceName ?? "",
+        "zh-CN",
+    );
+
+    if (datasourceNameDiff !== 0) {
+        return datasourceNameDiff;
+    }
+
+    const datasourceIdDiff = left.datasourceId.localeCompare(right.datasourceId);
+
+    if (datasourceIdDiff !== 0) {
+        return datasourceIdDiff;
+    }
+
+    const sourceRowNumberDiff =
+        (left.sourceRowNumber ?? Number.POSITIVE_INFINITY) -
+        (right.sourceRowNumber ?? Number.POSITIVE_INFINITY);
+
+    if (sourceRowNumberDiff !== 0) {
+        return sourceRowNumberDiff;
+    }
+
+    const externalOrderDiff =
+        parseExternalRecordOrder(left.externalRecordId) -
+        parseExternalRecordOrder(right.externalRecordId);
+
+    if (externalOrderDiff !== 0) {
+        return externalOrderDiff;
+    }
+
+    return left.externalRecordId.localeCompare(right.externalRecordId);
+}
+
 function extractRawFieldOrder(syncConfig: unknown) {
     if (
         !syncConfig ||
@@ -358,15 +406,20 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
 
     return rows
         .sort((left, right) => {
-            const externalOrderDiff =
-                parseExternalRecordOrder(left.externalRecordId) -
-                parseExternalRecordOrder(right.externalRecordId);
-
-            if (externalOrderDiff !== 0) {
-                return externalOrderDiff;
-            }
-
-            return left.externalRecordId.localeCompare(right.externalRecordId);
+            return compareQuestionsByDatasource(
+                {
+                    datasourceName: left.datasource.name,
+                    datasourceId: left.datasource.id,
+                    sourceRowNumber: extractSourceRowNumber(left.metadata),
+                    externalRecordId: left.externalRecordId,
+                },
+                {
+                    datasourceName: right.datasource.name,
+                    datasourceId: right.datasource.id,
+                    sourceRowNumber: extractSourceRowNumber(right.metadata),
+                    externalRecordId: right.externalRecordId,
+                },
+            );
         })
         .map<ReviewQuestionListItem>((question) => {
             const reviewSummary = reviewSummaryMap.get(
@@ -594,15 +647,7 @@ export async function getReviewQuestionListPageData({
             );
         })
         .sort((left, right) => {
-            const externalOrderDiff =
-                parseExternalRecordOrder(left.externalRecordId) -
-                parseExternalRecordOrder(right.externalRecordId);
-
-            if (externalOrderDiff !== 0) {
-                return externalOrderDiff;
-            }
-
-            return left.externalRecordId.localeCompare(right.externalRecordId);
+            return compareQuestionsByDatasource(left, right);
         });
     const total = sortedRows.length;
     const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
@@ -858,15 +903,18 @@ export async function getReviewQuestionNavigation({
             ),
         )
         .sort((left, right) => {
-            const externalOrderDiff =
-                parseExternalRecordOrder(left.externalRecordId) -
-                parseExternalRecordOrder(right.externalRecordId);
-
-            if (externalOrderDiff !== 0) {
-                return externalOrderDiff;
-            }
-
-            return left.externalRecordId.localeCompare(right.externalRecordId);
+            return compareQuestionsByDatasource(
+                {
+                    datasourceId: left.datasourceId,
+                    sourceRowNumber: extractSourceRowNumber(left.metadata),
+                    externalRecordId: left.externalRecordId,
+                },
+                {
+                    datasourceId: right.datasourceId,
+                    sourceRowNumber: extractSourceRowNumber(right.metadata),
+                    externalRecordId: right.externalRecordId,
+                },
+            );
         });
 
     const currentIndex = filteredOrderedQuestions.findIndex(

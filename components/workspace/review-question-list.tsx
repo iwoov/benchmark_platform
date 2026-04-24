@@ -381,15 +381,15 @@ export function ReviewQuestionList({
     );
     const gridTemplateColumns = [
         "52px",
+        "180px",
         "160px",
-        "140px",
         "140px",
         "140px",
         "180px",
         ...rawColumns.map(() => "220px"),
     ].join(" ");
     const tableWidth =
-        52 + 160 + 140 + 140 + 140 + 180 + rawColumns.length * 220;
+        52 + 180 + 160 + 140 + 140 + 180 + rawColumns.length * 220;
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -1055,10 +1055,9 @@ export function ReviewQuestionList({
                                                 }
                                             />
                                         </div>
-                                        <div style={cellStyle}>外部记录 ID</div>
+                                        <div style={cellStyle}>数据源</div>
                                         <div style={cellStyle}>AI审核</div>
                                         <div style={cellStyle}>人工审核</div>
-                                        <div style={cellStyle}>数据源</div>
                                         <div style={cellStyle}>更新时间</div>
                                         {rawColumns.map((column) => (
                                             <div
@@ -1145,10 +1144,10 @@ export function ReviewQuestionList({
                                                     className="muted"
                                                     style={cellStyle}
                                                     title={
-                                                        question.externalRecordId
+                                                        question.datasourceName
                                                     }
                                                 >
-                                                    {question.externalRecordId}
+                                                    {question.datasourceName}
                                                 </div>
                                                 <div>
                                                     <div
@@ -1203,15 +1202,6 @@ export function ReviewQuestionList({
                                                             }
                                                         </Tag>
                                                     </div>
-                                                </div>
-                                                <div
-                                                    className="muted"
-                                                    style={cellStyle}
-                                                    title={
-                                                        question.datasourceName
-                                                    }
-                                                >
-                                                    {question.datasourceName}
                                                 </div>
                                                 <div className="muted">
                                                     {new Date(
