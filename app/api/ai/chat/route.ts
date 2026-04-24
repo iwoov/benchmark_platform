@@ -15,10 +15,14 @@ const requestSchema = z.object({
     context: z.string().optional(),
     /** Optional model override (must be one of the config's allowed models). */
     modelCode: z.string().optional(),
+    useBuiltInTools: z.boolean().optional(),
 });
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function readOpenAiStreamDelta(raw: any): { delta: string; thinking: string } {
+function readOpenAiStreamDelta(raw: any): {
+    delta: string;
+    thinking: string;
+    error: string;
+} {
     const delta = raw?.choices?.[0]?.delta?.content;
     const reasoning =
         raw?.choices?.[0]?.delta?.reasoning_content ??
@@ -27,30 +31,177 @@ function readOpenAiStreamDelta(raw: any): { delta: string; thinking: string } {
     return {
         delta: typeof delta === "string" ? delta : "",
         thinking: typeof reasoning === "string" ? reasoning : "",
+        error: "",
     };
+}
+
+function readOpenAiResponsesStreamDelta(raw: any): {
+    delta: string;
+    thinking: string;
+    error: string;
+} {
+    if (
+        raw?.type === "response.output_text.delta" &&
+        typeof raw.delta === "string"
+    ) {
+        return { delta: raw.delta, thinking: "", error: "" };
+    }
+
+    if (
+        (raw?.type === "response.reasoning_text.delta" ||
+            raw?.type === "response.reasoning_summary_text.delta") &&
+        typeof raw.delta === "string"
+    ) {
+        return { delta: "", thinking: raw.delta, error: "" };
+    }
+
+    if (raw?.type === "error" && typeof raw.message === "string") {
+        return { delta: "", thinking: "", error: raw.message };
+    }
+
+    if (
+        raw?.type === "response.failed" &&
+        raw?.response?.error &&
+        typeof raw.response.error.message === "string"
+    ) {
+        return {
+            delta: "",
+            thinking: "",
+            error: raw.response.error.message,
+        };
+    }
+
+    if (raw?.type === "response.output_item.done" && raw?.item) {
+        if (raw.item.type === "reasoning" && Array.isArray(raw.item.summary)) {
+            const thinking = raw.item.summary
+                .map((part: unknown) => {
+                    if (
+                        part &&
+                        typeof part === "object" &&
+                        "text" in part &&
+                        typeof part.text === "string"
+                    ) {
+                        return part.text;
+                    }
+
+                    return "";
+                })
+                .filter(Boolean)
+                .join("");
+
+            if (thinking) {
+                return { delta: "", thinking, error: "" };
+            }
+        }
+
+        if (raw.item.type === "message" && Array.isArray(raw.item.content)) {
+            const delta = raw.item.content
+                .map((part: unknown) => {
+                    if (
+                        part &&
+                        typeof part === "object" &&
+                        "type" in part &&
+                        part.type === "output_text" &&
+                        "text" in part &&
+                        typeof part.text === "string"
+                    ) {
+                        return part.text;
+                    }
+
+                    return "";
+                })
+                .filter(Boolean)
+                .join("");
+
+            if (delta) {
+                return { delta, thinking: "", error: "" };
+            }
+        }
+    }
+
+    const completedResponse =
+        raw?.type === "response.completed" && raw?.response
+            ? raw.response
+            : raw;
+
+    if (typeof completedResponse?.output_text === "string") {
+        return {
+            delta: completedResponse.output_text,
+            thinking: "",
+            error: "",
+        };
+    }
+
+    if (Array.isArray(completedResponse?.output)) {
+        const delta = completedResponse.output
+            .map((item: unknown) => {
+                if (
+                    item &&
+                    typeof item === "object" &&
+                    "content" in item &&
+                    Array.isArray(item.content)
+                ) {
+                    return item.content
+                        .map((part: unknown) => {
+                            if (
+                                part &&
+                                typeof part === "object" &&
+                                "type" in part &&
+                                part.type === "output_text" &&
+                                "text" in part &&
+                                typeof part.text === "string"
+                            ) {
+                                return part.text;
+                            }
+
+                            return "";
+                        })
+                        .join("");
+                }
+
+                return "";
+            })
+            .filter(Boolean)
+            .join("");
+
+        if (delta) {
+            return {
+                delta,
+                thinking: "",
+                error: "",
+            };
+        }
+    }
+
+    return { delta: "", thinking: "", error: "" };
 }
 
 function readAnthropicStreamDelta(raw: any): {
     delta: string;
     thinking: string;
+    error: string;
 } {
     if (raw?.type === "content_block_delta" && raw?.delta) {
         if (
             raw.delta.type === "thinking_delta" &&
             typeof raw.delta.thinking === "string"
         ) {
-            return { delta: "", thinking: raw.delta.thinking };
+            return { delta: "", thinking: raw.delta.thinking, error: "" };
         }
         if (typeof raw.delta.text === "string") {
-            return { delta: raw.delta.text, thinking: "" };
+            return { delta: raw.delta.text, thinking: "", error: "" };
         }
     }
-    return { delta: "", thinking: "" };
+    return { delta: "", thinking: "", error: "" };
 }
 
-function readGeminiStreamDelta(raw: any): { delta: string; thinking: string } {
+function readGeminiStreamDelta(raw: any): {
+    delta: string;
+    thinking: string;
+    error: string;
+} {
     const parts = raw?.candidates?.[0]?.content?.parts;
-    if (!Array.isArray(parts)) return { delta: "", thinking: "" };
+    if (!Array.isArray(parts)) return { delta: "", thinking: "", error: "" };
     let delta = "";
     let thinking = "";
     for (const p of parts) {
@@ -62,23 +213,24 @@ function readGeminiStreamDelta(raw: any): { delta: string; thinking: string } {
             }
         }
     }
-    return { delta, thinking };
+    return { delta, thinking, error: "" };
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function extractDelta(
     protocol: string,
     raw: unknown,
-): { delta: string; thinking: string } {
+): { delta: string; thinking: string; error: string } {
     switch (protocol) {
         case "OPENAI_COMPATIBLE":
             return readOpenAiStreamDelta(raw);
+        case "OPENAI_RESPONSES":
+            return readOpenAiResponsesStreamDelta(raw);
         case "ANTHROPIC_COMPATIBLE":
             return readAnthropicStreamDelta(raw);
         case "GEMINI_COMPATIBLE":
             return readGeminiStreamDelta(raw);
         default:
-            return { delta: "", thinking: "" };
+            return { delta: "", thinking: "", error: "" };
     }
 }
 
@@ -113,6 +265,7 @@ export async function POST(request: Request) {
         messages,
         context,
         modelCode: modelOverride,
+        useBuiltInTools,
     } = parsed.data;
 
     const chatConfig = await prisma.aiChatConfig.findUnique({
@@ -162,6 +315,7 @@ export async function POST(request: Request) {
     const result = await invokeAiModel({
         modelCode: effectiveModel,
         stream: true,
+        enableBuiltInTools: useBuiltInTools,
         messages: aiMessages,
     });
 
@@ -222,10 +376,52 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
         async pull(controller) {
             try {
+                let buffer = "";
+
                 while (true) {
                     const { value, done } = await reader.read();
 
                     if (done) {
+                        const trailing = buffer.trim();
+
+                        if (trailing) {
+                            const dataPart = trailing.startsWith("data:")
+                                ? trailing.slice(5).trim()
+                                : trailing;
+                            const jsonParsed = parseJsonSafely(dataPart);
+
+                            if (jsonParsed !== null) {
+                                const { delta, thinking, error } = extractDelta(
+                                    protocol,
+                                    jsonParsed,
+                                );
+
+                                if (thinking) {
+                                    controller.enqueue(
+                                        encoder.encode(
+                                            `data: ${JSON.stringify({ thinking })}\n\n`,
+                                        ),
+                                    );
+                                }
+
+                                if (delta) {
+                                    controller.enqueue(
+                                        encoder.encode(
+                                            `data: ${JSON.stringify({ delta })}\n\n`,
+                                        ),
+                                    );
+                                }
+
+                                if (error) {
+                                    controller.enqueue(
+                                        encoder.encode(
+                                            `data: ${JSON.stringify({ error })}\n\n`,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+
                         controller.enqueue(
                             encoder.encode(
                                 `data: ${JSON.stringify({ done: true })}\n\n`,
@@ -237,23 +433,27 @@ export async function POST(request: Request) {
 
                     if (!value || value.length === 0) continue;
 
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk
-                        .split(/\r?\n/)
-                        .map((l) => l.trim())
-                        .filter(Boolean);
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split(/\r?\n/);
+                    buffer = lines.pop() ?? "";
 
                     for (const line of lines) {
-                        const dataPart = line.startsWith("data:")
-                            ? line.slice(5).trim()
-                            : line;
+                        const trimmedLine = line.trim();
+
+                        if (!trimmedLine) {
+                            continue;
+                        }
+
+                        const dataPart = trimmedLine.startsWith("data:")
+                            ? trimmedLine.slice(5).trim()
+                            : trimmedLine;
 
                         if (!dataPart || dataPart === "[DONE]") continue;
 
                         const jsonParsed = parseJsonSafely(dataPart);
                         if (jsonParsed === null) continue;
 
-                        const { delta, thinking } = extractDelta(
+                        const { delta, thinking, error } = extractDelta(
                             protocol,
                             jsonParsed,
                         );
@@ -270,6 +470,14 @@ export async function POST(request: Request) {
                             controller.enqueue(
                                 encoder.encode(
                                     `data: ${JSON.stringify({ delta })}\n\n`,
+                                ),
+                            );
+                        }
+
+                        if (error) {
+                            controller.enqueue(
+                                encoder.encode(
+                                    `data: ${JSON.stringify({ error })}\n\n`,
                                 ),
                             );
                         }

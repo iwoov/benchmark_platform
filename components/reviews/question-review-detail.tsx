@@ -14,6 +14,7 @@ import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import { AiChatSidebar } from "@/components/reviews/ai-chat-sidebar";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
+import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
 import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import type {
@@ -313,6 +314,7 @@ export function QuestionReviewDetail({
         description: string | null;
         stepCount: number;
         datasourceIds: string[];
+        builtInTools: AiBuiltInToolType[];
     }>;
     retryStates: AiReviewStrategyRetryStateView[];
     strategyRuns: Array<{

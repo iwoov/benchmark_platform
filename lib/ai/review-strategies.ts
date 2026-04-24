@@ -7,6 +7,7 @@ import {
     resolveAiInvocationText,
     type AiMessagePart,
 } from "@/lib/ai/invoke";
+import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
 import {
     aiReviewOutputSchemas,
     aiReviewStrategyDefinitionSchema,
@@ -985,6 +986,9 @@ async function executeAiToolItem(
     sourceItem: StepExecutionItem | undefined,
     index: number,
     runIndex: number,
+    options?: {
+        enableBuiltInTools?: boolean;
+    },
 ) {
     const selectedFields = selectFields(question, step.fieldKeys);
 
@@ -1019,6 +1023,7 @@ async function executeAiToolItem(
         modelCode: step.modelCode,
         stream: true,
         responseMimeType: "application/json",
+        enableBuiltInTools: options?.enableBuiltInTools,
         messages: [
             {
                 role: "system",
@@ -1223,6 +1228,9 @@ async function runAiToolStep(
     step: AiReviewAiToolStep,
     question: ReviewQuestionDetail,
     previousResults: StepExecutionResult[],
+    executionOptions?: {
+        enableBuiltInTools?: boolean;
+    },
     onProgress?: (partial: StepExecutionResult) => void | Promise<void>,
 ) {
     const { sourceStepItems, tasks } = buildAiToolTasks(step, previousResults);
@@ -1255,6 +1263,7 @@ async function runAiToolStep(
                 task.sourceItem,
                 task.index,
                 task.runIndex,
+                executionOptions,
             );
 
             items[position] = item;
@@ -1709,17 +1718,69 @@ export async function getApplicableAiReviewStrategies(
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
 
-    return strategies
-        .map((strategy) => {
-            const definition = parseDefinition(strategy.definition);
+    const definitions = strategies
+        .map((strategy) => ({
+            strategy,
+            definition: parseDefinition(strategy.definition),
+        }))
+        .filter(
+            (
+                item,
+            ): item is {
+                strategy: (typeof strategies)[number];
+                definition: AiReviewStrategyDefinition;
+            } => Boolean(item.definition),
+        );
 
+    const modelCodes = [
+        ...new Set(
+            definitions.flatMap(({ definition }) =>
+                definition.steps
+                    .filter((step) => step.kind === "AI_TOOL")
+                    .map((step) => step.modelCode),
+            ),
+        ),
+    ];
+
+    const models = modelCodes.length
+        ? await prisma.aiModel.findMany({
+              where: {
+                  code: {
+                      in: modelCodes,
+                  },
+              },
+              select: {
+                  code: true,
+                  builtInTools: true,
+              },
+          })
+        : [];
+
+    const modelBuiltInToolsMap = Object.fromEntries(
+        models.map((model) => [
+            model.code,
+            model.builtInTools as AiBuiltInToolType[],
+        ]),
+    ) as Record<string, AiBuiltInToolType[]>;
+
+    return definitions
+        .map(({ strategy, definition }) => {
             if (
-                !definition ||
                 !strategyAppliesToQuestion(strategy, question) ||
                 !isRunnableReviewStrategy(definition)
             ) {
                 return null;
             }
+
+            const builtInTools = [
+                ...new Set(
+                    definition.steps.flatMap((step) =>
+                        step.kind === "AI_TOOL"
+                            ? (modelBuiltInToolsMap[step.modelCode] ?? [])
+                            : [],
+                    ),
+                ),
+            ];
 
             return {
                 id: strategy.id,
@@ -1728,6 +1789,7 @@ export async function getApplicableAiReviewStrategies(
                 description: strategy.description,
                 stepCount: definition.steps.length,
                 datasourceIds: parseStringArray(strategy.datasourceIds),
+                builtInTools,
             };
         })
         .filter((strategy): strategy is NonNullable<typeof strategy> =>
@@ -1869,6 +1931,33 @@ function extractRunDefinition(requestPayload: unknown) {
             : null;
 
     return parseDefinition(definition);
+}
+
+function extractRunExecutionOptions(requestPayload: unknown): {
+    enableBuiltInTools: boolean;
+} {
+    if (!requestPayload || typeof requestPayload !== "object") {
+        return {
+            enableBuiltInTools: false,
+        };
+    }
+
+    const execution =
+        "execution" in requestPayload
+            ? (requestPayload as Record<string, unknown>).execution
+            : null;
+
+    if (!execution || typeof execution !== "object") {
+        return {
+            enableBuiltInTools: false,
+        };
+    }
+
+    return {
+        enableBuiltInTools:
+            "enableBuiltInTools" in execution &&
+            execution.enableBuiltInTools === true,
+    };
 }
 
 function getImpactedRetryState(
@@ -2022,6 +2111,7 @@ export async function retryAiReviewStrategyRunItem(
         targetTask.sourceItem,
         targetTask.index,
         targetTask.runIndex,
+        extractRunExecutionOptions(run.requestPayload),
     );
     const nextItems = currentStep.items
         .filter((item) => item.index !== itemIndex)
@@ -2112,6 +2202,9 @@ export async function executeAiReviewStrategy(
     strategyId: string,
     questionId: string,
     triggeredById: string,
+    executionOptions?: {
+        enableBuiltInTools?: boolean;
+    },
 ) {
     const [strategy, question] = await Promise.all([
         loadStrategyForExecution(strategyId),
@@ -2136,6 +2229,9 @@ export async function executeAiReviewStrategy(
             code: strategy.code,
             name: strategy.name,
             definition: strategy.definition,
+        },
+        execution: {
+            enableBuiltInTools: executionOptions?.enableBuiltInTools === true,
         },
         question: {
             id: question.id,
@@ -2219,6 +2315,7 @@ export async function executeAiReviewStrategy(
                     step,
                     question,
                     stepResults.slice(0, -1),
+                    executionOptions,
                     async (partial) => {
                         stepResults[stepIndex - 1] = partial;
                         await persistRunProgress(run.id, parsedResult);

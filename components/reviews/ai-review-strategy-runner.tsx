@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Modal, Select, Space, Tag } from "antd";
+import { App, Button, Empty, Modal, Select, Space, Switch, Tag } from "antd";
 import { Bot, ChevronDown, Code, Play, RefreshCcw } from "lucide-react";
 import {
     runAiReviewStrategyAction,
     retryAiReviewStrategyRunItemAction,
 } from "@/app/actions/ai-review-strategies";
+import {
+    aiBuiltInToolLabels,
+    type AiBuiltInToolType,
+} from "@/lib/ai/provider-catalog";
 import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
 
 type StrategyRunResult = {
@@ -665,6 +669,7 @@ export function AiReviewStrategyRunner({
         description: string | null;
         stepCount: number;
         datasourceIds: string[];
+        builtInTools: AiBuiltInToolType[];
     }>;
     runs: RunnerRun[];
     retryStates: RetryState[];
@@ -681,6 +686,7 @@ export function AiReviewStrategyRunner({
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pollingEnabled, setPollingEnabled] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
+    const [enableBuiltInTools, setEnableBuiltInTools] = useState(false);
     const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>(
         {},
     );
@@ -691,6 +697,9 @@ export function AiReviewStrategyRunner({
     )
         ? selectedStrategyId
         : (strategies[0]?.id ?? "");
+    const selectedStrategy = strategies.find(
+        (strategy) => strategy.id === effectiveSelectedStrategyId,
+    );
     const hasActiveRun = liveRuns.some(
         (run) => run.status === "RUNNING" || run.status === "PENDING",
     );
@@ -707,6 +716,10 @@ export function AiReviewStrategyRunner({
             areRunsEqual(current, runs) ? current : runs,
         );
     }, [runs]);
+
+    useEffect(() => {
+        setEnableBuiltInTools(false);
+    }, [effectiveSelectedStrategyId]);
 
     useEffect(() => {
         setLiveRetryStates((current) =>
@@ -903,6 +916,9 @@ export function AiReviewStrategyRunner({
             const result = await runAiReviewStrategyAction({
                 strategyId: effectiveSelectedStrategyId,
                 questionId,
+                enableBuiltInTools:
+                    (selectedStrategy?.builtInTools.length ?? 0) > 0 &&
+                    enableBuiltInTools,
             });
 
             await refreshRuns();
@@ -1036,6 +1052,23 @@ export function AiReviewStrategyRunner({
                             />
                         </div>
                         <div className="review-toolbar-actions">
+                            {selectedStrategy?.builtInTools.length ? (
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8,
+                                        marginRight: 8,
+                                    }}
+                                >
+                                    <Switch
+                                        checked={enableBuiltInTools}
+                                        onChange={setEnableBuiltInTools}
+                                        disabled={isRunning}
+                                    />
+                                    <span className="muted">启用工具</span>
+                                </div>
+                            ) : null}
                             <Button
                                 icon={<RefreshCcw size={16} />}
                                 loading={isRefreshing}
@@ -1073,6 +1106,23 @@ export function AiReviewStrategyRunner({
                                         {strategy.description ||
                                             "当前策略未填写说明。"}
                                     </div>
+                                    {strategy.builtInTools.length ? (
+                                        <div
+                                            className="muted"
+                                            style={{ marginTop: 8 }}
+                                        >
+                                            支持工具：
+                                            {strategy.builtInTools.map((tool) => (
+                                                <Tag
+                                                    key={tool}
+                                                    color="gold"
+                                                    style={{ marginInlineStart: 6 }}
+                                                >
+                                                    {aiBuiltInToolLabels[tool]}
+                                                </Tag>
+                                            ))}
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
                         ))}

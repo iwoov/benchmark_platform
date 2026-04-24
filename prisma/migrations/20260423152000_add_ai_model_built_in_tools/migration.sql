@@ -1,0 +1,4 @@
+ALTER TABLE "AiModel"
+ADD COLUMN "builtInTools" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "toolChoice" TEXT,
+ADD COLUMN "maxToolCalls" INTEGER;

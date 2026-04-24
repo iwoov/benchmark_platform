@@ -1,12 +1,14 @@
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
+import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
 
 export type AiChatConfigView = {
     id: string;
     name: string;
     modelCode: string;
     modelCodes: string[];
+    modelBuiltInTools: Record<string, AiBuiltInToolType[]>;
     systemPrompt: string | null;
     presetFields: string[];
     enabled: boolean;
@@ -36,11 +38,35 @@ export async function getAiChatConfigs(): Promise<AiChatConfigView[]> {
         orderBy: [{ updatedAt: "desc" }],
     });
 
+    const modelCodes = [...new Set(rows.flatMap((row) => parseModelCodes(row.modelCode, row.modelCodes)))];
+    const models = modelCodes.length
+        ? await prisma.aiModel.findMany({
+              where: {
+                  code: {
+                      in: modelCodes,
+                  },
+              },
+              select: {
+                  code: true,
+                  builtInTools: true,
+              },
+          })
+        : [];
+    const modelBuiltInToolsMap = Object.fromEntries(
+        models.map((model) => [model.code, model.builtInTools as AiBuiltInToolType[]]),
+    ) as Record<string, AiBuiltInToolType[]>;
+
     return rows.map((row) => ({
         id: row.id,
         name: row.name,
         modelCode: row.modelCode,
         modelCodes: parseModelCodes(row.modelCode, row.modelCodes),
+        modelBuiltInTools: Object.fromEntries(
+            parseModelCodes(row.modelCode, row.modelCodes).map((code) => [
+                code,
+                modelBuiltInToolsMap[code] ?? [],
+            ]),
+        ) as Record<string, AiBuiltInToolType[]>,
         systemPrompt: row.systemPrompt,
         presetFields: parsePresetFields(row.presetFields),
         enabled: row.enabled,
@@ -56,11 +82,35 @@ export async function getEnabledAiChatConfigs(): Promise<AiChatConfigView[]> {
         orderBy: [{ updatedAt: "desc" }],
     });
 
+    const modelCodes = [...new Set(rows.flatMap((row) => parseModelCodes(row.modelCode, row.modelCodes)))];
+    const models = modelCodes.length
+        ? await prisma.aiModel.findMany({
+              where: {
+                  code: {
+                      in: modelCodes,
+                  },
+              },
+              select: {
+                  code: true,
+                  builtInTools: true,
+              },
+          })
+        : [];
+    const modelBuiltInToolsMap = Object.fromEntries(
+        models.map((model) => [model.code, model.builtInTools as AiBuiltInToolType[]]),
+    ) as Record<string, AiBuiltInToolType[]>;
+
     return rows.map((row) => ({
         id: row.id,
         name: row.name,
         modelCode: row.modelCode,
         modelCodes: parseModelCodes(row.modelCode, row.modelCodes),
+        modelBuiltInTools: Object.fromEntries(
+            parseModelCodes(row.modelCode, row.modelCodes).map((code) => [
+                code,
+                modelBuiltInToolsMap[code] ?? [],
+            ]),
+        ) as Record<string, AiBuiltInToolType[]>,
         systemPrompt: row.systemPrompt,
         presetFields: parsePresetFields(row.presetFields),
         enabled: row.enabled,

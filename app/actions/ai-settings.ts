@@ -6,7 +6,9 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { isSuperAdminRole } from "@/lib/auth/roles";
 import {
+    aiBuiltInToolOptions,
     aiCompanyOptions,
+    aiToolChoiceOptions,
     normalizeAiCompanyName,
 } from "@/lib/ai/provider-catalog";
 
@@ -35,6 +37,7 @@ const providerSupportedModelSchema = z.object({
         .max(100, "支持模型名称不能超过 100 个字符"),
     protocol: z.enum([
         "OPENAI_COMPATIBLE",
+        "OPENAI_RESPONSES",
         "GEMINI_COMPATIBLE",
         "ANTHROPIC_COMPATIBLE",
     ]),
@@ -87,6 +90,7 @@ const saveAiModelSchema = z.object({
         ),
     protocol: z.enum([
         "OPENAI_COMPATIBLE",
+        "OPENAI_RESPONSES",
         "GEMINI_COMPATIBLE",
         "ANTHROPIC_COMPATIBLE",
     ]),
@@ -102,6 +106,28 @@ const saveAiModelSchema = z.object({
         .number()
         .min(0, "默认 temperature 不能小于 0")
         .max(2, "默认 temperature 不能大于 2")
+        .nullable(),
+    builtInTools: z.array(
+        z.enum(
+            aiBuiltInToolOptions.map((tool) => tool.value) as [
+                (typeof aiBuiltInToolOptions)[number]["value"],
+                ...(typeof aiBuiltInToolOptions)[number]["value"][],
+            ],
+        ),
+    ),
+    toolChoice: z
+        .enum(
+            aiToolChoiceOptions.map((option) => option.value) as [
+                (typeof aiToolChoiceOptions)[number]["value"],
+                ...(typeof aiToolChoiceOptions)[number]["value"][],
+            ],
+        )
+        .nullable(),
+    maxToolCalls: z
+        .number()
+        .int("最大工具调用次数必须是整数")
+        .min(1, "最大工具调用次数至少为 1")
+        .max(128, "最大工具调用次数不能超过 128")
         .nullable(),
     maxRetries: z
         .number()
@@ -134,6 +160,46 @@ const saveAiModelSchema = z.object({
             }),
         )
         .min(1, "请至少配置一条路由"),
+}).superRefine((value, context) => {
+    if (value.protocol !== "OPENAI_RESPONSES") {
+        if (value.builtInTools.length) {
+            context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["builtInTools"],
+                message: "只有 OpenAI Responses 模型才能配置内置工具。",
+            });
+        }
+
+        if (value.toolChoice !== null || value.maxToolCalls !== null) {
+            context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["toolChoice"],
+                message: "只有 OpenAI Responses 模型才能配置工具调用策略。",
+            });
+        }
+
+        return;
+    }
+
+    if (!value.builtInTools.length) {
+        if (value.maxToolCalls !== null) {
+            context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["maxToolCalls"],
+                message: "未启用内置工具时无需设置最大工具调用次数。",
+            });
+        }
+
+        return;
+    }
+
+    if (value.toolChoice === null) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["toolChoice"],
+            message: "启用内置工具后请选择工具调用策略。",
+        });
+    }
 });
 
 const deleteAiModelSchema = z.object({
@@ -376,6 +442,9 @@ export async function saveAiModelAction(
                     reasoningLevel: parsed.data.reasoningLevel,
                     maxTokensDefault: parsed.data.maxTokensDefault,
                     temperatureDefault: parsed.data.temperatureDefault,
+                    builtInTools: parsed.data.builtInTools,
+                    toolChoice: parsed.data.toolChoice,
+                    maxToolCalls: parsed.data.maxToolCalls,
                     maxRetries: parsed.data.maxRetries,
                     allowFallback: parsed.data.allowFallback,
                     label: parsed.data.label,
@@ -416,6 +485,9 @@ export async function saveAiModelAction(
                 reasoningLevel: parsed.data.reasoningLevel,
                 maxTokensDefault: parsed.data.maxTokensDefault,
                 temperatureDefault: parsed.data.temperatureDefault,
+                builtInTools: parsed.data.builtInTools,
+                toolChoice: parsed.data.toolChoice,
+                maxToolCalls: parsed.data.maxToolCalls,
                 maxRetries: parsed.data.maxRetries,
                 allowFallback: parsed.data.allowFallback,
                 label: parsed.data.label,

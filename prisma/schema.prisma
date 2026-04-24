@@ -55,6 +55,7 @@ enum ReviewDecision {
 
 enum AiProtocol {
   OPENAI_COMPATIBLE
+  OPENAI_RESPONSES
   GEMINI_COMPATIBLE
   ANTHROPIC_COMPATIBLE
 }
@@ -299,6 +300,9 @@ model AiModel {
   reasoningLevel     AiReasoningLevel          @default(DISABLED)
   maxTokensDefault   Int?
   temperatureDefault Float?
+  builtInTools       String[]                  @default([])
+  toolChoice         String?
+  maxToolCalls       Int?
   maxRetries         Int                       @default(1)
   allowFallback      Boolean                   @default(true)
   label              String?

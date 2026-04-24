@@ -66,6 +66,17 @@ function readOpenAiStreamDelta(raw: any) {
     return "";
 }
 
+function readOpenAiResponsesStreamDelta(raw: any) {
+    if (
+        raw?.type === "response.output_text.delta" &&
+        typeof raw.delta === "string"
+    ) {
+        return raw.delta;
+    }
+
+    return "";
+}
+
 function readAnthropicStreamDelta(raw: any) {
     if (
         raw?.type === "content_block_delta" &&
@@ -92,6 +103,8 @@ function extractDelta(protocol: string, raw: unknown) {
     switch (protocol) {
         case "OPENAI_COMPATIBLE":
             return readOpenAiStreamDelta(raw);
+        case "OPENAI_RESPONSES":
+            return readOpenAiResponsesStreamDelta(raw);
         case "ANTHROPIC_COMPATIBLE":
             return readAnthropicStreamDelta(raw);
         case "GEMINI_COMPATIBLE":

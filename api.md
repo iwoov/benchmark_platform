@@ -70,6 +70,37 @@ response = client.chat.completions.create(
 
 print(response.choices[0].message.content)
 
+/api/openai/v1/responses
+OpenAI Responses 协议
+代码示例：
+OpenAI Responses
+OpenAI 原生 Responses API
+
+
+Python
+Python
+
+复制
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-api-key",
+    base_url="https://idealab.alibaba-inc.com/api/openai/v1"
+)
+
+response = client.responses.create(
+    model="gpt-5-mini-0807-global",
+    input=[
+        {
+            "role": "user",
+            "content": "Hello, how are you?"
+        }
+    ],
+    stream=False
+)
+
+print(response.output_text)
+
 /api/vertex/v1beta/models/{modelId}:[generateContent|streamGenerateContent]
 Vertex AI协议
 Google Vertex AI原生API格式，支持所有gemini开头的模型
@@ -130,6 +161,22 @@ curl --request POST \
         }
     ],
     "stream": false
+}'
+
+OpenAI Responses
+curl --request POST \
+  --url https://routify.alibaba-inc.com/protocol/openai/v1/responses \
+  --header 'Authorization: Bearer sk-XXXX' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "input": [
+        {
+            "role": "user",
+            "content": "你是谁"
+        }
+    ],
+    "stream": false,
+    "model": "gpt-5.2-pro-2025-12-11"
 }'
 
 Gemini

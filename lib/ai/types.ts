@@ -1,6 +1,8 @@
 import type {
+  AiBuiltInToolType,
   AiProtocol,
   AiReasoningLevel,
+  AiToolChoiceMode,
 } from "@/lib/ai/provider-catalog";
 
 export type AiSettingsEndpointOption = {
@@ -43,6 +45,9 @@ export type AiSettingsModel = {
   reasoningLevel: AiReasoningLevel;
   maxTokensDefault: number | null;
   temperatureDefault: number | null;
+  builtInTools: AiBuiltInToolType[];
+  toolChoice: AiToolChoiceMode | null;
+  maxToolCalls: number | null;
   maxRetries: number;
   allowFallback: boolean;
   label: string | null;

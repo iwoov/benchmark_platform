@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Input, Select } from "antd";
+import { Button, Input, Select, Switch, Tag } from "antd";
 import {
     ChevronDown,
     ChevronRight,
@@ -12,6 +12,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
+import { aiBuiltInToolLabels } from "@/lib/ai/provider-catalog";
 
 type ChatMessage = {
     id: string;
@@ -20,6 +21,20 @@ type ChatMessage = {
     thinking?: string;
     phase?: "waiting" | "thinking" | "responding" | "done";
 };
+
+const fieldLabelMap: Record<string, string> = {
+    title: "标题",
+    content: "题干",
+    answer: "答案",
+    analysis: "解析",
+    questionType: "题型",
+    difficulty: "难度",
+    rawRecord: "原始记录",
+};
+
+function getFieldLabel(field: string) {
+    return fieldLabelMap[field] ?? field;
+}
 
 function buildContextString(
     presetFields: string[],
@@ -151,10 +166,18 @@ export function AiChatSidebar({
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [isStreaming, setIsStreaming] = useState(false);
+    const [useBuiltInTools, setUseBuiltInTools] = useState(false);
+    const [activePresetFields, setActivePresetFields] = useState<string[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     const selectedConfig = chatConfigs.find((c) => c.id === selectedConfigId);
+    const selectedModelBuiltInTools =
+        (selectedConfig?.modelBuiltInTools?.[selectedModelCode] ??
+            selectedConfig?.modelBuiltInTools?.[selectedConfig?.modelCode ?? ""] ??
+            []) || [];
+    const selectedModelSupportsBuiltInTools =
+        selectedModelBuiltInTools.length > 0;
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -164,7 +187,12 @@ export function AiChatSidebar({
         setMessages([]);
         const config = chatConfigs.find((c) => c.id === selectedConfigId);
         setSelectedModelCode(config?.modelCodes[0] ?? "");
+        setActivePresetFields(config?.presetFields ?? []);
     }, [selectedConfigId, chatConfigs]);
+
+    useEffect(() => {
+        setUseBuiltInTools(false);
+    }, [selectedConfigId, selectedModelCode]);
 
     function clearMessages() {
         if (isStreaming) {
@@ -200,10 +228,12 @@ export function AiChatSidebar({
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
+        let accumulated = "";
+        let accumulatedThinking = "";
 
         try {
             const context = buildContextString(
-                selectedConfig.presetFields,
+                activePresetFields,
                 rawRecord,
                 questionMeta,
             );
@@ -214,6 +244,8 @@ export function AiChatSidebar({
                 body: JSON.stringify({
                     chatConfigId: selectedConfig.id,
                     modelCode: selectedModelCode || undefined,
+                    useBuiltInTools:
+                        selectedModelSupportsBuiltInTools && useBuiltInTools,
                     messages: nextMessages.map((m) => ({
                         role: m.role,
                         content: m.content,
@@ -255,15 +287,80 @@ export function AiChatSidebar({
             }
 
             const decoder = new TextDecoder();
-            let accumulated = "";
-            let accumulatedThinking = "";
+            let buffer = "";
 
             while (true) {
                 const { value, done } = await reader.read();
-                if (done) break;
+                if (done) {
+                    const trailingLines = buffer.split(/\r?\n/).filter(Boolean);
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split(/\r?\n/).filter(Boolean);
+                    for (const line of trailingLines) {
+                        if (!line.startsWith("data:")) continue;
+                        const dataPart = line.slice(5).trim();
+                        if (!dataPart || dataPart === "[DONE]") continue;
+
+                        try {
+                            const parsed = JSON.parse(dataPart);
+                            if (parsed.thinking) {
+                                accumulatedThinking += parsed.thinking;
+                                const thinkingSnapshot = accumulatedThinking;
+                                const contentSnapshot = accumulated;
+                                setMessages((prev) =>
+                                    prev.map((m) =>
+                                        m.id === assistantMsgId
+                                            ? {
+                                                  ...m,
+                                                  content: contentSnapshot,
+                                                  thinking: thinkingSnapshot,
+                                                  phase: "thinking",
+                                              }
+                                            : m,
+                                    ),
+                                );
+                            }
+                            if (parsed.delta) {
+                                accumulated += parsed.delta;
+                                const contentSnapshot = accumulated;
+                                const thinkingSnapshot = accumulatedThinking;
+                                setMessages((prev) =>
+                                    prev.map((m) =>
+                                        m.id === assistantMsgId
+                                            ? {
+                                                  ...m,
+                                                  content: contentSnapshot,
+                                                  thinking: thinkingSnapshot,
+                                                  phase: "responding",
+                                              }
+                                            : m,
+                                    ),
+                                );
+                            }
+                            if (parsed.error) {
+                                accumulated += `\n[错误] ${parsed.error}`;
+                                const snapshot = accumulated;
+                                setMessages((prev) =>
+                                    prev.map((m) =>
+                                        m.id === assistantMsgId
+                                            ? {
+                                                  ...m,
+                                                  content: snapshot,
+                                                  phase: "done",
+                                              }
+                                            : m,
+                                    ),
+                                );
+                            }
+                        } catch {
+                            // ignore parse errors
+                        }
+                    }
+
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split(/\r?\n/);
+                buffer = lines.pop() ?? "";
 
                 for (const line of lines) {
                     if (!line.startsWith("data:")) continue;
@@ -342,9 +439,28 @@ export function AiChatSidebar({
                 );
             }
         } finally {
+            if (!accumulated && !accumulatedThinking) {
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === assistantMsgId
+                            ? {
+                                  ...m,
+                                  content: "AI 返回了空内容。",
+                                  phase: "done",
+                              }
+                            : m,
+                    ),
+                );
+            }
+
             setMessages((prev) =>
                 prev.map((m) =>
-                    m.id === assistantMsgId ? { ...m, phase: "done" } : m,
+                    m.id === assistantMsgId
+                        ? {
+                              ...m,
+                              phase: "done",
+                          }
+                        : m,
                 ),
             );
             setIsStreaming(false);
@@ -413,6 +529,32 @@ export function AiChatSidebar({
                 />
             </div>
 
+            {selectedModelSupportsBuiltInTools ? (
+                <div className="workspace-tip" style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Switch
+                            size="small"
+                            checked={useBuiltInTools}
+                            onChange={setUseBuiltInTools}
+                            disabled={isStreaming}
+                        />
+                        <span style={{ fontWeight: 600 }}>本次对话启用工具</span>
+                    </div>
+                    <div className="muted" style={{ marginTop: 4 }}>
+                        当前模型支持：
+                        {selectedModelBuiltInTools.map((tool) => (
+                            <Tag
+                                key={tool}
+                                color="gold"
+                                style={{ marginInlineStart: 6 }}
+                            >
+                                {aiBuiltInToolLabels[tool]}
+                            </Tag>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+
             <div className="ai-chat-messages">
                 {!messages.length && (
                     <div className="ai-chat-empty">
@@ -456,6 +598,52 @@ export function AiChatSidebar({
                 ))}
                 <div ref={messagesEndRef} />
             </div>
+
+            {selectedConfig ? (
+                <div
+                    style={{
+                        padding: "8px 0 6px",
+                        borderTop: "1px solid var(--color-border-light)",
+                    }}
+                >
+                    <div
+                        className="muted"
+                        style={{ fontSize: 12, marginBottom: 6 }}
+                    >
+                        当前默认携带字段
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 8,
+                        }}
+                    >
+                        {activePresetFields.length ? (
+                            activePresetFields.map((field) => (
+                                <Tag
+                                    key={field}
+                                    closable={!isStreaming}
+                                    onClose={(event) => {
+                                        event.preventDefault();
+                                        setActivePresetFields((current) =>
+                                            current.filter(
+                                                (item) => item !== field,
+                                            ),
+                                        );
+                                    }}
+                                >
+                                    {getFieldLabel(field)}
+                                </Tag>
+                            ))
+                        ) : (
+                            <span className="muted" style={{ fontSize: 12 }}>
+                                当前没有携带默认字段。
+                            </span>
+                        )}
+                    </div>
+                </div>
+            ) : null}
 
             <div className="ai-chat-input-area">
                 <Input.TextArea

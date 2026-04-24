@@ -59,6 +59,7 @@ const deleteStrategySchema = z.object({
 const runStrategySchema = z.object({
     strategyId: z.string().trim().min(1, "请选择要执行的策略"),
     questionId: z.string().trim().min(1, "缺少题目 ID"),
+    enableBuiltInTools: z.boolean().optional(),
 });
 
 const retryRunItemSchema = z.object({
@@ -465,6 +466,9 @@ export async function runAiReviewStrategyAction(
             parsed.data.strategyId,
             parsed.data.questionId,
             session.user.id,
+            {
+                enableBuiltInTools: parsed.data.enableBuiltInTools ?? false,
+            },
         );
 
         const reviewMessage =

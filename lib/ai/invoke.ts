@@ -36,6 +36,7 @@ export type AiInvocationRequest = {
     temperature?: number;
     stream?: boolean;
     responseMimeType?: "application/json" | "text/plain";
+    enableBuiltInTools?: boolean;
 };
 
 export type AiInvocationSuccess = {
@@ -179,7 +180,7 @@ function splitSystemMessages(messages: AiMessage[]) {
     };
 }
 
-function buildOpenAiPayload(
+function buildOpenAiChatPayload(
     input: AiInvocationRequest,
     config: AiModelRoutingConfig,
     stream: boolean,
@@ -219,6 +220,87 @@ function buildOpenAiPayload(
         ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
         ...(typeof temperature === "number" ? { temperature } : {}),
         ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+        stream,
+    };
+}
+
+function buildOpenAiResponsesPayload(
+    input: AiInvocationRequest,
+    config: AiModelRoutingConfig,
+    stream: boolean,
+) {
+    const reasoningEffort = getReasoningEffort(config.reasoningLevel);
+    const maxTokens = input.maxTokens ?? config.maxTokensDefault ?? undefined;
+    const temperature =
+        input.temperature ?? config.temperatureDefault ?? undefined;
+
+    const builtInTools = input.enableBuiltInTools
+        ? config.builtInTools.map((tool) => ({
+              type: tool,
+          }))
+        : [];
+
+    return {
+        model: config.modelCode,
+        input: input.messages.map((message) => ({
+            role: message.role,
+            content:
+                typeof message.content === "string"
+                    ? message.content
+                    : message.content.map((part) => {
+                          if (part.type === "text") {
+                              return {
+                                  type: "input_text",
+                                  text: part.text,
+                              };
+                          }
+
+                          if (part.type === "image_base64") {
+                              return {
+                                  type: "input_image",
+                                  image_url: `data:${part.mimeType};base64,${part.base64}`,
+                              };
+                          }
+
+                          return {
+                              type: "input_file",
+                              file_url: part.fileUri,
+                          };
+                      }),
+        })),
+        ...(typeof maxTokens === "number"
+            ? { max_output_tokens: maxTokens }
+            : {}),
+        ...(typeof temperature === "number" ? { temperature } : {}),
+        ...(reasoningEffort
+            ? {
+                  thinking: {
+                      type: "enabled",
+                  },
+                  reasoning: {
+                      effort: reasoningEffort,
+                  },
+              }
+            : {}),
+        ...(builtInTools.length ? { tools: builtInTools } : {}),
+        ...(builtInTools.length && config.toolChoice
+            ? { tool_choice: config.toolChoice }
+            : {}),
+        ...(builtInTools.length && typeof config.maxToolCalls === "number"
+            ? { max_tool_calls: config.maxToolCalls }
+            : {}),
+        ...(input.responseMimeType
+            ? {
+                  text: {
+                      format: {
+                          type:
+                              input.responseMimeType === "application/json"
+                                  ? "json_object"
+                                  : "text",
+                      },
+                  },
+              }
+            : {}),
         stream,
     };
 }
@@ -352,7 +434,12 @@ function buildRequest(
         case "OPENAI_COMPATIBLE":
             return {
                 url: `${baseUrl}/chat/completions`,
-                body: buildOpenAiPayload(input, config, stream),
+                body: buildOpenAiChatPayload(input, config, stream),
+            };
+        case "OPENAI_RESPONSES":
+            return {
+                url: `${baseUrl}/responses`,
+                body: buildOpenAiResponsesPayload(input, config, stream),
             };
         case "GEMINI_COMPATIBLE":
             return {
@@ -440,6 +527,60 @@ function readOpenAiText(raw: any) {
     return null;
 }
 
+function readOpenAiResponsesText(raw: any) {
+    if (typeof raw?.output_text === "string") {
+        return raw.output_text;
+    }
+
+    if (Array.isArray(raw?.output)) {
+        const text = raw.output
+            .map((item: unknown) => {
+                if (
+                    item &&
+                    typeof item === "object" &&
+                    "content" in item &&
+                    Array.isArray(item.content)
+                ) {
+                    return item.content
+                        .map((part: unknown) => {
+                            if (
+                                part &&
+                                typeof part === "object" &&
+                                "type" in part &&
+                                part.type === "output_text" &&
+                                "text" in part &&
+                                typeof part.text === "string"
+                            ) {
+                                return part.text;
+                            }
+
+                            return "";
+                        })
+                        .join("");
+                }
+
+                if (
+                    item &&
+                    typeof item === "object" &&
+                    "type" in item &&
+                    item.type === "output_text" &&
+                    "text" in item &&
+                    typeof item.text === "string"
+                ) {
+                    return item.text;
+                }
+
+                return "";
+            })
+            .filter(Boolean)
+            .join("");
+
+        return text || null;
+    }
+
+    return null;
+}
+
 function readAnthropicText(raw: any) {
     if (typeof raw?.completion === "string") {
         return raw.completion;
@@ -504,6 +645,8 @@ function extractText(protocol: AiModelRoutingConfig["protocol"], raw: unknown) {
     switch (protocol) {
         case "OPENAI_COMPATIBLE":
             return readOpenAiText(raw);
+        case "OPENAI_RESPONSES":
+            return readOpenAiResponsesText(raw);
         case "ANTHROPIC_COMPATIBLE":
             return readAnthropicText(raw);
         case "GEMINI_COMPATIBLE":
@@ -546,6 +689,17 @@ function readOpenAiStreamDelta(raw: any) {
     return readOpenAiText(raw) ?? "";
 }
 
+function readOpenAiResponsesStreamDelta(raw: any) {
+    if (
+        raw?.type === "response.output_text.delta" &&
+        typeof raw.delta === "string"
+    ) {
+        return raw.delta;
+    }
+
+    return "";
+}
+
 function readAnthropicStreamDelta(raw: any) {
     if (
         raw?.type === "content_block_delta" &&
@@ -577,6 +731,8 @@ function extractStreamDeltaText(
     switch (protocol) {
         case "OPENAI_COMPATIBLE":
             return readOpenAiStreamDelta(raw);
+        case "OPENAI_RESPONSES":
+            return readOpenAiResponsesStreamDelta(raw);
         case "ANTHROPIC_COMPATIBLE":
             return readAnthropicStreamDelta(raw);
         case "GEMINI_COMPATIBLE":

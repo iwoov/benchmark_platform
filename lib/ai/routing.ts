@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/db/prisma";
-import type { AiProtocol, AiReasoningLevel } from "@/lib/ai/provider-catalog";
+import type {
+    AiBuiltInToolType,
+    AiProtocol,
+    AiReasoningLevel,
+    AiToolChoiceMode,
+} from "@/lib/ai/provider-catalog";
 
 export type AiResolvedRoute = {
     priority: number;
@@ -22,6 +27,9 @@ export type AiModelRoutingConfig = {
     reasoningLevel: AiReasoningLevel;
     maxTokensDefault: number | null;
     temperatureDefault: number | null;
+    builtInTools: AiBuiltInToolType[];
+    toolChoice: AiToolChoiceMode | null;
+    maxToolCalls: number | null;
     maxRetries: number;
     allowFallback: boolean;
     routes: AiResolvedRoute[];
@@ -69,6 +77,9 @@ export async function getAiModelRoutingConfig(
         reasoningLevel: model.reasoningLevel,
         maxTokensDefault: model.maxTokensDefault,
         temperatureDefault: model.temperatureDefault,
+        builtInTools: model.builtInTools as AiBuiltInToolType[],
+        toolChoice: (model.toolChoice as AiToolChoiceMode | null) ?? null,
+        maxToolCalls: model.maxToolCalls,
         maxRetries: model.maxRetries,
         allowFallback: model.allowFallback,
         routes: model.endpoints.map((route) => ({

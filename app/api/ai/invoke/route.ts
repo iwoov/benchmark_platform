@@ -27,6 +27,7 @@ const invokeAiSchema = z.object({
   maxTokens: z.number().int().positive().max(32768).optional(),
   temperature: z.number().min(0).max(2).optional(),
   stream: z.boolean().optional(),
+  enableBuiltInTools: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {

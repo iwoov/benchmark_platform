@@ -33,13 +33,19 @@ import {
   updateAiProviderConfigAction,
 } from "@/app/actions/ai-settings";
 import {
+  aiBuiltInToolLabels,
+  aiBuiltInToolOptions,
   aiCompanyOptions,
   aiProtocolLabels,
   aiReasoningLabels,
+  aiToolChoiceLabels,
+  aiToolChoiceOptions,
   normalizeAiCompanyName,
+  type AiBuiltInToolType,
   type AiCompanyName,
   type AiProtocol,
   type AiReasoningLevel,
+  type AiToolChoiceMode,
 } from "@/lib/ai/provider-catalog";
 import type {
   AiSettingsEndpointOption,
@@ -62,6 +68,9 @@ type ModelFormState = {
   reasoningLevel: AiReasoningLevel;
   maxTokensDefault: number | null;
   temperatureDefault: number | null;
+  builtInTools: AiBuiltInToolType[];
+  toolChoice: AiToolChoiceMode | null;
+  maxToolCalls: number | null;
   maxRetries: number;
   allowFallback: boolean;
   label: string;
@@ -98,6 +107,9 @@ function createModelFormState(model?: AiSettingsModel): ModelFormState {
     reasoningLevel: model?.reasoningLevel ?? "DISABLED",
     maxTokensDefault: model?.maxTokensDefault ?? null,
     temperatureDefault: model?.temperatureDefault ?? null,
+    builtInTools: model?.builtInTools ?? [],
+    toolChoice: model?.toolChoice ?? "auto",
+    maxToolCalls: model?.maxToolCalls ?? null,
     maxRetries: model?.maxRetries ?? 1,
     allowFallback: model?.allowFallback ?? true,
     label: model?.label ?? "",
@@ -163,7 +175,8 @@ const providerProtocolColumns: Array<{
   protocol: AiProtocol;
   label: string;
 }> = [
-  { protocol: "OPENAI_COMPATIBLE", label: "OpenAI 接口" },
+  { protocol: "OPENAI_COMPATIBLE", label: "OpenAI Chat" },
+  { protocol: "OPENAI_RESPONSES", label: "OpenAI Responses" },
   { protocol: "GEMINI_COMPATIBLE", label: "Gemini 接口" },
   { protocol: "ANTHROPIC_COMPATIBLE", label: "Anthropic 接口" },
 ];
@@ -473,6 +486,20 @@ export function AiSettingsConsole({
         reasoningLevel: modelForm.reasoningLevel,
         maxTokensDefault: modelForm.maxTokensDefault,
         temperatureDefault: modelForm.temperatureDefault,
+        builtInTools:
+          modelForm.protocol === "OPENAI_RESPONSES"
+            ? modelForm.builtInTools
+            : [],
+        toolChoice:
+          modelForm.protocol === "OPENAI_RESPONSES" &&
+          modelForm.builtInTools.length
+            ? modelForm.toolChoice
+            : null,
+        maxToolCalls:
+          modelForm.protocol === "OPENAI_RESPONSES" &&
+          modelForm.builtInTools.length
+            ? modelForm.maxToolCalls
+            : null,
         maxRetries: modelForm.maxRetries,
         allowFallback: modelForm.allowFallback,
         label: modelForm.label,
@@ -632,6 +659,10 @@ export function AiSettingsConsole({
                         <h3 style={{ margin: 0, fontSize: 18 }}>{model.code}</h3>
                         <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
                         <Tag>{model.routes.length} 条路由</Tag>
+                        {model.protocol === "OPENAI_RESPONSES" &&
+                        model.builtInTools.length ? (
+                          <Tag color="gold">{model.builtInTools.length} 个工具</Tag>
+                        ) : null}
                       </div>
                       {model.label ? (
                         <div className="muted" style={{ marginTop: 6 }}>
@@ -650,6 +681,21 @@ export function AiSettingsConsole({
                       </span>
                       {model.note ? (
                         <span className="muted">备注：{model.note}</span>
+                      ) : null}
+                      {model.protocol === "OPENAI_RESPONSES" &&
+                      model.builtInTools.length ? (
+                        <span className="muted">
+                          工具：
+                          {model.builtInTools
+                            .map((tool) => aiBuiltInToolLabels[tool])
+                            .join("、")}
+                          {model.toolChoice
+                            ? ` · ${aiToolChoiceLabels[model.toolChoice]}`
+                            : ""}
+                          {model.maxToolCalls
+                            ? ` · 最多 ${model.maxToolCalls} 次`
+                            : ""}
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -967,6 +1013,10 @@ export function AiSettingsConsole({
                     label: aiProtocolLabels.OPENAI_COMPATIBLE,
                   },
                   {
+                    value: "OPENAI_RESPONSES",
+                    label: aiProtocolLabels.OPENAI_RESPONSES,
+                  },
+                  {
                     value: "GEMINI_COMPATIBLE",
                     label: aiProtocolLabels.GEMINI_COMPATIBLE,
                   },
@@ -979,6 +1029,12 @@ export function AiSettingsConsole({
                   setModelForm((current) => ({
                     ...current,
                     protocol: value as AiProtocol,
+                    builtInTools:
+                      value === "OPENAI_RESPONSES" ? current.builtInTools : [],
+                    toolChoice:
+                      value === "OPENAI_RESPONSES" ? current.toolChoice : "auto",
+                    maxToolCalls:
+                      value === "OPENAI_RESPONSES" ? current.maxToolCalls : null,
                     routes: [],
                   }))
                 }
@@ -1150,6 +1206,96 @@ export function AiSettingsConsole({
               />
             </div>
           </div>
+
+          {modelForm.protocol === "OPENAI_RESPONSES" ? (
+            <div className="ai-modal-panel ai-modal-panel-compact">
+              <div className="ai-modal-panel-head">
+                <div>
+                  <div style={{ fontWeight: 700 }}>Built-in Tools</div>
+                  <div className="muted ai-modal-panel-copy">
+                    当前先支持 OpenAI Responses 的内置联网搜索工具。
+                  </div>
+                </div>
+                <Tag color="gold">
+                  {modelForm.builtInTools.length || 0} 个已启用
+                </Tag>
+              </div>
+
+              <div className="ai-model-form-grid ai-model-form-grid-compact">
+                <div>
+                  <label className="field-label" htmlFor="ai-model-built-in-tools">
+                    可用工具
+                  </label>
+                  <Select
+                    id="ai-model-built-in-tools"
+                    mode="multiple"
+                    size="large"
+                    value={modelForm.builtInTools}
+                    options={aiBuiltInToolOptions.map((tool) => ({
+                      value: tool.value,
+                      label: tool.label,
+                      title: tool.note,
+                    }))}
+                    onChange={(value) =>
+                      setModelForm((current) => ({
+                        ...current,
+                        builtInTools: value as AiBuiltInToolType[],
+                        toolChoice:
+                          value.length > 0 ? current.toolChoice ?? "auto" : "auto",
+                        maxToolCalls:
+                          value.length > 0 ? current.maxToolCalls : null,
+                      }))
+                    }
+                    placeholder="选择当前模型可用的内置工具"
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label" htmlFor="ai-model-tool-choice">
+                    工具调用策略
+                  </label>
+                  <Select
+                    id="ai-model-tool-choice"
+                    size="large"
+                    value={modelForm.toolChoice ?? "auto"}
+                    options={aiToolChoiceOptions.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    onChange={(value) =>
+                      setModelForm((current) => ({
+                        ...current,
+                        toolChoice: value as AiToolChoiceMode,
+                      }))
+                    }
+                    disabled={!modelForm.builtInTools.length}
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label" htmlFor="ai-model-max-tool-calls">
+                    最大工具调用次数
+                  </label>
+                  <InputNumber
+                    id="ai-model-max-tool-calls"
+                    min={1}
+                    max={128}
+                    style={{ width: "100%" }}
+                    value={modelForm.maxToolCalls}
+                    placeholder="留空表示不限制"
+                    onChange={(value) =>
+                      setModelForm((current) => ({
+                        ...current,
+                        maxToolCalls:
+                          typeof value === "number" ? value : null,
+                      }))
+                    }
+                    disabled={!modelForm.builtInTools.length}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="ai-route-builder ai-route-builder-compact">
             <div className="ai-route-builder-toolbar">

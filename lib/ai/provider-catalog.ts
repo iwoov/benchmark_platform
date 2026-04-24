@@ -7,6 +7,43 @@ export type AiProtocol = PrismaAiProtocol;
 
 export type AiReasoningLevel = PrismaAiReasoningLevel;
 
+export const aiBuiltInToolOptions = [
+  {
+    value: "web_search",
+    label: "Web Search",
+    note: "OpenAI 内置联网搜索工具。",
+  },
+] as const;
+
+export type AiBuiltInToolType = (typeof aiBuiltInToolOptions)[number]["value"];
+
+export const aiToolChoiceOptions = [
+  {
+    value: "auto",
+    label: "自动",
+  },
+  {
+    value: "required",
+    label: "必须调用",
+  },
+  {
+    value: "none",
+    label: "禁用调用",
+  },
+] as const;
+
+export type AiToolChoiceMode = (typeof aiToolChoiceOptions)[number]["value"];
+
+export const aiBuiltInToolLabels: Record<AiBuiltInToolType, string> = {
+  web_search: "Web Search",
+};
+
+export const aiToolChoiceLabels: Record<AiToolChoiceMode, string> = {
+  auto: "自动",
+  required: "必须调用",
+  none: "禁用调用",
+};
+
 export type DefaultAiProviderEndpoint = {
   id: string;
   label: string;
@@ -79,28 +116,35 @@ export const defaultAiProviders: DefaultAiProvider[] = [
     id: "idealab",
     name: "idealab",
     vendorType: "IDEALAB",
-    note: "默认提供 OpenAI、Gemini 与 Anthropic 三类接口。",
+    note: "默认提供 OpenAI Chat、OpenAI Responses、Gemini 与 Anthropic 四类接口。",
     endpoints: [
       {
         id: "idealab-openai",
-        label: "OpenAI 接口",
+        label: "OpenAI Chat 接口",
         protocol: "OPENAI_COMPATIBLE",
         baseUrl: "https://idealab.alibaba-inc.com/api/openai/v1",
         sortOrder: 0,
+      },
+      {
+        id: "idealab-openai-responses",
+        label: "OpenAI Responses 接口",
+        protocol: "OPENAI_RESPONSES",
+        baseUrl: "https://idealab.alibaba-inc.com/api/openai/v1",
+        sortOrder: 1,
       },
       {
         id: "idealab-gemini",
         label: "Gemini 接口",
         protocol: "GEMINI_COMPATIBLE",
         baseUrl: "https://idealab.alibaba-inc.com/api/vertex/v1beta",
-        sortOrder: 1,
+        sortOrder: 2,
       },
       {
         id: "idealab-anthropic",
         label: "Anthropic 接口",
         protocol: "ANTHROPIC_COMPATIBLE",
         baseUrl: "https://idealab.alibaba-inc.com/api/anthropic/v1",
-        sortOrder: 2,
+        sortOrder: 3,
       },
     ],
   },
@@ -108,35 +152,43 @@ export const defaultAiProviders: DefaultAiProvider[] = [
     id: "modelrouter",
     name: "ModelRouter",
     vendorType: "MODEL_ROUTER",
-    note: "可作为与 idealab 对应的第二路由入口，同样提供三类协议。",
+    note: "可作为与 idealab 对应的第二路由入口，同样提供四类协议。",
     endpoints: [
       {
         id: "modelrouter-openai",
-        label: "OpenAI 接口",
+        label: "OpenAI Chat 接口",
         protocol: "OPENAI_COMPATIBLE",
         baseUrl: "https://routify.alibaba-inc.com/protocol/openai/v1",
         sortOrder: 0,
+      },
+      {
+        id: "modelrouter-openai-responses",
+        label: "OpenAI Responses 接口",
+        protocol: "OPENAI_RESPONSES",
+        baseUrl: "https://routify.alibaba-inc.com/protocol/openai/v1",
+        sortOrder: 1,
       },
       {
         id: "modelrouter-gemini",
         label: "Gemini 接口",
         protocol: "GEMINI_COMPATIBLE",
         baseUrl: "https://routify.alibaba-inc.com/protocol/vertex/v1beta",
-        sortOrder: 1,
+        sortOrder: 2,
       },
       {
         id: "modelrouter-anthropic",
         label: "Anthropic 接口",
         protocol: "ANTHROPIC_COMPATIBLE",
         baseUrl: "https://routify.alibaba-inc.com/protocol/anthropic/v1",
-        sortOrder: 2,
+        sortOrder: 3,
       },
     ],
   },
 ];
 
 export const aiProtocolLabels: Record<AiProtocol, string> = {
-  OPENAI_COMPATIBLE: "OpenAI 兼容",
+  OPENAI_COMPATIBLE: "OpenAI Chat Completions",
+  OPENAI_RESPONSES: "OpenAI Responses",
   GEMINI_COMPATIBLE: "Gemini 协议",
   ANTHROPIC_COMPATIBLE: "Anthropic 协议",
 };
