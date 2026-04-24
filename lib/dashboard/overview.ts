@@ -554,7 +554,10 @@ async function getPlatformAdminOverview(
                     ORDER BY "projectId", "datasourceId", "externalRecordId", "createdAt" DESC
                 )
                 SELECT
-                    q.title AS subject,
+                    COALESCE(
+                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
+                        '(未知学科)'
+                    ) AS subject,
                     COUNT(*)::bigint AS total,
                     COUNT(lm.decision)::bigint AS manual_reviewed,
                     COUNT(*) FILTER (WHERE lm.decision = 'PASS'::"ReviewDecision")::bigint AS manual_approved,
@@ -565,7 +568,11 @@ async function getPlatformAdminOverview(
                     AND lm."datasourceId" = q."datasourceId"
                     AND lm."externalRecordId" = q."externalRecordId"
                 WHERE q."projectId" = ${projectIdFilter}
-                GROUP BY q.title
+                GROUP BY
+                    COALESCE(
+                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
+                        '(未知学科)'
+                    )
                 ORDER BY COUNT(*) DESC
             `
             : prisma.$queryRaw<
@@ -589,7 +596,10 @@ async function getPlatformAdminOverview(
                     ORDER BY "projectId", "datasourceId", "externalRecordId", "createdAt" DESC
                 )
                 SELECT
-                    q.title AS subject,
+                    COALESCE(
+                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
+                        '(未知学科)'
+                    ) AS subject,
                     COUNT(*)::bigint AS total,
                     COUNT(lm.decision)::bigint AS manual_reviewed,
                     COUNT(*) FILTER (WHERE lm.decision = 'PASS'::"ReviewDecision")::bigint AS manual_approved,
@@ -599,7 +609,11 @@ async function getPlatformAdminOverview(
                     ON lm."projectId" = q."projectId"
                     AND lm."datasourceId" = q."datasourceId"
                     AND lm."externalRecordId" = q."externalRecordId"
-                GROUP BY q.title
+                GROUP BY
+                    COALESCE(
+                        NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), ''),
+                        '(未知学科)'
+                    )
                 ORDER BY COUNT(*) DESC
             `;
 
