@@ -1550,6 +1550,33 @@ function resolveFinalRecommendation(stepResults: StepExecutionResult[]) {
     return null;
 }
 
+function hasBlockingComprehensiveCheckFailure(
+    stepResults: StepExecutionResult[],
+) {
+    return stepResults.some((step) => {
+        if (
+            step.stepKind !== "AI_TOOL" ||
+            step.stepType !== "COMPREHENSIVE_CHECK" ||
+            step.status !== "SUCCESS"
+        ) {
+            return false;
+        }
+
+        return step.items.some((item) => {
+            if (item.status !== "SUCCESS" || !item.output) {
+                return false;
+            }
+
+            const output =
+                typeof item.output === "object"
+                    ? (item.output as Record<string, unknown>)
+                    : null;
+
+            return output?.passed === false;
+        });
+    });
+}
+
 function strategyAppliesToQuestion(
     strategy: { projectIds: unknown; datasourceIds: unknown },
     question: ReviewQuestionDetail,
@@ -2375,6 +2402,25 @@ export async function executeAiReviewStrategy(
                         step.kind === "AI_TOOL" ? step.toolType : step.ruleType,
                     status: "SKIPPED",
                     summary: "步骤已停用。",
+                    items: [],
+                });
+                await persistRunProgress(run.id, parsedResult);
+                continue;
+            }
+
+            if (
+                step.kind === "AI_TOOL" &&
+                step.toolType === "AI_SOLVE_QUESTION" &&
+                hasBlockingComprehensiveCheckFailure(stepResults)
+            ) {
+                stepResults.push({
+                    stepId: step.id,
+                    stepName: step.name,
+                    stepKind: "AI_TOOL",
+                    stepType: step.toolType,
+                    status: "SKIPPED",
+                    summary:
+                        "全面检查未通过，已跳过 AI 独立解题并直接进入后续总结。",
                     items: [],
                 });
                 await persistRunProgress(run.id, parsedResult);
