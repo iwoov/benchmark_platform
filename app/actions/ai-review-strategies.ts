@@ -647,11 +647,6 @@ export async function retryAiReviewStrategyRunItemAction(
         select: {
             id: true,
             questionId: true,
-            strategy: {
-                select: {
-                    scopeAdminId: true,
-                },
-            },
             question: {
                 select: {
                     projectId: true,
@@ -688,18 +683,6 @@ export async function retryAiReviewStrategyRunItemAction(
     if (!canAccessQuestion) {
         return {
             error: "你当前不能重试该学科的题目。",
-        };
-    }
-
-    if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            run.strategy.scopeAdminId,
-        ))
-    ) {
-        return {
-            error: "你不能重试其他管理员域的审核策略结果。",
         };
     }
 
