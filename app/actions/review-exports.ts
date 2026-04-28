@@ -608,6 +608,7 @@ const exportReviewReportSchema = z.object({
     detailFieldKeys: z
         .array(z.string().trim().min(1))
         .min(1, "请至少选择 1 个详情字段"),
+    rejectedOnlyInDetails: z.boolean().default(false),
     format: reportFormatSchema,
 });
 
@@ -1095,89 +1096,105 @@ export async function exportReviewReportAction(
         overallRejected += stats.rejected;
 
         // Build detail rows
-        const rows = items.map((question) => {
-            const rawRecord = normalizeRawRecord(question.metadata);
-            const sourceRowNumber = extractSourceRowNumber(question.metadata);
-            const reviewSummary = reviewSummaryMap.get(
-                buildReviewCompositeKey({
-                    projectId,
-                    datasourceId: question.datasource.id,
-                    externalRecordId: question.externalRecordId,
-                }),
-            ) ?? { latestReview: null, aiReview: null, manualReview: null };
-            const latestReview = reviewSummary.latestReview;
+        const rows = items
+            .filter((question) => {
+                if (!parsed.data.rejectedOnlyInDetails) {
+                    return true;
+                }
 
-            return Object.fromEntries(
-                parsed.data.detailFieldKeys.map((fk) => {
-                    const label = fieldLabel(fk);
+                const reviewSummary = reviewSummaryMap.get(
+                    buildReviewCompositeKey({
+                        projectId,
+                        datasourceId: question.datasource.id,
+                        externalRecordId: question.externalRecordId,
+                    }),
+                ) ?? { latestReview: null, aiReview: null, manualReview: null };
 
-                    if (fk.startsWith("raw:")) {
-                        return [label, rawRecord[fk.slice(4)] ?? ""];
-                    }
+                return reviewSummary.latestReview?.decision === "REJECT";
+            })
+            .map((question) => {
+                const rawRecord = normalizeRawRecord(question.metadata);
+                const sourceRowNumber = extractSourceRowNumber(question.metadata);
+                const reviewSummary = reviewSummaryMap.get(
+                    buildReviewCompositeKey({
+                        projectId,
+                        datasourceId: question.datasource.id,
+                        externalRecordId: question.externalRecordId,
+                    }),
+                ) ?? { latestReview: null, aiReview: null, manualReview: null };
+                const latestReview = reviewSummary.latestReview;
 
-                    if (fk === "externalRecordId")
-                        return [label, question.externalRecordId];
-                    if (fk === "title") return [label, question.title];
-                    if (fk === "status")
-                        return [
-                            label,
-                            questionStatusLabelMap[question.status] ??
-                                question.status,
-                        ];
-                    if (fk === "aiReviewStatus") {
-                        const s = toReviewStatusValue(reviewSummary.aiReview);
-                        return [label, reviewStatusLabelMap[s] ?? s];
-                    }
-                    if (fk === "manualReviewStatus") {
-                        const s = toReviewStatusValue(
-                            reviewSummary.manualReview,
-                        );
-                        return [label, reviewStatusLabelMap[s] ?? s];
-                    }
-                    if (fk === "updatedAt")
-                        return [
-                            label,
-                            question.updatedAt.toLocaleString("zh-CN"),
-                        ];
-                    if (fk === "projectName")
-                        return [label, question.project.name];
-                    if (fk === "projectCode")
-                        return [label, question.project.code];
-                    if (fk === "datasourceName")
-                        return [label, question.datasource.name];
-                    if (fk === "sourceRowNumber")
-                        return [
-                            label,
-                            sourceRowNumber != null
-                                ? String(sourceRowNumber)
-                                : "",
-                        ];
-                    if (fk === "reviewDecision")
-                        return [
-                            label,
-                            latestReview
-                                ? (reviewDecisionLabelMap[
-                                      latestReview.decision
-                                  ] ?? latestReview.decision)
-                                : "",
-                        ];
-                    if (fk === "reviewComment")
-                        return [label, latestReview?.comment ?? ""];
-                    if (fk === "reviewReviewer")
-                        return [label, latestReview?.reviewerName ?? ""];
-                    if (fk === "reviewUpdatedAt")
-                        return [
-                            label,
-                            latestReview?.updatedAt
-                                ? new Date(
-                                      latestReview.updatedAt,
-                                  ).toLocaleString("zh-CN")
-                                : "",
-                        ];
-                    return [label, ""];
-                }),
-            );
-        });
+                return Object.fromEntries(
+                    parsed.data.detailFieldKeys.map((fk) => {
+                        const label = fieldLabel(fk);
+
+                        if (fk.startsWith("raw:")) {
+                            return [label, rawRecord[fk.slice(4)] ?? ""];
+                        }
+
+                        if (fk === "externalRecordId")
+                            return [label, question.externalRecordId];
+                        if (fk === "title") return [label, question.title];
+                        if (fk === "status")
+                            return [
+                                label,
+                                questionStatusLabelMap[question.status] ??
+                                    question.status,
+                            ];
+                        if (fk === "aiReviewStatus") {
+                            const s = toReviewStatusValue(reviewSummary.aiReview);
+                            return [label, reviewStatusLabelMap[s] ?? s];
+                        }
+                        if (fk === "manualReviewStatus") {
+                            const s = toReviewStatusValue(
+                                reviewSummary.manualReview,
+                            );
+                            return [label, reviewStatusLabelMap[s] ?? s];
+                        }
+                        if (fk === "updatedAt")
+                            return [
+                                label,
+                                question.updatedAt.toLocaleString("zh-CN"),
+                            ];
+                        if (fk === "projectName")
+                            return [label, question.project.name];
+                        if (fk === "projectCode")
+                            return [label, question.project.code];
+                        if (fk === "datasourceName")
+                            return [label, question.datasource.name];
+                        if (fk === "sourceRowNumber")
+                            return [
+                                label,
+                                sourceRowNumber != null
+                                    ? String(sourceRowNumber)
+                                    : "",
+                            ];
+                        if (fk === "reviewDecision")
+                            return [
+                                label,
+                                latestReview
+                                    ? (reviewDecisionLabelMap[
+                                          latestReview.decision
+                                      ] ?? latestReview.decision)
+                                    : "",
+                            ];
+                        if (fk === "reviewComment")
+                            return [label, latestReview?.comment ?? ""];
+                        if (fk === "reviewReviewer")
+                            return [label, latestReview?.reviewerName ?? ""];
+                        if (fk === "reviewUpdatedAt")
+                            return [
+                                label,
+                                latestReview?.updatedAt
+                                    ? new Date(
+                                          latestReview.updatedAt,
+                                      ).toLocaleString("zh-CN")
+                                    : "",
+                            ];
+                        return [label, ""];
+                    }),
+                );
+            });
 
         groupDetails.push({ subject, rows });
     }

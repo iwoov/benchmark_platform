@@ -147,6 +147,14 @@ function parseRetryRunItemTaskPayload(
     };
 }
 
+function hasRetryRunItemMode(input: unknown) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return false;
+    }
+
+    return (input as Record<string, unknown>).mode === "RETRY_RUN_ITEM";
+}
+
 type BatchCounts = {
     totalCount: number;
     pendingCount: number;
@@ -1088,11 +1096,20 @@ async function executeBatchRunItem(
     },
 ) {
     const startedAt = Date.now();
+    const retryModeRequested =
+        hasRetryRunItemMode(item.resultPayload) ||
+        hasRetryRunItemMode(batchRun.requestPayload);
     const retryPayload =
         parseRetryRunItemTaskPayload(item.resultPayload) ??
         parseRetryRunItemTaskPayload(batchRun.requestPayload);
 
     try {
+        if (retryModeRequested && !retryPayload) {
+            throw new Error(
+                "重试任务参数已损坏，已阻止回退为整题重跑。请刷新页面后重新提交重试。",
+            );
+        }
+
         const execution = retryPayload
             ? await retryAiReviewStrategyRunItem(
                   retryPayload.runId,

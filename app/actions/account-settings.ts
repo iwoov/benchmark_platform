@@ -222,19 +222,16 @@ export async function getDistinctSubjectsAction(): Promise<string[]> {
         return [];
     }
 
-    const rows = await prisma.question.findMany({
-        select: {
-            title: true,
-        },
-        distinct: ["title"],
-        orderBy: {
-            title: "asc",
-        },
-    });
+    const rows = await prisma.$queryRaw<Array<{ value: string | null }>>`
+        SELECT DISTINCT NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '') AS value
+        FROM "Question" q
+        WHERE NULLIF(TRIM(q.metadata->'rawRecord'->>'primary'), '') IS NOT NULL
+        ORDER BY value ASC
+    `;
 
     return rows
-        .map((row) => row.title.trim())
-        .filter((title) => Boolean(title));
+        .map((row) => row.value?.trim() ?? "")
+        .filter((value) => Boolean(value));
 }
 
 export async function updateSubjectPreferencesAction(

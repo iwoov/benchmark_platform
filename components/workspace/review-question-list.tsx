@@ -234,6 +234,8 @@ export function ReviewQuestionList({
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [reportScope, setReportScope] = useState<ExportScope>("filteredAll");
     const [reportFormat, setReportFormat] = useState<ReportFormat>("markdown");
+    const [reportRejectedOnlyInDetails, setReportRejectedOnlyInDetails] =
+        useState(false);
     const [reportSubjectFieldKey, setReportSubjectFieldKey] = useState("");
     const [reportDetailFields, setReportDetailFields] = useState<string[]>([
         "raw:question_id",
@@ -742,6 +744,7 @@ export function ReviewQuestionList({
                 filters: activeConditions,
                 subjectFieldKey: reportSubjectFieldKey,
                 detailFieldKeys: reportDetailFields,
+                rejectedOnlyInDetails: reportRejectedOnlyInDetails,
                 format: reportFormat,
             });
 
@@ -1774,6 +1777,22 @@ export function ReviewQuestionList({
                                     showSearch
                                     optionFilterProp="label"
                                 />
+                            </div>
+
+                            <div>
+                                <div className="review-toolbar-label">
+                                    详情筛选
+                                </div>
+                                <Checkbox
+                                    checked={reportRejectedOnlyInDetails}
+                                    onChange={(event) =>
+                                        setReportRejectedOnlyInDetails(
+                                            event.target.checked,
+                                        )
+                                    }
+                                >
+                                    仅显示驳回题目
+                                </Checkbox>
                             </div>
 
                             <div>
