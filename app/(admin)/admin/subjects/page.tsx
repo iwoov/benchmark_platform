@@ -7,6 +7,10 @@ import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 
+function normalizePrimaryValue(value: string) {
+    return value.replace(/\s+/g, " ").trim();
+}
+
 export default async function AdminSubjectsPage() {
     const session = await auth();
 
@@ -53,9 +57,28 @@ export default async function AdminSubjectsPage() {
           ])
         : [[], []];
 
+    const availablePrimaryValues = primaryValueRows.map((row) => row.value);
+    const mappedPrimaryValues = new Set(
+        subjects.flatMap((subject) =>
+            subject.primaryValues.map((item) =>
+                normalizePrimaryValue(item.value),
+            ),
+        ),
+    );
+    const unmappedPrimaryValues = Array.from(
+        new Map(
+            availablePrimaryValues
+                .map((value) => normalizePrimaryValue(value))
+                .filter((value) => Boolean(value))
+                .filter((value) => !mappedPrimaryValues.has(value))
+                .map((value) => [value, value]),
+        ).values(),
+    );
+
     return (
         <SubjectManagementConsole
-            availablePrimaryValues={primaryValueRows.map((row) => row.value)}
+            availablePrimaryValues={availablePrimaryValues}
+            unmappedPrimaryValues={unmappedPrimaryValues}
             subjects={subjects.map((subject) => ({
                 id: subject.id,
                 name: subject.name,

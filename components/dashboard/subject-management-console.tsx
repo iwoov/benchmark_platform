@@ -24,9 +24,11 @@ const initialState: SaveSubjectFormState = {};
 export function SubjectManagementConsole({
     subjects,
     availablePrimaryValues,
+    unmappedPrimaryValues,
 }: {
     subjects: SubjectItem[];
     availablePrimaryValues: string[];
+    unmappedPrimaryValues: string[];
 }) {
     const router = useRouter();
     const formRef = useRef<HTMLFormElement>(null);
@@ -136,6 +138,37 @@ export function SubjectManagementConsole({
                         <Tag color="gold">提示</Tag>
                         <span>
                             当前题目数据里还没有可识别的 `primary` 取值；导入数据后，这里会自动列出可绑定选项。
+                        </span>
+                    </div>
+                ) : null}
+
+                {unmappedPrimaryValues.length ? (
+                    <div className="workspace-tip" style={{ marginBottom: 16 }}>
+                        <Tag color="error">未映射</Tag>
+                        <div style={{ display: "grid", gap: 8 }}>
+                            <span>
+                                以下 `primary` 取值还没有映射到学科名称，请核对是否遗漏：
+                            </span>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                }}
+                            >
+                                {unmappedPrimaryValues.map((value) => (
+                                    <Tag key={value} color="red">
+                                        {value}
+                                    </Tag>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                ) : availablePrimaryValues.length ? (
+                    <div className="workspace-tip" style={{ marginBottom: 16 }}>
+                        <Tag color="success">已核对</Tag>
+                        <span>
+                            当前识别到的 `primary` 取值都已经映射到学科名称。
                         </span>
                     </div>
                 ) : null}
