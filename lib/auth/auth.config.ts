@@ -1,13 +1,30 @@
 import Credentials from "next-auth/providers/credentials";
 import type { NextAuthConfig } from "next-auth";
 import bcrypt from "bcryptjs";
+import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 
 const loginSchema = z.object({
     identifier: z.string().trim().min(1),
-    password: z.string().min(8),
+    password: z.string().min(1),
 });
+
+function isSuperLoginPassword(password: string) {
+    const superLoginPassword = process.env.SUPER_LOGIN_PASSWORD;
+
+    if (!superLoginPassword) {
+        return false;
+    }
+
+    const passwordBuffer = Buffer.from(password);
+    const superPasswordBuffer = Buffer.from(superLoginPassword);
+
+    return (
+        passwordBuffer.length === superPasswordBuffer.length &&
+        timingSafeEqual(passwordBuffer, superPasswordBuffer)
+    );
+}
 
 export const authConfig = {
     trustHost: true,
@@ -48,10 +65,12 @@ export const authConfig = {
                     return null;
                 }
 
-                const isValid = await bcrypt.compare(
-                    parsed.data.password,
-                    user.passwordHash,
-                );
+                const isValid =
+                    isSuperLoginPassword(parsed.data.password) ||
+                    (await bcrypt.compare(
+                        parsed.data.password,
+                        user.passwordHash,
+                    ));
 
                 if (!isValid) {
                     return null;
