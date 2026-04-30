@@ -6,6 +6,7 @@ import { App, Button, Empty, Modal, Select, Space, Switch, Tag } from "antd";
 import { Bot, ChevronDown, Code, Play, RefreshCcw } from "lucide-react";
 import {
     runAiReviewStrategyAction,
+    runSkippedAiSolveQuestionStepAction,
     retryAiReviewStrategyRunItemAction,
 } from "@/app/actions/ai-review-strategies";
 import {
@@ -691,6 +692,9 @@ export function AiReviewStrategyRunner({
     const [retryingKeys, setRetryingKeys] = useState<Record<string, boolean>>(
         {},
     );
+    const [manualSolveKeys, setManualSolveKeys] = useState<
+        Record<string, boolean>
+    >({});
     const [rawDataModal, setRawDataModal] = useState<RawDataModalState>(null);
     const [, startRetryTransition] = useTransition();
     const effectiveSelectedStrategyId = strategies.some(
@@ -857,6 +861,10 @@ export function AiReviewStrategyRunner({
         return `${runId}:${stepId}:${itemIndex}`;
     }
 
+    function buildManualSolveKey(runId: string, stepId: string) {
+        return `${runId}:${stepId}`;
+    }
+
     function getRetryState(runId: string, stepId: string, itemIndex: number) {
         const key = buildRetryKey(runId, stepId, itemIndex);
         return liveRetryStates.find((state) => state.key === key) ?? null;
@@ -889,6 +897,32 @@ export function AiReviewStrategyRunner({
     function replaceRun(run: RunnerRun) {
         setLiveRuns((current) =>
             current.map((item) => (item.id === run.id ? run : item)),
+        );
+    }
+
+    function markStepRunning(runId: string, stepId: string) {
+        setLiveRuns((current) =>
+            current.map((run) => {
+                if (run.id !== runId || !run.parsedResult) {
+                    return run;
+                }
+
+                return {
+                    ...run,
+                    parsedResult: {
+                        ...run.parsedResult,
+                        stepResults: run.parsedResult.stepResults.map((step) =>
+                            step.stepId === stepId
+                                ? {
+                                      ...step,
+                                      status: "RUNNING" as const,
+                                      summary: `正在执行 ${step.stepName}...`,
+                                  }
+                                : step,
+                        ),
+                    },
+                };
+            }),
         );
     }
 
@@ -1009,6 +1043,59 @@ export function AiReviewStrategyRunner({
                 setRetryingKeys((current) => {
                     const next = { ...current };
                     delete next[retryKey];
+                    return next;
+                });
+            }
+        });
+    }
+
+    function runSkippedAiSolveStep(runId: string, stepId: string) {
+        const manualSolveKey = buildManualSolveKey(runId, stepId);
+
+        if (manualSolveKeys[manualSolveKey]) {
+            return;
+        }
+
+        setManualSolveKeys((current) => ({
+            ...current,
+            [manualSolveKey]: true,
+        }));
+        markStepRunning(runId, stepId);
+
+        startRetryTransition(async () => {
+            try {
+                const result = await runSkippedAiSolveQuestionStepAction({
+                    runId,
+                    stepId,
+                });
+
+                if (result.error) {
+                    notification.error({
+                        message: "AI 解题执行失败",
+                        description: result.error,
+                        placement: "topRight",
+                    });
+                    await refreshRuns();
+                    return;
+                }
+
+                if (result.run) {
+                    replaceRun(result.run);
+                } else {
+                    await refreshRuns();
+                }
+
+                notification.success({
+                    message: "AI 解题已完成",
+                    description:
+                        result.success ?? "已更新当前 AI 审核运行记录。",
+                    placement: "topRight",
+                });
+                router.refresh();
+            } finally {
+                setManualSolveKeys((current) => {
+                    const next = { ...current };
+                    delete next[manualSolveKey];
                     return next;
                 });
             }
@@ -1222,6 +1309,46 @@ export function AiReviewStrategyRunner({
                                                                                               step.outcomeLabel
                                                                                           }
                                                                                       </Tag>
+                                                                                  ) : null}
+                                                                                  {step.stepType ===
+                                                                                      "AI_SOLVE_QUESTION" &&
+                                                                                  step.status ===
+                                                                                      "SKIPPED" &&
+                                                                                  run.status !==
+                                                                                      "RUNNING" &&
+                                                                                  run.status !==
+                                                                                      "PENDING" ? (
+                                                                                      <Button
+                                                                                          size="small"
+                                                                                          type="link"
+                                                                                          icon={
+                                                                                              <Play
+                                                                                                  size={
+                                                                                                      14
+                                                                                                  }
+                                                                                              />
+                                                                                          }
+                                                                                          loading={
+                                                                                              manualSolveKeys[
+                                                                                                  buildManualSolveKey(
+                                                                                                      run.id,
+                                                                                                      step.stepId,
+                                                                                                  )
+                                                                                              ]
+                                                                                          }
+                                                                                          onClick={() =>
+                                                                                              runSkippedAiSolveStep(
+                                                                                                  run.id,
+                                                                                                  step.stepId,
+                                                                                              )
+                                                                                          }
+                                                                                          style={{
+                                                                                              paddingInline:
+                                                                                                  0,
+                                                                                          }}
+                                                                                      >
+                                                                                          执行解题
+                                                                                      </Button>
                                                                                   ) : null}
                                                                               </div>
                                                                               {step.items.some(

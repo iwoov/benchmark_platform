@@ -2307,6 +2307,168 @@ export async function retryAiReviewStrategyRunItem(
     return buildRunView(updatedRun);
 }
 
+export async function runSkippedAiSolveQuestionStep(
+    runId: string,
+    stepId: string,
+) {
+    const run = await prisma.aiReviewStrategyRun.findUnique({
+        where: {
+            id: runId,
+        },
+        include: {
+            strategy: {
+                select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                    definition: true,
+                },
+            },
+            triggeredBy: {
+                select: {
+                    name: true,
+                },
+            },
+        },
+    });
+
+    if (!run) {
+        throw new Error("运行记录不存在。");
+    }
+
+    if (run.status === "RUNNING" || run.status === "PENDING") {
+        throw new Error("当前运行尚未结束，暂不支持手动执行单个步骤。");
+    }
+
+    if (!run.parsedResult) {
+        throw new Error("当前运行没有可执行的步骤结果。");
+    }
+
+    const parsedResult = cloneJson(run.parsedResult as StrategyExecutionResult);
+    const definition =
+        extractRunDefinition(run.requestPayload) ??
+        parseDefinition(run.strategy.definition);
+
+    if (!definition) {
+        throw new Error("运行记录中的策略定义已损坏，无法执行。");
+    }
+
+    const stepIndex = parsedResult.stepResults.findIndex(
+        (step) => step.stepId === stepId,
+    );
+
+    if (stepIndex < 0) {
+        throw new Error("未找到要执行的步骤。");
+    }
+
+    const currentStep = parsedResult.stepResults[stepIndex];
+    const stepDefinition = definition.steps.find((step) => step.id === stepId);
+
+    if (
+        !stepDefinition ||
+        stepDefinition.kind !== "AI_TOOL" ||
+        stepDefinition.toolType !== "AI_SOLVE_QUESTION"
+    ) {
+        throw new Error("只有 AI 解题任务支持手动补充执行。");
+    }
+
+    if (!stepDefinition.enabled) {
+        throw new Error("当前 AI 解题步骤已停用，无法执行。");
+    }
+
+    if (currentStep.status !== "SKIPPED") {
+        throw new Error("只有已跳过的 AI 解题任务可以手动执行。");
+    }
+
+    const question = await getReviewQuestionDetail(run.questionId);
+
+    if (!question) {
+        throw new Error("题目不存在或已被删除。");
+    }
+
+    const previousResults = parsedResult.stepResults.slice(0, stepIndex);
+    parsedResult.stepResults[stepIndex] = await runAiToolStep(
+        stepDefinition,
+        question,
+        previousResults,
+        extractRunExecutionOptions(run.requestPayload),
+    );
+
+    for (
+        let downstreamIndex = stepIndex + 1;
+        downstreamIndex < parsedResult.stepResults.length;
+        downstreamIndex += 1
+    ) {
+        const downstreamResult = parsedResult.stepResults[downstreamIndex];
+        const downstreamDefinition = definition.steps.find(
+            (step) => step.id === downstreamResult.stepId,
+        );
+
+        if (!downstreamDefinition || downstreamDefinition.kind !== "RULE") {
+            continue;
+        }
+
+        parsedResult.stepResults[downstreamIndex] = runRuleStep(
+            downstreamDefinition,
+            parsedResult.stepResults.slice(0, downstreamIndex),
+        );
+    }
+
+    parsedResult.status = parsedResult.stepResults.some(
+        (step) => step.status === "FAILED",
+    )
+        ? "FAILED"
+        : "SUCCESS";
+
+    const { hasStaleAiStep } = getImpactedRetryState(
+        definition,
+        parsedResult.stepResults,
+        stepId,
+    );
+
+    parsedResult.finalRecommendation = hasStaleAiStep
+        ? null
+        : resolveFinalRecommendation(parsedResult.stepResults);
+    parsedResult.reviewPersistence = {
+        status: "SKIPPED",
+        message: hasStaleAiStep
+            ? "已手动执行 AI 解题任务，但下游 AI 步骤未重跑，自动审核回填已失效，请人工确认。"
+            : "已手动执行 AI 解题任务，本次未自动回填审核结论。",
+    };
+
+    const updatedRun = await prisma.aiReviewStrategyRun.update({
+        where: {
+            id: run.id,
+        },
+        data: {
+            status: parsedResult.status,
+            errorMessage:
+                parsedResult.status === "SUCCESS" ? null : run.errorMessage,
+            parsedResult: serializeJson(parsedResult),
+            responsePayload: serializeJson(
+                buildRunResponsePayload(parsedResult.stepResults),
+            ),
+            finishedAt: new Date(),
+        },
+        include: {
+            strategy: {
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                },
+            },
+            triggeredBy: {
+                select: {
+                    name: true,
+                },
+            },
+        },
+    });
+
+    return buildRunView(updatedRun);
+}
+
 export async function executeAiReviewStrategy(
     strategyId: string,
     questionId: string,

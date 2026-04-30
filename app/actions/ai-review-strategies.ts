@@ -17,6 +17,7 @@ import {
 } from "@/lib/ai/review-strategy-schema";
 import {
     executeAiReviewStrategy,
+    runSkippedAiSolveQuestionStep,
     type AiReviewStrategyRunView,
 } from "@/lib/ai/review-strategies";
 import {
@@ -75,6 +76,11 @@ const retryRunItemSchema = z.object({
     runId: z.string().trim().min(1, "缺少运行记录 ID"),
     stepId: z.string().trim().min(1, "缺少步骤 ID"),
     itemIndex: z.number().int("重试项索引无效").min(1, "重试项索引无效"),
+});
+
+const runSkippedAiSolveStepSchema = z.object({
+    runId: z.string().trim().min(1, "缺少运行记录 ID"),
+    stepId: z.string().trim().min(1, "缺少步骤 ID"),
 });
 
 const createBatchRunSchema = z.object({
@@ -704,6 +710,100 @@ export async function retryAiReviewStrategyRunItemAction(
         revalidateStrategyPaths(run.questionId);
         return {
             error: error instanceof Error ? error.message : "重试失败。",
+        };
+    }
+}
+
+export async function runSkippedAiSolveQuestionStepAction(
+    input: z.input<typeof runSkippedAiSolveStepSchema>,
+): Promise<AiReviewStrategyActionState> {
+    const session = await auth();
+
+    if (!session?.user) {
+        return {
+            error: "请先登录后再执行 AI 解题任务。",
+        };
+    }
+
+    if (!process.env.DATABASE_URL) {
+        return {
+            error: "当前未配置 DATABASE_URL，无法执行 AI 解题任务。",
+        };
+    }
+
+    const parsed = runSkippedAiSolveStepSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "执行参数不完整。",
+        };
+    }
+
+    const run = await prisma.aiReviewStrategyRun.findUnique({
+        where: {
+            id: parsed.data.runId,
+        },
+        select: {
+            id: true,
+            questionId: true,
+            question: {
+                select: {
+                    projectId: true,
+                    metadata: true,
+                },
+            },
+        },
+    });
+
+    if (!run) {
+        return {
+            error: "运行记录不存在。",
+        };
+    }
+
+    const canReview = await canUserReviewProject(
+        session.user.id,
+        session.user.platformRole,
+        run.question.projectId,
+    );
+
+    if (!canReview) {
+        return {
+            error: "你当前没有该项目的审核权限。",
+        };
+    }
+
+    const canAccessQuestion = await canUserAccessQuestionByMetadata(
+        session.user.id,
+        session.user.platformRole,
+        run.question.metadata,
+    );
+
+    if (!canAccessQuestion) {
+        return {
+            error: "你当前不能执行该学科的题目。",
+        };
+    }
+
+    try {
+        const updatedRun = await runSkippedAiSolveQuestionStep(
+            parsed.data.runId,
+            parsed.data.stepId,
+        );
+
+        revalidateStrategyPaths(run.questionId);
+
+        return {
+            success: "AI 解题任务已手动执行完成。",
+            run: updatedRun,
+        };
+    } catch (error) {
+        revalidateStrategyPaths(run.questionId);
+        return {
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "AI 解题任务执行失败。",
         };
     }
 }
