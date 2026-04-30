@@ -9,6 +9,7 @@ export type ReviewQuestionSystemFieldKey =
     | "status"
     | "aiReviewStatus"
     | "manualReviewStatus"
+    | "manualReviewReviewer"
     | "datasourceId"
     | "sourceRowNumber";
 export type ReviewQuestionRawFieldKey = `raw:${string}`;
@@ -65,6 +66,7 @@ function isValidFieldKey(
         value === "status" ||
         value === "aiReviewStatus" ||
         value === "manualReviewStatus" ||
+        value === "manualReviewReviewer" ||
         value === "datasourceId" ||
         value === "sourceRowNumber" ||
         (typeof value === "string" && value.startsWith("raw:"))

@@ -254,6 +254,10 @@ function getConditionFieldValue(
         return toReviewStatusValue(question.manualReview);
     }
 
+    if (condition.fieldKey === "manualReviewReviewer") {
+        return question.manualReview?.reviewerName ?? "";
+    }
+
     if (condition.fieldKey === "datasourceId") {
         return question.datasourceId;
     }

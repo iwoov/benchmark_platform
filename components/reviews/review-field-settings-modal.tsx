@@ -14,6 +14,7 @@ import {
     saveUserProjectReviewFieldPreferenceAction,
 } from "@/app/actions/review-field-preferences";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
+import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
 
 type FieldVisibilityDraft = {
     fieldOrder: string[];
@@ -149,6 +150,10 @@ export function ReviewFieldSettingsModal({
                 [targetKey]: nextValues,
             };
         });
+    }
+
+    function isDetailVisibilityDisabled(fieldKey: string) {
+        return fieldKey === manualReviewReviewerFieldKey;
     }
 
     async function savePreference() {
@@ -410,6 +415,9 @@ export function ReviewFieldSettingsModal({
 
                                     <Checkbox
                                         checked={detailVisibleSet.has(fieldKey)}
+                                        disabled={isDetailVisibilityDisabled(
+                                            fieldKey,
+                                        )}
                                         onChange={(event) =>
                                             updateVisibility(
                                                 fieldKey,

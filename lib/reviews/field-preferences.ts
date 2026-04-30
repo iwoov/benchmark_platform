@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { readRawFieldOrder } from "@/lib/datasources/sync-config";
+import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
 
 const reviewFieldPreferenceConfigSchema = z.object({
     version: z.literal(1),
@@ -25,6 +26,17 @@ export type ResolvedReviewFieldPreference = {
     listVisibleFieldKeys: string[];
     detailVisibleFieldKeys: string[];
 };
+
+const systemListOnlyFieldOptions: ReviewFieldOption[] = [
+    {
+        key: manualReviewReviewerFieldKey,
+        label: "人工审核人",
+    },
+];
+
+function isListOnlySystemField(fieldKey: string) {
+    return fieldKey === manualReviewReviewerFieldKey;
+}
 
 function normalizeFieldKeys(fieldKeys: string[]) {
     const normalized: string[] = [];
@@ -97,7 +109,10 @@ export async function getProjectReviewFieldCatalog(projectId: string) {
         ),
     );
 
-    return toFieldOptionsWithLabelMap(fieldKeys, labelMap);
+    return [
+        ...systemListOnlyFieldOptions,
+        ...toFieldOptionsWithLabelMap(fieldKeys, labelMap),
+    ];
 }
 
 export async function getUserProjectReviewFieldPreference(
@@ -141,8 +156,12 @@ export function resolveReviewFieldPreference({
             hasSavedPreference: false,
             fieldCatalog,
             fieldOrder: catalogKeys,
-            listVisibleFieldKeys: catalogKeys,
-            detailVisibleFieldKeys: catalogKeys,
+            listVisibleFieldKeys: catalogKeys.filter(
+                (fieldKey) => !isListOnlySystemField(fieldKey),
+            ),
+            detailVisibleFieldKeys: catalogKeys.filter(
+                (fieldKey) => !isListOnlySystemField(fieldKey),
+            ),
         };
     }
 
@@ -166,8 +185,10 @@ export function resolveReviewFieldPreference({
             ),
         ),
         detailVisibleFieldKeys: normalizeFieldKeys(
-            preference.detailVisibleFieldKeys.filter((fieldKey) =>
-                catalogKeys.includes(fieldKey),
+            preference.detailVisibleFieldKeys.filter(
+                (fieldKey) =>
+                    catalogKeys.includes(fieldKey) &&
+                    !isListOnlySystemField(fieldKey),
             ),
         ),
     };
@@ -218,8 +239,10 @@ export function sanitizeReviewFieldPreferenceInput({
             ),
         ),
         detailVisibleFieldKeys: normalizeFieldKeys(
-            detailVisibleFieldKeys.filter((fieldKey) =>
-                normalizedCatalogKeys.includes(fieldKey),
+            detailVisibleFieldKeys.filter(
+                (fieldKey) =>
+                    normalizedCatalogKeys.includes(fieldKey) &&
+                    !isListOnlySystemField(fieldKey),
             ),
         ),
     };

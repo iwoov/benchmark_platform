@@ -29,7 +29,10 @@ import {
     exportReviewReportAction,
 } from "@/app/actions/review-exports";
 import { writeStoredReviewListHref } from "@/lib/reviews/review-list-preference";
-import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
+import {
+    type ResolvedReviewFieldPreference,
+} from "@/lib/reviews/field-preferences";
+import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
 import {
     conditionNeedsValue,
     createReviewQuestionFilterCondition,
@@ -246,16 +249,23 @@ export function ReviewQuestionList({
     const [isExportingReport, setIsExportingReport] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);
 
-    const rawColumns = useMemo(
-        () =>
-            fieldPreference.listVisibleFieldKeys.map((fieldKey) => ({
+    const listColumns = useMemo(
+        () => {
+            const visibleFieldKeySet = new Set(
+                fieldPreference.listVisibleFieldKeys,
+            );
+
+            return fieldPreference.fieldOrder
+                .filter((fieldKey) => visibleFieldKeySet.has(fieldKey))
+                .map((fieldKey) => ({
                 key: fieldKey,
                 label:
                     fieldPreference.fieldCatalog.find(
                         (field) => field.key === fieldKey,
                     )?.label ?? fieldKey,
                 width: 220,
-            })),
+            }));
+        },
         [fieldPreference],
     );
 
@@ -278,6 +288,12 @@ export function ReviewQuestionList({
                 label: "人工审核",
                 kind: "system",
                 valueType: "select",
+            },
+            {
+                value: "manualReviewReviewer",
+                label: "人工审核人",
+                kind: "system",
+                valueType: "text",
             },
             {
                 value: "datasourceId",
@@ -386,10 +402,10 @@ export function ReviewQuestionList({
         "140px",
         "140px",
         "180px",
-        ...rawColumns.map(() => "220px"),
+        ...listColumns.map(() => "220px"),
     ].join(" ");
     const tableWidth =
-        52 + 180 + 160 + 140 + 140 + 180 + rawColumns.length * 220;
+        52 + 180 + 160 + 140 + 140 + 180 + listColumns.length * 220;
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -985,7 +1001,7 @@ export function ReviewQuestionList({
                         />
                     ) : (
                         <>
-                            {!rawColumns.length ? (
+                            {!listColumns.length ? (
                                 <div
                                     className="workspace-tip"
                                     style={{ marginTop: 20 }}
@@ -1047,7 +1063,7 @@ export function ReviewQuestionList({
                                         <div style={cellStyle}>AI审核</div>
                                         <div style={cellStyle}>人工审核</div>
                                         <div style={cellStyle}>更新时间</div>
-                                        {rawColumns.map((column) => (
+                                        {listColumns.map((column) => (
                                             <div
                                                 key={column.key}
                                                 style={cellStyle}
@@ -1196,11 +1212,17 @@ export function ReviewQuestionList({
                                                         question.updatedAt,
                                                     ).toLocaleString("zh-CN")}
                                                 </div>
-                                                {rawColumns.map((column) => {
+                                                {listColumns.map((column) => {
                                                     const value =
-                                                        question.rawRecord[
-                                                            column.key
-                                                        ] || "—";
+                                                        column.key ===
+                                                        manualReviewReviewerFieldKey
+                                                            ? (question
+                                                                  .manualReview
+                                                                  ?.reviewerName ??
+                                                              "—")
+                                                            : question.rawRecord[
+                                                                  column.key
+                                                              ] || "—";
 
                                                     return (
                                                         <div
