@@ -35,6 +35,7 @@ import {
     deleteAiChatConfigAction,
 } from "@/app/actions/ai-chat-config";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
+import { defaultAiChatPresetFields } from "@/lib/ai/chat-preset-fields";
 import {
     aiReviewAggregateLabels,
     aiReviewComparisonOperators,
@@ -175,6 +176,8 @@ const systemFieldOptions = [
     { value: "questionType", label: "系统字段 / questionType" },
     { value: "difficulty", label: "系统字段 / difficulty" },
     { value: "rawRecord", label: "系统字段 / rawRecord" },
+    { value: "manualReviewComment", label: "审核字段 / 人工审核意见" },
+    { value: "aiReviewComment", label: "审核字段 / AI 审核意见" },
 ];
 
 type ChatConfigFormState = {
@@ -193,7 +196,7 @@ function createDefaultChatConfigForm(): ChatConfigFormState {
         modelCode: "",
         modelCodes: [],
         systemPrompt: "",
-        presetFields: [],
+        presetFields: [...defaultAiChatPresetFields],
         enabled: true,
     };
 }

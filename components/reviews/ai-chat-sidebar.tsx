@@ -39,6 +39,8 @@ const fieldLabelMap: Record<string, string> = {
     questionType: "题型",
     difficulty: "难度",
     rawRecord: "原始记录",
+    manualReviewComment: "人工审核意见",
+    aiReviewComment: "AI 审核意见",
 };
 
 function getFieldLabel(field: string) {
@@ -56,6 +58,10 @@ function buildContextString(
         questionType?: string | null;
         difficulty?: string | null;
     },
+    reviewContext?: {
+        manualReviewComment?: string | null;
+        aiReviewComment?: string | null;
+    },
 ): string {
     const lines: string[] = [];
 
@@ -66,6 +72,8 @@ function buildContextString(
         analysis: questionMeta.analysis,
         questionType: questionMeta.questionType,
         difficulty: questionMeta.difficulty,
+        manualReviewComment: reviewContext?.manualReviewComment,
+        aiReviewComment: reviewContext?.aiReviewComment,
     };
 
     for (const field of presetFields) {
@@ -156,6 +164,7 @@ export function AiChatSidebar({
     chatConfigs,
     rawRecord,
     questionMeta,
+    reviewContext,
 }: {
     chatConfigs: AiChatConfigView[];
     rawRecord: Record<string, string>;
@@ -166,6 +175,10 @@ export function AiChatSidebar({
         analysis?: string | null;
         questionType?: string | null;
         difficulty?: string | null;
+    };
+    reviewContext?: {
+        manualReviewComment?: string | null;
+        aiReviewComment?: string | null;
     };
 }) {
     const [selectedConfigId, setSelectedConfigId] = useState<string>(
@@ -306,6 +319,7 @@ export function AiChatSidebar({
                 activePresetFields,
                 rawRecord,
                 questionMeta,
+                reviewContext,
             );
 
             const response = await fetch("/api/ai/chat", {

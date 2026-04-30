@@ -1015,6 +1015,12 @@ export function QuestionReviewDetail({
                                     questionType: question.questionType,
                                     difficulty: question.difficulty,
                                 }}
+                                reviewContext={{
+                                    manualReviewComment:
+                                        question.manualReview?.comment ?? null,
+                                    aiReviewComment:
+                                        question.aiReview?.comment ?? null,
+                                }}
                             />
                         </div>
                     ) : null}

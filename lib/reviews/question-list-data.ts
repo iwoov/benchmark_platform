@@ -198,6 +198,8 @@ export type ReviewQuestionDetail = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    aiReview: ReviewSummary | null;
+    manualReview: ReviewSummary | null;
     imageFields: string[];
     imageMap: Record<string, string[]> | null;
     savedTranslations: Record<
@@ -782,6 +784,22 @@ export async function getReviewQuestionDetail(
         return null;
     }
 
+    const reviewSummaryMap = await getLatestReviewSummaryMap([
+        {
+            projectId: question.project.id,
+            datasourceId: question.datasource.id,
+            externalRecordId: question.externalRecordId,
+        },
+    ]);
+    const reviewSummary =
+        reviewSummaryMap.get(
+            buildReviewCompositeKey({
+                projectId: question.project.id,
+                datasourceId: question.datasource.id,
+                externalRecordId: question.externalRecordId,
+            }),
+        ) ?? null;
+
     return {
         id: question.id,
         title: question.title,
@@ -801,6 +819,8 @@ export async function getReviewQuestionDetail(
         sourceRowNumber: extractSourceRowNumber(question.metadata),
         rawRecord: extractRawRecord(question.metadata),
         rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        aiReview: reviewSummary?.aiReview ?? null,
+        manualReview: reviewSummary?.manualReview ?? null,
         imageFields: readImageFields(question.datasource.syncConfig),
         imageMap: readImageMap(question.datasource.syncConfig),
         savedTranslations: Object.fromEntries(
