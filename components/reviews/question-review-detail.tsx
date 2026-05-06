@@ -425,11 +425,7 @@ export function QuestionReviewDetail({
 }) {
     const router = useRouter();
     const { notification } = App.useApp();
-    const [decision, setDecision] = useState<"PASS" | "REJECT">("PASS");
-    const [comment, setComment] = useState("");
-    const [useReuseAiComment, setUseReuseAiComment] = useState(true);
-    const [chatOpen, setChatOpen] = useState(false);
-
+    const manualReview = question.manualReview;
     const latestAiComment = (() => {
         for (const run of strategyRuns) {
             const summary = run.parsedResult?.finalRecommendation?.summary;
@@ -437,6 +433,14 @@ export function QuestionReviewDetail({
         }
         return null;
     })();
+    const [decision, setDecision] = useState<"PASS" | "REJECT">(
+        manualReview?.decision ?? "PASS",
+    );
+    const [comment, setComment] = useState(manualReview?.comment ?? "");
+    const [useReuseAiComment, setUseReuseAiComment] = useState(
+        !manualReview && Boolean(latestAiComment),
+    );
+    const [chatOpen, setChatOpen] = useState(false);
     const [fieldTranslations, setFieldTranslations] = useState<
         Record<
             string,
@@ -505,6 +509,12 @@ export function QuestionReviewDetail({
             });
         };
     }, []);
+
+    useEffect(() => {
+        setDecision(manualReview?.decision ?? "PASS");
+        setComment(manualReview?.comment ?? "");
+        setUseReuseAiComment(!manualReview && Boolean(latestAiComment));
+    }, [question.id, manualReview, latestAiComment]);
 
     function submitReview() {
         const effectiveComment =
@@ -1266,6 +1276,73 @@ export function QuestionReviewDetail({
                                 </div>
 
                                 <div style={{ display: "grid", gap: 16 }}>
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gap: 8,
+                                            padding: "12px 14px",
+                                            border: "1px solid var(--color-border)",
+                                            borderRadius: 8,
+                                            background:
+                                                "var(--color-surface-2, #f8fafc)",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 8,
+                                                flexWrap: "wrap",
+                                            }}
+                                        >
+                                            <span className="field-label">
+                                                当前人工审核
+                                            </span>
+                                            <Tag
+                                                color={
+                                                    reviewStatusMeta[
+                                                        question.manualReview
+                                                            ?.decision ?? "NONE"
+                                                    ].color
+                                                }
+                                            >
+                                                {
+                                                    reviewStatusMeta[
+                                                        question.manualReview
+                                                            ?.decision ?? "NONE"
+                                                    ].label
+                                                }
+                                            </Tag>
+                                            <Tag
+                                                color={
+                                                    questionStatusMeta[
+                                                        question.status
+                                                    ].color
+                                                }
+                                            >
+                                                {
+                                                    questionStatusMeta[
+                                                        question.status
+                                                    ].label
+                                                }
+                                            </Tag>
+                                        </div>
+                                        {question.manualReview ? (
+                                            <div className="muted">
+                                                {question.manualReview.reviewerName
+                                                    ? `${question.manualReview.reviewerName} · `
+                                                    : ""}
+                                                {new Date(
+                                                    question.manualReview.updatedAt,
+                                                ).toLocaleString("zh-CN")}
+                                            </div>
+                                        ) : (
+                                            <div className="muted">
+                                                当前暂无人工审核结果。
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div
                                         style={{
                                             display: "flex",
