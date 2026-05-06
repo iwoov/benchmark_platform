@@ -15,6 +15,15 @@ import {
     questionMatchesPrimaryValueScope,
 } from "@/lib/subjects/access";
 
+const revisionBaseFieldLabelMap = {
+    title: "题目标题",
+    content: "题干",
+    answer: "答案",
+    analysis: "解析",
+    questionType: "题型",
+    difficulty: "难度",
+} as const;
+
 function normalizeRawValue(value: unknown): string {
     if (value === null || value === undefined) {
         return "";
@@ -39,9 +48,9 @@ function normalizeRawValue(value: unknown): string {
     }
 }
 
-function extractRawRecord(metadata: unknown) {
+function extractRawRecordValues(metadata: unknown) {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-        return {} as Record<string, string>;
+        return {} as Record<string, unknown>;
     }
 
     const rawRecord = (metadata as Record<string, unknown>).rawRecord;
@@ -51,13 +60,48 @@ function extractRawRecord(metadata: unknown) {
         typeof rawRecord !== "object" ||
         Array.isArray(rawRecord)
     ) {
-        return {} as Record<string, string>;
+        return {} as Record<string, unknown>;
     }
 
+    return rawRecord as Record<string, unknown>;
+}
+
+function extractRawRecord(metadata: unknown) {
     return Object.fromEntries(
-        Object.entries(rawRecord as Record<string, unknown>).map(
+        Object.entries(extractRawRecordValues(metadata)).map(
             ([key, value]) => [key, normalizeRawValue(value)],
         ),
+    );
+}
+
+function normalizeComparableValue(value: unknown): unknown {
+    if (value === undefined) {
+        return null;
+    }
+
+    if (value === null) {
+        return null;
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeComparableValue(item));
+    }
+
+    if (typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .sort(([left], [right]) => left.localeCompare(right, "zh-CN"))
+                .map(([key, item]) => [key, normalizeComparableValue(item)]),
+        );
+    }
+
+    return value;
+}
+
+function valuesAreEqual(left: unknown, right: unknown) {
+    return (
+        JSON.stringify(normalizeComparableValue(left)) ===
+        JSON.stringify(normalizeComparableValue(right))
     );
 }
 
@@ -151,6 +195,105 @@ function extractRawFieldOrder(syncConfig: unknown) {
     );
 }
 
+function buildRevisionLink(
+    question: {
+        id: string;
+        title: string;
+        revisionNo: number;
+        externalRecordId: string;
+        status: ReviewQuestionRevisionLink["status"];
+        updatedAt: Date;
+        datasource: {
+            id: string;
+            name: string;
+        };
+    },
+    reviewSummary: {
+        aiReview: ReviewSummary | null;
+        manualReview: ReviewSummary | null;
+    },
+): ReviewQuestionRevisionLink {
+    return {
+        id: question.id,
+        title: question.title,
+        revisionNo: question.revisionNo,
+        externalRecordId: question.externalRecordId,
+        status: question.status,
+        updatedAt: question.updatedAt.toISOString(),
+        datasource: question.datasource,
+        aiReview: reviewSummary.aiReview,
+        manualReview: reviewSummary.manualReview,
+    };
+}
+
+function buildDiffFromPrevious(
+    currentQuestion: {
+        title: string;
+        content: string;
+        answer: string | null;
+        analysis: string | null;
+        questionType: string | null;
+        difficulty: string | null;
+        metadata: unknown;
+    },
+    previousQuestion: {
+        title: string;
+        content: string;
+        answer: string | null;
+        analysis: string | null;
+        questionType: string | null;
+        difficulty: string | null;
+        metadata: unknown;
+        datasource: {
+            syncConfig: unknown;
+        };
+    },
+): ReviewQuestionDiffEntry[] {
+    const diffEntries: ReviewQuestionDiffEntry[] = [];
+
+    for (const [fieldKey, label] of Object.entries(revisionBaseFieldLabelMap)) {
+        const previousValue = previousQuestion[fieldKey as keyof typeof revisionBaseFieldLabelMap];
+        const currentValue = currentQuestion[fieldKey as keyof typeof revisionBaseFieldLabelMap];
+
+        if (!valuesAreEqual(previousValue, currentValue)) {
+            diffEntries.push({
+                fieldKey,
+                kind: "base",
+                label,
+                previousValue,
+                currentValue,
+            });
+        }
+    }
+
+    const previousRawRecord = extractRawRecordValues(previousQuestion.metadata);
+    const currentRawRecord = extractRawRecordValues(currentQuestion.metadata);
+    const rawFieldKeys = Array.from(
+        new Set([
+            ...extractRawFieldOrder(previousQuestion.datasource.syncConfig),
+            ...Object.keys(previousRawRecord),
+            ...Object.keys(currentRawRecord),
+        ]),
+    ).sort((left, right) => left.localeCompare(right, "zh-CN"));
+
+    for (const rawFieldKey of rawFieldKeys) {
+        const previousValue = previousRawRecord[rawFieldKey] ?? null;
+        const currentValue = currentRawRecord[rawFieldKey] ?? null;
+
+        if (!valuesAreEqual(previousValue, currentValue)) {
+            diffEntries.push({
+                fieldKey: `raw:${rawFieldKey}`,
+                kind: "raw",
+                label: rawFieldKey,
+                previousValue,
+                currentValue,
+            });
+        }
+    }
+
+    return diffEntries;
+}
+
 export type ReviewProjectOption = {
     id: string;
     name: string;
@@ -170,9 +313,35 @@ export type ReviewQuestionListItem = {
     aiReview: ReviewSummary | null;
     manualReview: ReviewSummary | null;
     updatedAt: string;
+    businessQuestionKey: string | null;
+    revisionNo: number;
+    hasPreviousRevision: boolean;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+};
+
+export type ReviewQuestionRevisionLink = {
+    id: string;
+    title: string;
+    revisionNo: number;
+    externalRecordId: string;
+    status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
+    updatedAt: string;
+    datasource: {
+        id: string;
+        name: string;
+    };
+    aiReview: ReviewSummary | null;
+    manualReview: ReviewSummary | null;
+};
+
+export type ReviewQuestionDiffEntry = {
+    fieldKey: string;
+    kind: "base" | "raw";
+    label: string;
+    previousValue: unknown;
+    currentValue: unknown;
 };
 
 export type ReviewQuestionDetail = {
@@ -198,10 +367,16 @@ export type ReviewQuestionDetail = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    businessQuestionKey: string | null;
+    revisionNo: number;
+    isLatestRevision: boolean;
     aiReview: ReviewSummary | null;
     manualReview: ReviewSummary | null;
     imageFields: string[];
     imageMap: Record<string, string[]> | null;
+    previousRevision: ReviewQuestionRevisionLink | null;
+    latestRevision: ReviewQuestionRevisionLink | null;
+    diffFromPrevious: ReviewQuestionDiffEntry[];
     savedTranslations: Record<
         string,
         { translatedText: string; sourceLanguage: string | null }
@@ -387,8 +562,11 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                       projectId: {
                           in: projectIds,
                       },
+                      isLatestRevision: true,
                   }
-                : undefined,
+                : {
+                      isLatestRevision: true,
+                  },
         select: {
             id: true,
             title: true,
@@ -396,6 +574,9 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
             updatedAt: true,
             metadata: true,
             externalRecordId: true,
+            businessQuestionKey: true,
+            revisionNo: true,
+            previousRevisionId: true,
             project: {
                 select: {
                     id: true,
@@ -464,6 +645,9 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                 aiReview: reviewSummary.aiReview,
                 manualReview: reviewSummary.manualReview,
                 updatedAt: question.updatedAt.toISOString(),
+                businessQuestionKey: question.businessQuestionKey,
+                revisionNo: question.revisionNo,
+                hasPreviousRevision: Boolean(question.previousRevisionId),
                 sourceRowNumber: extractSourceRowNumber(question.metadata),
                 rawRecord: extractRawRecord(question.metadata),
                 rawFieldOrder: extractRawFieldOrder(
@@ -534,6 +718,7 @@ export async function getReviewQuestionListPageData({
     const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
+            isLatestRevision: true,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {
@@ -564,6 +749,9 @@ export async function getReviewQuestionListPageData({
             updatedAt: true,
             metadata: true,
             externalRecordId: true,
+            businessQuestionKey: true,
+            revisionNo: true,
+            previousRevisionId: true,
             project: {
                 select: {
                     id: true,
@@ -617,6 +805,9 @@ export async function getReviewQuestionListPageData({
                 aiReview: reviewSummary.aiReview,
                 manualReview: reviewSummary.manualReview,
                 updatedAt: question.updatedAt.toISOString(),
+                businessQuestionKey: question.businessQuestionKey,
+                revisionNo: question.revisionNo,
+                hasPreviousRevision: Boolean(question.previousRevisionId),
                 sourceRowNumber: extractSourceRowNumber(question.metadata),
                 rawRecord: extractRawRecord(question.metadata),
                 rawFieldOrder: extractRawFieldOrder(
@@ -747,6 +938,9 @@ export async function getReviewQuestionDetail(
             questionType: true,
             difficulty: true,
             externalRecordId: true,
+            businessQuestionKey: true,
+            revisionNo: true,
+            isLatestRevision: true,
             status: true,
             updatedAt: true,
             metadata: true,
@@ -762,6 +956,29 @@ export async function getReviewQuestionDetail(
                     id: true,
                     name: true,
                     syncConfig: true,
+                },
+            },
+            previousRevision: {
+                select: {
+                    id: true,
+                    title: true,
+                    content: true,
+                    answer: true,
+                    analysis: true,
+                    questionType: true,
+                    difficulty: true,
+                    externalRecordId: true,
+                    revisionNo: true,
+                    status: true,
+                    updatedAt: true,
+                    metadata: true,
+                    datasource: {
+                        select: {
+                            id: true,
+                            name: true,
+                            syncConfig: true,
+                        },
+                    },
                 },
             },
             fieldTranslations: {
@@ -788,21 +1005,102 @@ export async function getReviewQuestionDetail(
         return null;
     }
 
-    const reviewSummaryMap = await getLatestReviewSummaryMap([
+    const previousRevision =
+        question.previousRevision &&
+        questionMatchesPrimaryValueScope(
+            question.previousRevision.metadata,
+            allowedPrimaryValues,
+        )
+            ? question.previousRevision
+            : null;
+    const latestRevisionRecord =
+        question.businessQuestionKey && !question.isLatestRevision
+            ? await prisma.question.findFirst({
+                  where: {
+                      projectId: question.project.id,
+                      businessQuestionKey: question.businessQuestionKey,
+                      isLatestRevision: true,
+                  },
+                  select: {
+                      id: true,
+                      title: true,
+                      externalRecordId: true,
+                      revisionNo: true,
+                      status: true,
+                      updatedAt: true,
+                      datasource: {
+                          select: {
+                              id: true,
+                              name: true,
+                          },
+                      },
+                  },
+              })
+            : null;
+    const reviewTargets = [
         {
             projectId: question.project.id,
             datasourceId: question.datasource.id,
             externalRecordId: question.externalRecordId,
         },
-    ]);
-    const reviewSummary =
+        ...(previousRevision
+            ? [
+                  {
+                      projectId: question.project.id,
+                      datasourceId: previousRevision.datasource.id,
+                      externalRecordId: previousRevision.externalRecordId,
+                  },
+              ]
+            : []),
+        ...(latestRevisionRecord
+            ? [
+                  {
+                      projectId: question.project.id,
+                      datasourceId: latestRevisionRecord.datasource.id,
+                      externalRecordId: latestRevisionRecord.externalRecordId,
+                  },
+              ]
+            : []),
+    ];
+    const reviewSummaryMap = await getLatestReviewSummaryMap(reviewTargets);
+    const currentReviewSummary =
         reviewSummaryMap.get(
             buildReviewCompositeKey({
                 projectId: question.project.id,
                 datasourceId: question.datasource.id,
                 externalRecordId: question.externalRecordId,
             }),
-        ) ?? null;
+        ) ?? {
+            latestReview: null,
+            aiReview: null,
+            manualReview: null,
+        };
+    const previousRevisionSummary = previousRevision
+        ? reviewSummaryMap.get(
+              buildReviewCompositeKey({
+                  projectId: question.project.id,
+                  datasourceId: previousRevision.datasource.id,
+                  externalRecordId: previousRevision.externalRecordId,
+              }),
+          ) ?? {
+              latestReview: null,
+              aiReview: null,
+              manualReview: null,
+          }
+        : null;
+    const latestRevisionSummary = latestRevisionRecord
+        ? reviewSummaryMap.get(
+              buildReviewCompositeKey({
+                  projectId: question.project.id,
+                  datasourceId: latestRevisionRecord.datasource.id,
+                  externalRecordId: latestRevisionRecord.externalRecordId,
+              }),
+          ) ?? {
+              latestReview: null,
+              aiReview: null,
+              manualReview: null,
+          }
+        : currentReviewSummary;
 
     return {
         id: question.id,
@@ -823,10 +1121,46 @@ export async function getReviewQuestionDetail(
         sourceRowNumber: extractSourceRowNumber(question.metadata),
         rawRecord: extractRawRecord(question.metadata),
         rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
-        aiReview: reviewSummary?.aiReview ?? null,
-        manualReview: reviewSummary?.manualReview ?? null,
+        businessQuestionKey: question.businessQuestionKey,
+        revisionNo: question.revisionNo,
+        isLatestRevision: question.isLatestRevision,
+        aiReview: currentReviewSummary.aiReview,
+        manualReview: currentReviewSummary.manualReview,
         imageFields: readImageFields(question.datasource.syncConfig),
         imageMap: readImageMap(question.datasource.syncConfig),
+        previousRevision: previousRevision
+            ? buildRevisionLink(previousRevision, {
+                  aiReview: previousRevisionSummary?.aiReview ?? null,
+                  manualReview: previousRevisionSummary?.manualReview ?? null,
+              })
+            : null,
+        latestRevision:
+            latestRevisionRecord && latestRevisionRecord.id !== question.id
+                ? buildRevisionLink(latestRevisionRecord, {
+                      aiReview: latestRevisionSummary.aiReview,
+                      manualReview: latestRevisionSummary.manualReview,
+                  })
+                : buildRevisionLink(
+                      {
+                          id: question.id,
+                          title: question.title,
+                          revisionNo: question.revisionNo,
+                          externalRecordId: question.externalRecordId,
+                          status: question.status,
+                          updatedAt: question.updatedAt,
+                          datasource: {
+                              id: question.datasource.id,
+                              name: question.datasource.name,
+                          },
+                      },
+                      {
+                          aiReview: currentReviewSummary.aiReview,
+                          manualReview: currentReviewSummary.manualReview,
+                      },
+                  ),
+        diffFromPrevious: previousRevision
+            ? buildDiffFromPrevious(question, previousRevision)
+            : [],
         savedTranslations: Object.fromEntries(
             question.fieldTranslations.map((t) => [
                 t.fieldKey,
@@ -859,6 +1193,8 @@ export async function getReviewQuestionNavigation({
         select: {
             id: true,
             projectId: true,
+            businessQuestionKey: true,
+            isLatestRevision: true,
         },
     });
 
@@ -890,6 +1226,7 @@ export async function getReviewQuestionNavigation({
     const orderedQuestions = await prisma.question.findMany({
         where: {
             projectId: scopedProjectId,
+            isLatestRevision: true,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {
@@ -976,9 +1313,28 @@ export async function getReviewQuestionNavigation({
                 },
             );
         });
+    let resolvedNavigationQuestionId = questionId;
+
+    if (
+        !currentQuestion.isLatestRevision &&
+        currentQuestion.businessQuestionKey
+    ) {
+        const latestRevision = await prisma.question.findFirst({
+            where: {
+                projectId: scopedProjectId,
+                businessQuestionKey: currentQuestion.businessQuestionKey,
+                isLatestRevision: true,
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        resolvedNavigationQuestionId = latestRevision?.id ?? questionId;
+    }
 
     const currentIndex = filteredOrderedQuestions.findIndex(
-        (question) => question.id === questionId,
+        (question) => question.id === resolvedNavigationQuestionId,
     );
 
     if (currentIndex < 0) {

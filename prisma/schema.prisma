@@ -238,6 +238,7 @@ model Question {
   projectId                     String
   datasourceId                  String
   externalRecordId              String
+  businessQuestionKey           String?
   title                         String
   content                       String
   answer                        String?
@@ -245,11 +246,16 @@ model Question {
   questionType                  String?
   difficulty                    String?
   status                        QuestionStatus                 @default(DRAFT)
+  revisionNo                    Int                            @default(1)
+  isLatestRevision              Boolean                        @default(true)
+  previousRevisionId            String?
   metadata                      Json?
   sourceUpdatedAt               DateTime?
   lastSyncedAt                  DateTime?
   project                       Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   datasource                    ProjectDataSource              @relation(fields: [datasourceId], references: [id], onDelete: Cascade)
+  previousRevision              Question?                      @relation("QuestionRevisionChain", fields: [previousRevisionId], references: [id], onDelete: SetNull)
+  nextRevisions                 Question[]                     @relation("QuestionRevisionChain")
   aiReviewStrategyRuns          AiReviewStrategyRun[]
   aiReviewStrategyBatchRunItems AiReviewStrategyBatchRunItem[]
   fieldTranslations             QuestionFieldTranslation[]
@@ -257,8 +263,12 @@ model Question {
   updatedAt                     DateTime                       @updatedAt
 
   @@unique([datasourceId, externalRecordId])
+  @@unique([projectId, businessQuestionKey, revisionNo])
   @@index([projectId, status])
   @@index([projectId, datasourceId])
+  @@index([projectId, businessQuestionKey])
+  @@index([projectId, businessQuestionKey, isLatestRevision])
+  @@index([previousRevisionId])
 }
 
 model Review {

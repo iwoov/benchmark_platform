@@ -3,6 +3,17 @@ import { QuestionStatus } from "@prisma/client";
 import { read, utils } from "xlsx";
 
 const fieldAliases = {
+    businessQuestionKey: [
+        "question_id",
+        "questionid",
+        "questionId",
+        "sourcequestionid",
+        "source_question_id",
+        "题目id",
+        "题目ID",
+        "题目编号",
+        "试题编号",
+    ],
     title: ["title", "题目标题", "标题", "questiontitle", "name", "题目名称"],
     content: [
         "content",
@@ -22,6 +33,7 @@ const fieldAliases = {
 
 type ParsedRow = {
     externalRecordId: string;
+    businessQuestionKey: string | null;
     title: string;
     content: string;
     answer: string | null;
@@ -211,6 +223,9 @@ function normalizeRecord(
 ): ParsedRow | null {
     const rawTitle = trimToNull(rawRecord[fieldMapping.title]);
     const rawContent = trimToNull(rawRecord[fieldMapping.content]);
+    const businessQuestionKey = trimToNull(
+        rawRecord[fieldMapping.businessQuestionKey],
+    );
     const answer = trimToNull(rawRecord[fieldMapping.answer]);
     const analysis = trimToNull(rawRecord[fieldMapping.analysis]);
     const questionType = trimToNull(rawRecord[fieldMapping.questionType]);
@@ -245,6 +260,7 @@ function normalizeRecord(
 
     return {
         externalRecordId,
+        businessQuestionKey,
         title,
         content,
         answer,

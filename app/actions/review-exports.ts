@@ -212,6 +212,7 @@ export async function exportReviewQuestionsAction(
     const questions = await prisma.question.findMany({
         where: {
             projectId: parsed.data.projectId,
+            isLatestRevision: true,
             ...(parsed.data.scope === "selected"
                 ? {
                       id: {
@@ -881,6 +882,7 @@ export async function exportReviewReportAction(
     const questions = await prisma.question.findMany({
         where: {
             projectId,
+            isLatestRevision: true,
             ...(parsed.data.scope === "selected"
                 ? { id: { in: uniqueQuestionIds } }
                 : {}),

@@ -30,6 +30,21 @@ const questionStatusMeta = {
     REJECTED: { label: "已驳回", color: "error" },
 } as const;
 
+const reviewStatusMeta = {
+    NONE: { label: "未审核", color: "default" },
+    PASS: { label: "通过", color: "success" },
+    REJECT: { label: "驳回", color: "error" },
+} as const;
+
+const revisionBaseFieldLabelMap = {
+    title: "题目标题",
+    content: "题干",
+    answer: "答案",
+    analysis: "解析",
+    questionType: "题型",
+    difficulty: "难度",
+} as const;
+
 function formatJson(value: unknown) {
     return JSON.stringify(value, null, 2);
 }
@@ -273,6 +288,23 @@ function renderImageField(value: unknown, imageMap: Record<string, string[]>) {
     );
 }
 
+function getRevisionDiffLabel(
+    fieldKey: string,
+    fallbackLabel: string,
+    rawFieldLabelMap: Record<string, string>,
+) {
+    if (fieldKey.startsWith("raw:")) {
+        const rawFieldKey = fieldKey.slice(4);
+        return rawFieldLabelMap[rawFieldKey] ?? rawFieldKey;
+    }
+
+    return (
+        revisionBaseFieldLabelMap[
+            fieldKey as keyof typeof revisionBaseFieldLabelMap
+        ] ?? fallbackLabel
+    );
+}
+
 function getTranslatableFieldValue(value: unknown) {
     if (value == null) {
         return null;
@@ -452,6 +484,14 @@ export function QuestionReviewDetail({
     const rawFieldLabelMap = Object.fromEntries(
         fieldPreference.fieldCatalog.map((field) => [field.key, field.label]),
     );
+    const revisionDiffEntries = question.diffFromPrevious.map((entry) => ({
+        ...entry,
+        resolvedLabel: getRevisionDiffLabel(
+            entry.fieldKey,
+            entry.label,
+            rawFieldLabelMap,
+        ),
+    }));
 
     const imageFieldSet = new Set(question.imageFields ?? []);
     const imageMap = question.imageMap ?? {};
@@ -692,6 +732,13 @@ export function QuestionReviewDetail({
                         <Tag color={questionStatusMeta[question.status].color}>
                             {questionStatusMeta[question.status].label}
                         </Tag>
+                        <Tag color={question.isLatestRevision ? "blue" : "default"}>
+                            V{question.revisionNo}
+                            {question.isLatestRevision ? " · 最新版" : " · 历史版"}
+                        </Tag>
+                        {question.businessQuestionKey ? (
+                            <Tag>{question.businessQuestionKey}</Tag>
+                        ) : null}
                         <Tag>{question.externalRecordId}</Tag>
                         <Tag>{question.project.code}</Tag>
                         <Tag>{question.datasource.name}</Tag>
@@ -706,6 +753,267 @@ export function QuestionReviewDetail({
 
             <div className="review-detail-body">
                 <div className="review-detail-left">
+                    {question.businessQuestionKey ||
+                    question.previousRevision ||
+                    !question.isLatestRevision ? (
+                        <section className="content-surface review-content-surface">
+                            <div
+                                className="section-head"
+                                style={{ marginBottom: 16 }}
+                            >
+                                <div>
+                                    <h3 className="review-section-title">
+                                        修订关系
+                                    </h3>
+                                    <p className="muted review-page-copy">
+                                        当前题目已纳入同题版本链，可回看上一版并对比本次修订内容。
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style={{ display: "grid", gap: 16 }}>
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        flexWrap: "wrap",
+                                    }}
+                                >
+                                    <Tag color="blue">版本 V{question.revisionNo}</Tag>
+                                    <Tag
+                                        color={
+                                            question.isLatestRevision
+                                                ? "success"
+                                                : "default"
+                                        }
+                                    >
+                                        {question.isLatestRevision
+                                            ? "当前为最新版"
+                                            : "当前为历史版"}
+                                    </Tag>
+                                    {question.businessQuestionKey ? (
+                                        <Tag>{question.businessQuestionKey}</Tag>
+                                    ) : null}
+                                </div>
+
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        flexWrap: "wrap",
+                                    }}
+                                >
+                                    {question.previousRevision ? (
+                                        <Button
+                                            size="middle"
+                                            onClick={() =>
+                                                goToQuestion(
+                                                    question.previousRevision?.id ??
+                                                        null,
+                                                )
+                                            }
+                                        >
+                                            查看上一版
+                                        </Button>
+                                    ) : null}
+                                    {!question.isLatestRevision &&
+                                    question.latestRevision &&
+                                    question.latestRevision.id !== question.id ? (
+                                        <Button
+                                            size="middle"
+                                            onClick={() =>
+                                                goToQuestion(
+                                                    question.latestRevision?.id ??
+                                                        null,
+                                                )
+                                            }
+                                        >
+                                            查看最新版
+                                        </Button>
+                                    ) : null}
+                                </div>
+
+                                {question.previousRevision ? (
+                                    <div className="workspace-tip">
+                                        <Tag color="gold">
+                                            上一版 V
+                                            {question.previousRevision.revisionNo}
+                                        </Tag>
+                                        <span>
+                                            {question.previousRevision.title} ·{" "}
+                                            {question.previousRevision.datasource
+                                                .name}
+                                        </span>
+                                        <Tag
+                                            color={
+                                                questionStatusMeta[
+                                                    question.previousRevision
+                                                        .status
+                                                ].color
+                                            }
+                                        >
+                                            {
+                                                questionStatusMeta[
+                                                    question.previousRevision
+                                                        .status
+                                                ].label
+                                            }
+                                        </Tag>
+                                        <Tag
+                                            color={
+                                                reviewStatusMeta[
+                                                    question.previousRevision
+                                                        .manualReview?.decision ??
+                                                        "NONE"
+                                                ].color
+                                            }
+                                        >
+                                            人工审核：
+                                            {
+                                                reviewStatusMeta[
+                                                    question.previousRevision
+                                                        .manualReview?.decision ??
+                                                        "NONE"
+                                                ].label
+                                            }
+                                        </Tag>
+                                        {question.previousRevision.manualReview
+                                            ?.comment ? (
+                                            <span className="muted">
+                                                审核意见：
+                                                {
+                                                    question.previousRevision
+                                                        .manualReview.comment
+                                                }
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
+                                {revisionDiffEntries.length ? (
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gap: 12,
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 8,
+                                                flexWrap: "wrap",
+                                            }}
+                                        >
+                                            <h4
+                                                style={{
+                                                    margin: 0,
+                                                    fontSize: 15,
+                                                }}
+                                            >
+                                                与上一版差异
+                                            </h4>
+                                            <Tag color="processing">
+                                                {revisionDiffEntries.length} 处
+                                            </Tag>
+                                        </div>
+                                        <div className="detail-card-grid">
+                                            {revisionDiffEntries.map((entry) => (
+                                                <div
+                                                    key={entry.fieldKey}
+                                                    className="detail-field-card"
+                                                >
+                                                    <div
+                                                        className="detail-field-head"
+                                                        style={{
+                                                            marginBottom: 12,
+                                                        }}
+                                                    >
+                                                        <div className="detail-field-label">
+                                                            {entry.resolvedLabel}
+                                                            {entry.kind === "raw" ? (
+                                                                <span
+                                                                    className="muted"
+                                                                    style={{
+                                                                        fontWeight: 400,
+                                                                        fontSize: 11,
+                                                                        marginLeft: 6,
+                                                                    }}
+                                                                >
+                                                                    {entry.fieldKey.slice(
+                                                                        4,
+                                                                    )}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            display: "grid",
+                                                            gap: 12,
+                                                        }}
+                                                    >
+                                                        <div>
+                                                            <div
+                                                                className="muted"
+                                                                style={{
+                                                                    marginBottom: 6,
+                                                                    fontSize: 12,
+                                                                }}
+                                                            >
+                                                                上一版
+                                                            </div>
+                                                            <div className="detail-field-value">
+                                                                {renderRawFieldValue(
+                                                                    entry.previousValue,
+                                                                    entry.kind ===
+                                                                        "raw"
+                                                                        ? entry.fieldKey.slice(
+                                                                              4,
+                                                                          )
+                                                                        : undefined,
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div
+                                                                className="muted"
+                                                                style={{
+                                                                    marginBottom: 6,
+                                                                    fontSize: 12,
+                                                                }}
+                                                            >
+                                                                当前版本
+                                                            </div>
+                                                            <div className="detail-field-value">
+                                                                {renderRawFieldValue(
+                                                                    entry.currentValue,
+                                                                    entry.kind ===
+                                                                        "raw"
+                                                                        ? entry.fieldKey.slice(
+                                                                              4,
+                                                                          )
+                                                                        : undefined,
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : question.previousRevision ? (
+                                    <div className="workspace-tip">
+                                        <Tag color="default">对比结果</Tag>
+                                        <span>
+                                            已关联上一版，但当前未识别出审核字段变化。
+                                        </span>
+                                    </div>
+                                ) : null}
+                            </div>
+                        </section>
+                    ) : null}
+
                     <section className="content-surface review-content-surface">
                         <div
                             className="section-head"

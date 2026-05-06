@@ -82,6 +82,9 @@ type ReviewQuestionItem = {
         reviewerName: string;
     } | null;
     updatedAt: string;
+    businessQuestionKey: string | null;
+    revisionNo: number;
+    hasPreviousRevision: boolean;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
@@ -1146,12 +1149,39 @@ export function ReviewQuestionList({
                                                 </div>
                                                 <div
                                                     className="muted"
-                                                    style={cellStyle}
+                                                    style={{
+                                                        ...cellStyle,
+                                                        display: "grid",
+                                                        gap: 4,
+                                                    }}
                                                     title={
                                                         question.datasourceName
                                                     }
                                                 >
-                                                    {question.datasourceName}
+                                                    <span>
+                                                        {question.datasourceName}
+                                                    </span>
+                                                    <div
+                                                        style={{
+                                                            display: "flex",
+                                                            gap: 6,
+                                                            flexWrap: "wrap",
+                                                        }}
+                                                    >
+                                                        {question.hasPreviousRevision ? (
+                                                            <Tag color="gold">
+                                                                修订 V
+                                                                {question.revisionNo}
+                                                            </Tag>
+                                                        ) : null}
+                                                        {question.businessQuestionKey ? (
+                                                            <Tag>
+                                                                {
+                                                                    question.businessQuestionKey
+                                                                }
+                                                            </Tag>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <div

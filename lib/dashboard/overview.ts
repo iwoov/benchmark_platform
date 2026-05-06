@@ -687,6 +687,7 @@ async function getPlatformAdminOverview(
         prisma.question.groupBy({
             by: ["projectId"],
             where: {
+                isLatestRevision: true,
                 status: {
                     in: [...PENDING_QUESTION_STATUSES],
                 },
@@ -990,6 +991,7 @@ async function getAuthorOverview(
                     projectId: {
                         in: projectIds,
                     },
+                    isLatestRevision: true,
                     status: {
                         in: [
                             QuestionStatus.DRAFT,
@@ -1007,6 +1009,7 @@ async function getAuthorOverview(
                     projectId: {
                         in: projectIds,
                     },
+                    isLatestRevision: true,
                     updatedAt: {
                         gte: windowStart,
                     },
@@ -1031,6 +1034,7 @@ async function getAuthorOverview(
                     projectId: {
                         in: projectIds,
                     },
+                    isLatestRevision: true,
                 },
                 _count: {
                     _all: true,
@@ -1159,6 +1163,7 @@ async function getReviewerOverview(
                 projectId: {
                     in: projectIds,
                 },
+                isLatestRevision: true,
                 status: {
                     in: [...PENDING_QUESTION_STATUSES],
                 },
@@ -1213,6 +1218,7 @@ async function getReviewerOverview(
                 projectId: {
                     in: projectIds,
                 },
+                isLatestRevision: true,
                 status: {
                     in: [...PENDING_QUESTION_STATUSES],
                 },

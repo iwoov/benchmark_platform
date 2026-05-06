@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { QuestionStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { parseImportedProjectData } from "@/lib/import/project-data";
 import { deleteDatasourceUploads } from "@/lib/import/file-storage";
@@ -41,6 +42,90 @@ function parseStringArray(value: unknown) {
         (item): item is string =>
             typeof item === "string" && Boolean(item.trim()),
     );
+}
+
+function extractRawRecord(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+        return null;
+    }
+
+    const rawRecord = (metadata as Record<string, unknown>).rawRecord;
+
+    if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
+        return null;
+    }
+
+    return rawRecord;
+}
+
+function normalizeComparableValue(value: unknown): unknown {
+    if (value === undefined) {
+        return null;
+    }
+
+    if (value === null) {
+        return null;
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeComparableValue(item));
+    }
+
+    if (typeof value === "object") {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .sort(([left], [right]) => left.localeCompare(right, "zh-CN"))
+                .map(([key, item]) => [key, normalizeComparableValue(item)]),
+        );
+    }
+
+    return value;
+}
+
+function toStableComparableString(value: unknown) {
+    return JSON.stringify(normalizeComparableValue(value));
+}
+
+function revisionPayloadChanged(
+    previousQuestion: {
+        title: string;
+        content: string;
+        answer: string | null;
+        analysis: string | null;
+        questionType: string | null;
+        difficulty: string | null;
+        metadata: unknown;
+    },
+    nextRow: {
+        title: string;
+        content: string;
+        answer: string | null;
+        analysis: string | null;
+        questionType: string | null;
+        difficulty: string | null;
+        metadata: unknown;
+    },
+) {
+    const fieldChanged =
+        previousQuestion.title !== nextRow.title ||
+        previousQuestion.content !== nextRow.content ||
+        previousQuestion.answer !== nextRow.answer ||
+        previousQuestion.analysis !== nextRow.analysis ||
+        previousQuestion.questionType !== nextRow.questionType ||
+        previousQuestion.difficulty !== nextRow.difficulty;
+
+    if (fieldChanged) {
+        return true;
+    }
+
+    return (
+        toStableComparableString(extractRawRecord(previousQuestion.metadata)) !==
+        toStableComparableString(extractRawRecord(nextRow.metadata))
+    );
+}
+
+function normalizeRevisionImportStatus(status: QuestionStatus): QuestionStatus {
+    return status === "DRAFT" ? "DRAFT" : "SUBMITTED";
 }
 
 function revalidateImportPaths() {
@@ -122,6 +207,74 @@ export async function importProjectDataAction(
         const importedAt = new Date();
 
         const result = await prisma.$transaction(async (tx) => {
+            const revisionKeys = [
+                ...new Set(
+                    importedPayload.rows
+                        .map((row) => row.businessQuestionKey)
+                        .filter(
+                            (value): value is string =>
+                                typeof value === "string" &&
+                                Boolean(value.trim()),
+                        ),
+                ),
+            ];
+            const latestRevisionMap = new Map<
+                string,
+                {
+                    id: string;
+                    revisionNo: number;
+                    title: string;
+                    content: string;
+                    answer: string | null;
+                    analysis: string | null;
+                    questionType: string | null;
+                    difficulty: string | null;
+                    metadata: unknown;
+                }
+            >();
+
+            if (revisionKeys.length) {
+                const latestQuestions = await tx.question.findMany({
+                    where: {
+                        projectId: project.id,
+                        businessQuestionKey: {
+                            in: revisionKeys,
+                        },
+                        isLatestRevision: true,
+                    },
+                    select: {
+                        id: true,
+                        businessQuestionKey: true,
+                        revisionNo: true,
+                        title: true,
+                        content: true,
+                        answer: true,
+                        analysis: true,
+                        questionType: true,
+                        difficulty: true,
+                        metadata: true,
+                    },
+                });
+
+                latestQuestions.forEach((question) => {
+                    if (!question.businessQuestionKey) {
+                        return;
+                    }
+
+                    latestRevisionMap.set(question.businessQuestionKey, {
+                        id: question.id,
+                        revisionNo: question.revisionNo,
+                        title: question.title,
+                        content: question.content,
+                        answer: question.answer,
+                        analysis: question.analysis,
+                        questionType: question.questionType,
+                        difficulty: question.difficulty,
+                        metadata: question.metadata,
+                    });
+                });
+            }
+
             const datasource = await tx.projectDataSource.create({
                 data: {
                     projectId: project.id,
@@ -140,22 +293,90 @@ export async function importProjectDataAction(
                 },
             });
 
-            await tx.question.createMany({
-                data: importedPayload.rows.map((row) => ({
-                    projectId: project.id,
-                    datasourceId: datasource.id,
-                    externalRecordId: row.externalRecordId,
-                    title: row.title,
-                    content: row.content,
-                    answer: row.answer,
-                    analysis: row.analysis,
-                    questionType: row.questionType,
-                    difficulty: row.difficulty,
-                    status: row.status,
-                    metadata: row.metadata,
-                    lastSyncedAt: importedAt,
-                })),
-            });
+            let createdQuestionCount = 0;
+            let newQuestionCount = 0;
+            let revisedQuestionCount = 0;
+            let skippedUnchangedRevisionCount = 0;
+
+            for (const row of importedPayload.rows) {
+                const previousRevision = row.businessQuestionKey
+                    ? latestRevisionMap.get(row.businessQuestionKey)
+                    : null;
+
+                if (
+                    previousRevision &&
+                    !revisionPayloadChanged(previousRevision, row)
+                ) {
+                    skippedUnchangedRevisionCount += 1;
+                    continue;
+                }
+
+                const revisionNo = previousRevision
+                    ? previousRevision.revisionNo + 1
+                    : 1;
+                const normalizedStatus = previousRevision
+                    ? normalizeRevisionImportStatus(row.status)
+                    : row.status;
+                const createdQuestion = await tx.question.create({
+                    data: {
+                        projectId: project.id,
+                        datasourceId: datasource.id,
+                        externalRecordId: row.externalRecordId,
+                        businessQuestionKey: row.businessQuestionKey,
+                        title: row.title,
+                        content: row.content,
+                        answer: row.answer,
+                        analysis: row.analysis,
+                        questionType: row.questionType,
+                        difficulty: row.difficulty,
+                        status: normalizedStatus,
+                        revisionNo,
+                        isLatestRevision: true,
+                        previousRevisionId: previousRevision?.id ?? null,
+                        metadata: row.metadata,
+                        lastSyncedAt: importedAt,
+                    },
+                    select: {
+                        id: true,
+                    },
+                });
+
+                if (previousRevision) {
+                    await tx.question.update({
+                        where: {
+                            id: previousRevision.id,
+                        },
+                        data: {
+                            isLatestRevision: false,
+                        },
+                    });
+                    revisedQuestionCount += 1;
+                } else {
+                    newQuestionCount += 1;
+                }
+
+                createdQuestionCount += 1;
+
+                if (row.businessQuestionKey) {
+                    latestRevisionMap.set(row.businessQuestionKey, {
+                        id: createdQuestion.id,
+                        revisionNo,
+                        title: row.title,
+                        content: row.content,
+                        answer: row.answer,
+                        analysis: row.analysis,
+                        questionType: row.questionType,
+                        difficulty: row.difficulty,
+                        metadata: row.metadata,
+                    });
+                }
+            }
+
+            if (!createdQuestionCount) {
+                throw new Error(
+                    "导入内容与当前项目中的最新题目相比没有变化，未创建新数据源。",
+                );
+            }
 
             await tx.syncLog.create({
                 data: {
@@ -172,8 +393,11 @@ export async function importProjectDataAction(
                         datasourceName,
                     },
                     responsePayload: {
-                        importedCount: importedPayload.rows.length,
+                        importedCount: createdQuestionCount,
+                        newQuestionCount,
+                        revisedQuestionCount,
                         skippedCount: importedPayload.skippedRowCount,
+                        skippedUnchangedRevisionCount,
                     },
                     status: "SUCCESS",
                 },
@@ -188,6 +412,10 @@ export async function importProjectDataAction(
 
             return {
                 datasource,
+                createdQuestionCount,
+                newQuestionCount,
+                revisedQuestionCount,
+                skippedUnchangedRevisionCount,
                 updatedStrategyCount,
             };
         });
@@ -195,7 +423,7 @@ export async function importProjectDataAction(
         revalidateImportPaths();
 
         return {
-            success: `已为项目 ${project.name} 导入 ${importedPayload.rows.length} 条题目，并创建数据源 ${result.datasource.name}。${
+            success: `已为项目 ${project.name} 导入 ${result.createdQuestionCount} 条题目，并创建数据源 ${result.datasource.name}。新增 ${result.newQuestionCount} 条，修订 ${result.revisedQuestionCount} 条，跳过未变化修订 ${result.skippedUnchangedRevisionCount} 条。${
                 autoApplyAiStrategies
                     ? result.updatedStrategyCount
                         ? ` 已自动加入 ${result.updatedStrategyCount} 条审核策略范围。`
