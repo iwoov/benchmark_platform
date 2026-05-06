@@ -978,6 +978,144 @@ select {
     padding: 0;
 }
 
+.revision-panel {
+    display: grid;
+    gap: 14px;
+}
+
+.revision-summary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.revision-version-card {
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--panel-muted);
+}
+
+.revision-version-card-current {
+    border-color: color-mix(in srgb, var(--brand) 36%, var(--line));
+    background: color-mix(in srgb, var(--brand) 5%, var(--panel-muted));
+}
+
+.revision-version-card-empty {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+}
+
+.revision-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.revision-card-kicker,
+.revision-key-label,
+.revision-diff-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.revision-card-title {
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.revision-card-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+}
+
+.revision-card-note {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.revision-key-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--line-soft);
+}
+
+.revision-key-row > div {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.revision-diff-collapse {
+    border-radius: var(--radius-md);
+    background: var(--panel-muted);
+}
+
+.revision-diff-collapse .ant-collapse-item {
+    border-bottom: 0;
+}
+
+.revision-diff-collapse .ant-collapse-header {
+    align-items: center !important;
+    padding: 10px 12px !important;
+}
+
+.revision-diff-collapse .ant-collapse-content-box {
+    padding: 0 12px 12px !important;
+}
+
+.revision-diff-card {
+    background: #ffffff;
+}
+
+.revision-diff-values {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.revision-diff-label {
+    margin-bottom: 6px;
+}
+
+.revision-raw-key {
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.revision-empty-state {
+    padding: 12px 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
 .detail-field-translation {
     margin-top: 12px;
     padding: 10px 0 0;
@@ -3012,8 +3150,15 @@ a.overview-detail-item:hover {
     .review-filter-row,
     .settings-form-grid,
     .detail-meta-grid,
-    .review-detail-body {
+    .review-detail-body,
+    .revision-summary-row,
+    .revision-diff-values {
         grid-template-columns: 1fr;
+    }
+
+    .revision-key-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .review-detail-right {

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { App, Button, Checkbox, Input, Select, Space, Tag } from "antd";
+import { App, Button, Checkbox, Collapse, Input, Select, Space, Tag } from "antd";
 import {
     ArrowLeft,
     ChevronLeft,
@@ -769,40 +769,7 @@ export function QuestionReviewDetail({
                                         当前题目已纳入同题版本链，可回看上一版并对比本次修订内容。
                                     </p>
                                 </div>
-                            </div>
-
-                            <div style={{ display: "grid", gap: 16 }}>
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        gap: 8,
-                                        flexWrap: "wrap",
-                                    }}
-                                >
-                                    <Tag color="blue">版本 V{question.revisionNo}</Tag>
-                                    <Tag
-                                        color={
-                                            question.isLatestRevision
-                                                ? "success"
-                                                : "default"
-                                        }
-                                    >
-                                        {question.isLatestRevision
-                                            ? "当前为最新版"
-                                            : "当前为历史版"}
-                                    </Tag>
-                                    {question.businessQuestionKey ? (
-                                        <Tag>{question.businessQuestionKey}</Tag>
-                                    ) : null}
-                                </div>
-
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        gap: 8,
-                                        flexWrap: "wrap",
-                                    }}
-                                >
+                                <Space size={8} wrap>
                                     {question.previousRevision ? (
                                         <Button
                                             size="middle"
@@ -831,184 +798,276 @@ export function QuestionReviewDetail({
                                             查看最新版
                                         </Button>
                                     ) : null}
+                                </Space>
+                            </div>
+
+                            <div className="revision-panel">
+                                <div className="revision-summary-row">
+                                    <div className="revision-version-card revision-version-card-current">
+                                        <div className="revision-card-head">
+                                            <span className="revision-card-kicker">
+                                                当前版本
+                                            </span>
+                                            <Tag color="blue">
+                                                V{question.revisionNo}
+                                            </Tag>
+                                        </div>
+                                        <div className="revision-card-title">
+                                            {question.title}
+                                        </div>
+                                        <div className="revision-card-meta">
+                                            <Tag
+                                                color={
+                                                    question.isLatestRevision
+                                                        ? "success"
+                                                        : "default"
+                                                }
+                                            >
+                                                {question.isLatestRevision
+                                                    ? "最新版"
+                                                    : "历史版"}
+                                            </Tag>
+                                            <Tag
+                                                color={
+                                                    questionStatusMeta[
+                                                        question.status
+                                                    ].color
+                                                }
+                                            >
+                                                {
+                                                    questionStatusMeta[
+                                                        question.status
+                                                    ].label
+                                                }
+                                            </Tag>
+                                            <span className="muted">
+                                                {question.datasource.name}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {question.previousRevision ? (
+                                        <div className="revision-version-card">
+                                            <div className="revision-card-head">
+                                                <span className="revision-card-kicker">
+                                                    上一版
+                                                </span>
+                                                <Tag color="gold">
+                                                    V
+                                                    {
+                                                        question.previousRevision
+                                                            .revisionNo
+                                                    }
+                                                </Tag>
+                                            </div>
+                                            <div className="revision-card-title">
+                                                {question.previousRevision.title}
+                                            </div>
+                                            <div className="revision-card-meta">
+                                                <Tag
+                                                    color={
+                                                        questionStatusMeta[
+                                                            question
+                                                                .previousRevision
+                                                                .status
+                                                        ].color
+                                                    }
+                                                >
+                                                    {
+                                                        questionStatusMeta[
+                                                            question
+                                                                .previousRevision
+                                                                .status
+                                                        ].label
+                                                    }
+                                                </Tag>
+                                                <Tag
+                                                    color={
+                                                        reviewStatusMeta[
+                                                            question
+                                                                .previousRevision
+                                                                .manualReview
+                                                                ?.decision ??
+                                                                "NONE"
+                                                        ].color
+                                                    }
+                                                >
+                                                    人工：
+                                                    {
+                                                        reviewStatusMeta[
+                                                            question
+                                                                .previousRevision
+                                                                .manualReview
+                                                                ?.decision ??
+                                                                "NONE"
+                                                        ].label
+                                                    }
+                                                </Tag>
+                                                <span className="muted">
+                                                    {
+                                                        question.previousRevision
+                                                            .datasource.name
+                                                    }
+                                                </span>
+                                            </div>
+                                            {question.previousRevision.manualReview
+                                                ?.comment ? (
+                                                <div className="revision-card-note">
+                                                    {
+                                                        question.previousRevision
+                                                            .manualReview.comment
+                                                    }
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : (
+                                        <div className="revision-version-card revision-version-card-empty">
+                                            <div className="revision-card-head">
+                                                <span className="revision-card-kicker">
+                                                    上一版
+                                                </span>
+                                                <Tag>无</Tag>
+                                            </div>
+                                            <div className="muted">
+                                                当前题目暂无可对比的上一版本。
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="revision-key-row">
+                                    {question.businessQuestionKey ? (
+                                        <div>
+                                            <span className="revision-key-label">
+                                                业务题目 ID
+                                            </span>
+                                            <Tag>{question.businessQuestionKey}</Tag>
+                                        </div>
+                                    ) : null}
+                                    <div>
+                                        <span className="revision-key-label">
+                                            当前记录
+                                        </span>
+                                        <Tag>{question.externalRecordId}</Tag>
+                                    </div>
+                                    {question.previousRevision ? (
+                                        <div>
+                                            <span className="revision-key-label">
+                                                上一版记录
+                                            </span>
+                                            <Tag>
+                                                {
+                                                    question.previousRevision
+                                                        .externalRecordId
+                                                }
+                                            </Tag>
+                                        </div>
+                                    ) : null}
                                 </div>
 
                                 {question.previousRevision ? (
-                                    <div className="workspace-tip">
-                                        <Tag color="gold">
-                                            上一版 V
-                                            {question.previousRevision.revisionNo}
-                                        </Tag>
-                                        <span>
-                                            {question.previousRevision.title} ·{" "}
-                                            {question.previousRevision.datasource
-                                                .name}
-                                        </span>
-                                        <Tag
-                                            color={
-                                                questionStatusMeta[
-                                                    question.previousRevision
-                                                        .status
-                                                ].color
-                                            }
-                                        >
+                                    <Collapse
+                                        className="revision-diff-collapse"
+                                        bordered={false}
+                                        items={[
                                             {
-                                                questionStatusMeta[
-                                                    question.previousRevision
-                                                        .status
-                                                ].label
-                                            }
-                                        </Tag>
-                                        <Tag
-                                            color={
-                                                reviewStatusMeta[
-                                                    question.previousRevision
-                                                        .manualReview?.decision ??
-                                                        "NONE"
-                                                ].color
-                                            }
-                                        >
-                                            人工审核：
-                                            {
-                                                reviewStatusMeta[
-                                                    question.previousRevision
-                                                        .manualReview?.decision ??
-                                                        "NONE"
-                                                ].label
-                                            }
-                                        </Tag>
-                                        {question.previousRevision.manualReview
-                                            ?.comment ? (
-                                            <span className="muted">
-                                                审核意见：
-                                                {
-                                                    question.previousRevision
-                                                        .manualReview.comment
-                                                }
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                ) : null}
-
-                                {revisionDiffEntries.length ? (
-                                    <div
-                                        style={{
-                                            display: "grid",
-                                            gap: 12,
-                                        }}
-                                    >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                                flexWrap: "wrap",
-                                            }}
-                                        >
-                                            <h4
-                                                style={{
-                                                    margin: 0,
-                                                    fontSize: 15,
-                                                }}
-                                            >
-                                                与上一版差异
-                                            </h4>
-                                            <Tag color="processing">
-                                                {revisionDiffEntries.length} 处
-                                            </Tag>
-                                        </div>
-                                        <div className="detail-card-grid">
-                                            {revisionDiffEntries.map((entry) => (
-                                                <div
-                                                    key={entry.fieldKey}
-                                                    className="detail-field-card"
-                                                >
-                                                    <div
-                                                        className="detail-field-head"
-                                                        style={{
-                                                            marginBottom: 12,
-                                                        }}
-                                                    >
-                                                        <div className="detail-field-label">
-                                                            {entry.resolvedLabel}
-                                                            {entry.kind === "raw" ? (
-                                                                <span
-                                                                    className="muted"
-                                                                    style={{
-                                                                        fontWeight: 400,
-                                                                        fontSize: 11,
-                                                                        marginLeft: 6,
-                                                                    }}
-                                                                >
-                                                                    {entry.fieldKey.slice(
-                                                                        4,
-                                                                    )}
-                                                                </span>
-                                                            ) : null}
+                                                key: "revision-diff",
+                                                label: (
+                                                    <Space size={8} wrap>
+                                                        <span>
+                                                            与上一版差异
+                                                        </span>
+                                                        <Tag
+                                                            color={
+                                                                revisionDiffEntries.length
+                                                                    ? "processing"
+                                                                    : "default"
+                                                            }
+                                                        >
+                                                            {
+                                                                revisionDiffEntries.length
+                                                            }{" "}
+                                                            处
+                                                        </Tag>
+                                                    </Space>
+                                                ),
+                                                children:
+                                                    revisionDiffEntries.length ? (
+                                                        <div className="detail-card-grid">
+                                                            {revisionDiffEntries.map(
+                                                                (entry) => (
+                                                                    <div
+                                                                        key={
+                                                                            entry.fieldKey
+                                                                        }
+                                                                        className="detail-field-card revision-diff-card"
+                                                                    >
+                                                                        <div
+                                                                            className="detail-field-head"
+                                                                            style={{
+                                                                                marginBottom: 12,
+                                                                            }}
+                                                                        >
+                                                                            <div className="detail-field-label">
+                                                                                {
+                                                                                    entry.resolvedLabel
+                                                                                }
+                                                                                {entry.kind ===
+                                                                                "raw" ? (
+                                                                                    <span className="revision-raw-key">
+                                                                                        {entry.fieldKey.slice(
+                                                                                            4,
+                                                                                        )}
+                                                                                    </span>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="revision-diff-values">
+                                                                            <div>
+                                                                                <div className="revision-diff-label">
+                                                                                    上一版
+                                                                                </div>
+                                                                                <div className="detail-field-value">
+                                                                                    {renderRawFieldValue(
+                                                                                        entry.previousValue,
+                                                                                        entry.kind ===
+                                                                                            "raw"
+                                                                                            ? entry.fieldKey.slice(
+                                                                                                  4,
+                                                                                              )
+                                                                                            : undefined,
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div>
+                                                                                <div className="revision-diff-label">
+                                                                                    当前版本
+                                                                                </div>
+                                                                                <div className="detail-field-value">
+                                                                                    {renderRawFieldValue(
+                                                                                        entry.currentValue,
+                                                                                        entry.kind ===
+                                                                                            "raw"
+                                                                                            ? entry.fieldKey.slice(
+                                                                                                  4,
+                                                                                              )
+                                                                                            : undefined,
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ),
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                    <div
-                                                        style={{
-                                                            display: "grid",
-                                                            gap: 12,
-                                                        }}
-                                                    >
-                                                        <div>
-                                                            <div
-                                                                className="muted"
-                                                                style={{
-                                                                    marginBottom: 6,
-                                                                    fontSize: 12,
-                                                                }}
-                                                            >
-                                                                上一版
-                                                            </div>
-                                                            <div className="detail-field-value">
-                                                                {renderRawFieldValue(
-                                                                    entry.previousValue,
-                                                                    entry.kind ===
-                                                                        "raw"
-                                                                        ? entry.fieldKey.slice(
-                                                                              4,
-                                                                          )
-                                                                        : undefined,
-                                                                )}
-                                                            </div>
+                                                    ) : (
+                                                        <div className="revision-empty-state">
+                                                            已关联上一版，但当前未识别出审核字段变化。
                                                         </div>
-                                                        <div>
-                                                            <div
-                                                                className="muted"
-                                                                style={{
-                                                                    marginBottom: 6,
-                                                                    fontSize: 12,
-                                                                }}
-                                                            >
-                                                                当前版本
-                                                            </div>
-                                                            <div className="detail-field-value">
-                                                                {renderRawFieldValue(
-                                                                    entry.currentValue,
-                                                                    entry.kind ===
-                                                                        "raw"
-                                                                        ? entry.fieldKey.slice(
-                                                                              4,
-                                                                          )
-                                                                        : undefined,
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ) : question.previousRevision ? (
-                                    <div className="workspace-tip">
-                                        <Tag color="default">对比结果</Tag>
-                                        <span>
-                                            已关联上一版，但当前未识别出审核字段变化。
-                                        </span>
-                                    </div>
+                                                    ),
+                                            },
+                                        ]}
+                                    />
                                 ) : null}
                             </div>
                         </section>
