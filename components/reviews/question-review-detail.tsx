@@ -1313,19 +1313,6 @@ export function QuestionReviewDetail({
                                                     ].label
                                                 }
                                             </Tag>
-                                            <Tag
-                                                color={
-                                                    questionStatusMeta[
-                                                        question.status
-                                                    ].color
-                                                }
-                                            >
-                                                {
-                                                    questionStatusMeta[
-                                                        question.status
-                                                    ].label
-                                                }
-                                            </Tag>
                                         </div>
                                         {question.manualReview ? (
                                             <div className="muted">

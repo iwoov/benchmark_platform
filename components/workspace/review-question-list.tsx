@@ -84,6 +84,7 @@ type ReviewQuestionItem = {
     updatedAt: string;
     businessQuestionKey: string | null;
     revisionNo: number;
+    isLatestRevision: boolean;
     hasPreviousRevision: boolean;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
@@ -401,6 +402,7 @@ export function ReviewQuestionList({
     const gridTemplateColumns = [
         "52px",
         "180px",
+        "120px",
         "160px",
         "140px",
         "140px",
@@ -408,7 +410,7 @@ export function ReviewQuestionList({
         ...listColumns.map(() => "220px"),
     ].join(" ");
     const tableWidth =
-        52 + 180 + 160 + 140 + 140 + 180 + listColumns.length * 220;
+        52 + 180 + 120 + 160 + 140 + 140 + 180 + listColumns.length * 220;
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -1063,6 +1065,7 @@ export function ReviewQuestionList({
                                             />
                                         </div>
                                         <div style={cellStyle}>数据源</div>
+                                        <div style={cellStyle}>版本</div>
                                         <div style={cellStyle}>AI审核</div>
                                         <div style={cellStyle}>人工审核</div>
                                         <div style={cellStyle}>更新时间</div>
@@ -1151,8 +1154,6 @@ export function ReviewQuestionList({
                                                     className="muted"
                                                     style={{
                                                         ...cellStyle,
-                                                        display: "grid",
-                                                        gap: 4,
                                                     }}
                                                     title={
                                                         question.datasourceName
@@ -1161,27 +1162,20 @@ export function ReviewQuestionList({
                                                     <span>
                                                         {question.datasourceName}
                                                     </span>
-                                                    <div
-                                                        style={{
-                                                            display: "flex",
-                                                            gap: 6,
-                                                            flexWrap: "wrap",
-                                                        }}
+                                                </div>
+                                                <div style={cellStyle}>
+                                                    <Tag
+                                                        color={
+                                                            question.isLatestRevision
+                                                                ? "blue"
+                                                                : "default"
+                                                        }
                                                     >
-                                                        {question.hasPreviousRevision ? (
-                                                            <Tag color="gold">
-                                                                修订 V
-                                                                {question.revisionNo}
-                                                            </Tag>
-                                                        ) : null}
-                                                        {question.businessQuestionKey ? (
-                                                            <Tag>
-                                                                {
-                                                                    question.businessQuestionKey
-                                                                }
-                                                            </Tag>
-                                                        ) : null}
-                                                    </div>
+                                                        V{question.revisionNo} ·{" "}
+                                                        {question.isLatestRevision
+                                                            ? "最新版"
+                                                            : "历史版"}
+                                                    </Tag>
                                                 </div>
                                                 <div>
                                                     <div

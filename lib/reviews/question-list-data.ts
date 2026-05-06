@@ -315,6 +315,7 @@ export type ReviewQuestionListItem = {
     updatedAt: string;
     businessQuestionKey: string | null;
     revisionNo: number;
+    isLatestRevision: boolean;
     hasPreviousRevision: boolean;
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
@@ -515,6 +516,24 @@ function matchesQuestionCondition(
     return normalizedFieldValue.includes(normalizedCompareValue);
 }
 
+function getExactDatasourceFilter(
+    datasourceId: string | undefined,
+    datasourceCondition: ReviewQuestionFilterCondition | undefined,
+) {
+    if (datasourceId) {
+        return datasourceId;
+    }
+
+    if (
+        datasourceCondition?.operator === "equals" &&
+        datasourceCondition.value
+    ) {
+        return datasourceCondition.value;
+    }
+
+    return null;
+}
+
 export type ReviewQuestionNavigation = {
     previousQuestionId: string | null;
     nextQuestionId: string | null;
@@ -576,6 +595,7 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
             externalRecordId: true,
             businessQuestionKey: true,
             revisionNo: true,
+            isLatestRevision: true,
             previousRevisionId: true,
             project: {
                 select: {
@@ -647,6 +667,7 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                 updatedAt: question.updatedAt.toISOString(),
                 businessQuestionKey: question.businessQuestionKey,
                 revisionNo: question.revisionNo,
+                isLatestRevision: question.isLatestRevision,
                 hasPreviousRevision: Boolean(question.previousRevisionId),
                 sourceRowNumber: extractSourceRowNumber(question.metadata),
                 rawRecord: extractRawRecord(question.metadata),
@@ -688,6 +709,11 @@ export async function getReviewQuestionListPageData({
     const datasourceCondition = conditions.find(
         (condition) => condition.fieldKey === "datasourceId",
     );
+    const exactDatasourceFilter = getExactDatasourceFilter(
+        datasourceId,
+        datasourceCondition,
+    );
+    const shouldIncludeHistoricalRevisions = Boolean(exactDatasourceFilter);
     const aiReviewStatusCondition = conditions.find(
         (condition) => condition.fieldKey === "aiReviewStatus",
     );
@@ -718,7 +744,9 @@ export async function getReviewQuestionListPageData({
     const candidateRows = await prisma.question.findMany({
         where: {
             projectId,
-            isLatestRevision: true,
+            isLatestRevision: shouldIncludeHistoricalRevisions
+                ? undefined
+                : true,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {
@@ -730,8 +758,8 @@ export async function getReviewQuestionListPageData({
                             not: validStatusValue,
                         }
                       : undefined,
-            datasourceId: datasourceId
-                ? { equals: datasourceId }
+            datasourceId: exactDatasourceFilter
+                ? { equals: exactDatasourceFilter }
                 : datasourceCondition?.operator === "equals"
                   ? {
                         equals: datasourceCondition.value,
@@ -751,6 +779,7 @@ export async function getReviewQuestionListPageData({
             externalRecordId: true,
             businessQuestionKey: true,
             revisionNo: true,
+            isLatestRevision: true,
             previousRevisionId: true,
             project: {
                 select: {
@@ -807,6 +836,7 @@ export async function getReviewQuestionListPageData({
                 updatedAt: question.updatedAt.toISOString(),
                 businessQuestionKey: question.businessQuestionKey,
                 revisionNo: question.revisionNo,
+                isLatestRevision: question.isLatestRevision,
                 hasPreviousRevision: Boolean(question.previousRevisionId),
                 sourceRowNumber: extractSourceRowNumber(question.metadata),
                 rawRecord: extractRawRecord(question.metadata),
@@ -1193,6 +1223,7 @@ export async function getReviewQuestionNavigation({
         select: {
             id: true,
             projectId: true,
+            datasourceId: true,
             businessQuestionKey: true,
             isLatestRevision: true,
         },
@@ -1212,6 +1243,11 @@ export async function getReviewQuestionNavigation({
     const datasourceCondition = conditions.find(
         (condition) => condition.fieldKey === "datasourceId",
     );
+    const exactDatasourceFilter = getExactDatasourceFilter(
+        undefined,
+        datasourceCondition,
+    );
+    const shouldIncludeHistoricalRevisions = Boolean(exactDatasourceFilter);
     const validStatusValue =
         statusCondition?.value === "DRAFT" ||
         statusCondition?.value === "SUBMITTED" ||
@@ -1226,7 +1262,9 @@ export async function getReviewQuestionNavigation({
     const orderedQuestions = await prisma.question.findMany({
         where: {
             projectId: scopedProjectId,
-            isLatestRevision: true,
+            isLatestRevision: shouldIncludeHistoricalRevisions
+                ? undefined
+                : true,
             status:
                 statusCondition?.operator === "equals" && validStatusValue
                     ? {
@@ -1238,8 +1276,11 @@ export async function getReviewQuestionNavigation({
                             not: validStatusValue,
                         }
                       : undefined,
-            datasourceId:
-                datasourceCondition?.operator === "equals"
+            datasourceId: exactDatasourceFilter
+                ? {
+                      equals: exactDatasourceFilter,
+                  }
+                : datasourceCondition?.operator === "equals"
                     ? {
                           equals: datasourceCondition.value,
                       }
@@ -1316,6 +1357,7 @@ export async function getReviewQuestionNavigation({
     let resolvedNavigationQuestionId = questionId;
 
     if (
+        !shouldIncludeHistoricalRevisions &&
         !currentQuestion.isLatestRevision &&
         currentQuestion.businessQuestionKey
     ) {
