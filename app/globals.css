@@ -174,9 +174,32 @@ select {
 }
 
 .login-form-card .ant-input-affix-wrapper,
-.login-form-card .ant-input-affix-wrapper > input.ant-input {
+.login-form-card .ant-input-affix-wrapper > input.ant-input,
+.login-form-card .login-input-control {
     color: var(--text);
     caret-color: var(--brand);
+}
+
+.login-input-shell {
+    position: relative;
+    display: block;
+}
+
+.login-input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    z-index: 1;
+    color: var(--text);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.login-form-card .login-input-control.ant-input-lg {
+    height: 46px !important;
+    min-height: 46px !important;
+    padding-left: 40px;
+    line-height: normal;
 }
 
 .dashboard-layout {
@@ -1499,7 +1522,7 @@ select {
 .datasource-list-head,
 .datasource-list-row {
     display: grid;
-    grid-template-columns: 1.2fr 1fr 0.8fr 0.8fr 0.6fr 1fr 1.2fr;
+    grid-template-columns: minmax(180px, 1.4fr) 0.7fr 0.7fr 0.6fr minmax(160px, 1fr) minmax(220px, 1.2fr);
     gap: 16px;
     align-items: center;
     padding: 14px 16px;
@@ -1517,6 +1540,112 @@ select {
 .datasource-list-head > div,
 .datasource-list-row > div {
     min-width: 0;
+}
+
+.datasource-browser {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+.datasource-project-list {
+    border-right: 1px solid var(--line-soft);
+    padding-right: 16px;
+}
+
+.datasource-project-list-title {
+    margin-bottom: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.datasource-project-items {
+    display: grid;
+    gap: 6px;
+}
+
+.datasource-project-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    padding: 10px 11px;
+    text-align: left;
+}
+
+.datasource-project-item:hover,
+.datasource-project-item-active {
+    border-color: rgba(37, 99, 235, 0.16);
+    background: var(--brand-soft);
+}
+
+.datasource-project-name,
+.datasource-project-code {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.datasource-project-name {
+    font-weight: 700;
+}
+
+.datasource-project-code {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.datasource-project-count {
+    min-width: 26px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+}
+
+.datasource-current-panel {
+    min-width: 0;
+}
+
+.datasource-current-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.datasource-current-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.datasource-current-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.datasource-empty {
+    padding: 40px 0;
 }
 
 .ai-provider-list-head,

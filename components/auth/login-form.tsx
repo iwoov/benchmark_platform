@@ -57,14 +57,21 @@ export function LoginForm() {
                             >
                                 用户名 / 邮箱
                             </label>
-                            <Input
-                                id="identifier"
-                                name="identifier"
-                                size="large"
-                                prefix={<UserRound size={16} />}
-                                placeholder="admin 或 admin@example.com"
-                                autoComplete="username"
-                            />
+                            <div className="login-input-shell">
+                                <UserRound
+                                    className="login-input-icon"
+                                    size={16}
+                                    aria-hidden="true"
+                                />
+                                <Input
+                                    id="identifier"
+                                    name="identifier"
+                                    size="large"
+                                    className="login-input-control"
+                                    placeholder="admin 或 admin@example.com"
+                                    autoComplete="username"
+                                />
+                            </div>
                         </div>
                         <div>
                             <label
@@ -77,15 +84,22 @@ export function LoginForm() {
                             >
                                 密码
                             </label>
-                            <Input
-                                id="password"
-                                name="password"
-                                type="password"
-                                size="large"
-                                prefix={<LockKeyhole size={16} />}
-                                placeholder="请输入密码"
-                                autoComplete="current-password"
-                            />
+                            <div className="login-input-shell">
+                                <LockKeyhole
+                                    className="login-input-icon"
+                                    size={16}
+                                    aria-hidden="true"
+                                />
+                                <Input
+                                    id="password"
+                                    name="password"
+                                    type="password"
+                                    size="large"
+                                    className="login-input-control"
+                                    placeholder="请输入密码"
+                                    autoComplete="current-password"
+                                />
+                            </div>
                         </div>
                         <Button
                             type="primary"
