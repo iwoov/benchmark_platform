@@ -1651,7 +1651,7 @@ select {
 .ai-provider-list-head,
 .ai-provider-list-row {
     display: grid;
-    grid-template-columns: 1fr 0.7fr 1.1fr 1.1fr 1.1fr 0.8fr;
+    grid-template-columns: minmax(150px, 1.1fr) 0.7fr repeat(4, minmax(120px, 1fr)) 76px;
     gap: 16px;
     align-items: center;
     padding: 14px 16px;
