@@ -117,15 +117,6 @@ export function UserManagementTable({
         }
     }, [router, state.success]);
 
-    useEffect(() => {
-        if (!activeUser) {
-            setEditingSubjectIds([]);
-            return;
-        }
-
-        setEditingSubjectIds(activeUser.subjectTags.map((subject) => subject.id));
-    }, [activeUser]);
-
     return (
         <>
             <div className="table-surface">
@@ -247,6 +238,11 @@ export function UserManagementTable({
                                             setDialogKey((value) => value + 1);
                                             setEditingPlatformRole(
                                                 user.platformRole,
+                                            );
+                                            setEditingSubjectIds(
+                                                user.subjectTags.map(
+                                                    (subject) => subject.id,
+                                                ),
                                             );
                                             setActiveUserId(user.id);
                                         }}

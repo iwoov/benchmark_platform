@@ -82,15 +82,6 @@ export function SubjectManagementConsole({
         }
     }, [router, state.success]);
 
-    useEffect(() => {
-        if (!activeSubject) {
-            setSelectedPrimaryValues([]);
-            return;
-        }
-
-        setSelectedPrimaryValues(activeSubject.primaryValues);
-    }, [activeSubject]);
-
     function openCreateModal() {
         setActiveSubjectId(null);
         setSelectedPrimaryValues([]);
