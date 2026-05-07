@@ -24,6 +24,11 @@ const TERMINAL_BATCH_STATUSES = new Set<BatchRunStatus>([
     BatchRunStatus.FAILED,
     BatchRunStatus.CANCELLED,
 ]);
+const ACTIVE_BATCH_STATUSES = [
+    BatchRunStatus.RUNNING,
+    BatchRunStatus.CANCEL_REQUESTED,
+    BatchRunStatus.PENDING,
+] as const;
 const BATCH_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const STALE_BATCH_RUN_HEARTBEAT_MS = 15 * 60 * 1000;
 
@@ -283,6 +288,13 @@ function mapBatchRunView(run: {
     };
 }
 
+function getBatchRunStatusSortRank(status: BatchRunStatus) {
+    if (status === BatchRunStatus.RUNNING) return 0;
+    if (status === BatchRunStatus.CANCEL_REQUESTED) return 1;
+    if (status === BatchRunStatus.PENDING) return 2;
+    return 3;
+}
+
 export async function getAiReviewStrategyBatchRunsForProject(
     projectId: string,
     viewer?: {
@@ -302,59 +314,95 @@ export async function getAiReviewStrategyBatchRunsForProject(
         ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
         : null;
 
-    const runs = await prisma.aiReviewStrategyBatchRun.findMany({
-        where: {
-            projectId,
-            ...(viewer?.platformRole === "SUPER_ADMIN"
-                ? {}
-                : {
-                      strategy: {
-                          scopeAdminId: scopeAdminId ?? "__no_scope__",
-                      },
-                  }),
+    const baseWhere = {
+        projectId,
+        ...(viewer?.platformRole === "SUPER_ADMIN"
+            ? {}
+            : {
+                  strategy: {
+                      scopeAdminId: scopeAdminId ?? "__no_scope__",
+                  },
+              }),
+    } satisfies Prisma.AiReviewStrategyBatchRunWhereInput;
+
+    const include = {
+        strategy: {
+            select: {
+                id: true,
+                name: true,
+                code: true,
+            },
         },
-        orderBy: [{ createdAt: "desc" }],
-        take: limit,
-        include: {
-            strategy: {
-                select: {
-                    id: true,
-                    name: true,
-                    code: true,
-                },
+        createdBy: {
+            select: {
+                name: true,
             },
-            createdBy: {
-                select: {
-                    name: true,
-                },
+        },
+        items: {
+            where: {
+                OR: [
+                    {
+                        status: BatchRunItemStatus.RUNNING,
+                    },
+                    {
+                        status: BatchRunItemStatus.FAILED,
+                    },
+                ],
             },
-            items: {
-                where: {
-                    OR: [
-                        {
-                            status: BatchRunItemStatus.RUNNING,
-                        },
-                        {
-                            status: BatchRunItemStatus.FAILED,
-                        },
-                    ],
-                },
-                orderBy: [{ updatedAt: "desc" }],
-                take: 6,
-                include: {
-                    question: {
-                        select: {
-                            id: true,
-                            externalRecordId: true,
-                            metadata: true,
-                        },
+            orderBy: [{ updatedAt: "desc" }],
+            take: 6,
+            include: {
+                question: {
+                    select: {
+                        id: true,
+                        externalRecordId: true,
+                        metadata: true,
                     },
                 },
             },
         },
+    } satisfies Prisma.AiReviewStrategyBatchRunInclude;
+
+    const activeRuns = await prisma.aiReviewStrategyBatchRun.findMany({
+        where: {
+            ...baseWhere,
+            status: {
+                in: [...ACTIVE_BATCH_STATUSES],
+            },
+        },
+        orderBy: [{ createdAt: "desc" }],
+        take: limit,
+        include,
     });
 
-    return runs
+    activeRuns.sort((left, right) => {
+        const statusDiff =
+            getBatchRunStatusSortRank(left.status) -
+            getBatchRunStatusSortRank(right.status);
+
+        if (statusDiff !== 0) {
+            return statusDiff;
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+    });
+
+    const completedRuns =
+        activeRuns.length >= limit
+            ? []
+            : await prisma.aiReviewStrategyBatchRun.findMany({
+                  where: {
+                      ...baseWhere,
+                      status: {
+                          notIn: [...ACTIVE_BATCH_STATUSES],
+                      },
+                  },
+                  orderBy: [{ createdAt: "desc" }],
+                  take: limit - activeRuns.length,
+                  include,
+              });
+
+    return [...activeRuns, ...completedRuns]
         .map((run) => ({
             ...run,
             items: run.items.filter((item) =>
