@@ -3,6 +3,7 @@
 import {
     useActionState,
     useEffect,
+    useMemo,
     useRef,
     useState,
     useTransition,
@@ -107,14 +108,32 @@ export function ProjectDatasourceConsole({
     const [deletingDatasourceId, setDeletingDatasourceId] = useState<
         string | null
     >(null);
-    const datasourceGroups = projects
-        .map((project) => ({
-            project,
-            datasources: datasources.filter(
-                (datasource) => datasource.project.id === project.id,
+    const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+    const selectedProjectId =
+        activeProjectId && projects.some((project) => project.id === activeProjectId)
+            ? activeProjectId
+            : projects[0]?.id ?? "";
+    const selectedProject =
+        projects.find((project) => project.id === selectedProjectId) ?? null;
+    const datasourceCountsByProject = useMemo(() => {
+        const counts = new Map<string, number>();
+
+        for (const datasource of datasources) {
+            counts.set(
+                datasource.project.id,
+                (counts.get(datasource.project.id) ?? 0) + 1,
+            );
+        }
+
+        return counts;
+    }, [datasources]);
+    const selectedDatasources = useMemo(
+        () =>
+            datasources.filter(
+                (datasource) => datasource.project.id === selectedProjectId,
             ),
-        }))
-        .filter((group) => group.datasources.length > 0);
+        [datasources, selectedProjectId],
+    );
 
     useActionNotification(state, {
         successTitle: "导入成功",
@@ -276,40 +295,83 @@ export function ProjectDatasourceConsole({
             </div>
 
             <div style={{ marginTop: 20 }}>
-                <div
-                    style={{ marginBottom: 12, fontSize: 14, fontWeight: 700 }}
-                >
-                    已导入数据源
-                </div>
+                {projects.length ? (
+                    <div className="datasource-browser">
+                        <aside className="datasource-project-list">
+                            <div className="datasource-project-list-title">
+                                项目
+                            </div>
+                            <div className="datasource-project-items">
+                                {projects.map((project) => {
+                                    const datasourceCount =
+                                        datasourceCountsByProject.get(project.id) ??
+                                        0;
+                                    const isActive =
+                                        project.id === selectedProjectId;
 
-                {datasources.length ? (
-                    <div
-                        style={{ display: "grid", gap: 20 }}
-                    >
-                        {datasourceGroups.map(({ project, datasources }) => (
-                            <div key={project.id}>
-                                <div
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        marginBottom: 10,
-                                    }}
-                                >
-                                    <div
-                                        style={{
-                                            fontSize: 16,
-                                            fontWeight: 700,
-                                        }}
-                                    >
-                                        {project.name}
+                                    return (
+                                        <button
+                                            key={project.id}
+                                            type="button"
+                                            className={
+                                                isActive
+                                                    ? "datasource-project-item datasource-project-item-active"
+                                                    : "datasource-project-item"
+                                            }
+                                            onClick={() =>
+                                                setActiveProjectId(project.id)
+                                            }
+                                        >
+                                            <span>
+                                                <span className="datasource-project-name">
+                                                    {project.name}
+                                                </span>
+                                                <span className="datasource-project-code">
+                                                    {project.code}
+                                                </span>
+                                            </span>
+                                            <span className="datasource-project-count">
+                                                {datasourceCount}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </aside>
+
+                        <div className="datasource-current-panel">
+                            <div className="datasource-current-head">
+                                <div>
+                                    <div className="datasource-current-title">
+                                        {selectedProject?.name ?? "未选择项目"}
                                     </div>
-                                    <Tag color="blue">{project.code}</Tag>
-                                    <span className="muted">
-                                        {datasources.length} 个数据源
-                                    </span>
+                                    <div className="datasource-current-meta">
+                                        {selectedProject ? (
+                                            <>
+                                                <Tag color="blue">
+                                                    {selectedProject.code}
+                                                </Tag>
+                                                <span>
+                                                    {
+                                                        selectedDatasources.length
+                                                    }{" "}
+                                                    个数据源
+                                                </span>
+                                            </>
+                                        ) : null}
+                                    </div>
                                 </div>
+                                <Button
+                                    type="primary"
+                                    icon={<Plus size={16} />}
+                                    onClick={() => setOpen(true)}
+                                    disabled={!selectedProject}
+                                >
+                                    导入到当前项目
+                                </Button>
+                            </div>
 
+                            {selectedDatasources.length ? (
                                 <div className="table-surface">
                                     <div className="datasource-list-head">
                                         <div>数据源</div>
@@ -320,111 +382,117 @@ export function ProjectDatasourceConsole({
                                         <div>操作</div>
                                     </div>
 
-                                    {datasources.map((datasource) => (
-                                        <div
-                                            key={datasource.id}
-                                            className="datasource-list-row"
-                                        >
-                                            <div>
-                                                <div style={{ fontWeight: 700 }}>
-                                                    {datasource.name}
-                                                </div>
-                                                <div
-                                                    className="muted"
-                                                    style={{ marginTop: 4 }}
-                                                >
-                                                    创建于 {datasource.createdAt}
-                                                </div>
+                                    {selectedDatasources.map((datasource) => (
+                                    <div
+                                        key={datasource.id}
+                                        className="datasource-list-row"
+                                    >
+                                        <div>
+                                            <div style={{ fontWeight: 700 }}>
+                                                {datasource.name}
                                             </div>
-                                            <div>
-                                                <Tag
-                                                    color={getDataSourceTypeColor(
-                                                        datasource.type,
-                                                    )}
-                                                >
-                                                    {getDataSourceTypeLabel(
-                                                        datasource.type,
-                                                    )}
-                                                </Tag>
-                                            </div>
-                                            <div>
-                                                <Tag
-                                                    color={getDataSourceStatusColor(
-                                                        datasource.status,
-                                                    )}
-                                                >
-                                                    {getDataSourceStatusLabel(
-                                                        datasource.status,
-                                                    )}
-                                                </Tag>
-                                            </div>
-                                            <div>{datasource.questionCount}</div>
-                                            <div className="muted">
-                                                {datasource.originalFileName ??
-                                                    "—"}
-                                                {typeof datasource.imageCount ===
-                                                    "number" &&
-                                                datasource.imageCount > 0 ? (
-                                                    <div style={{ marginTop: 4 }}>
-                                                        <Tag color="green">
-                                                            已关联{" "}
-                                                            {datasource.imageCount}{" "}
-                                                            张图片
-                                                        </Tag>
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                            <div>
-                                                <Space size={4} wrap>
-                                                    <Button
-                                                        size="small"
-                                                        icon={<ImageIcon size={14} />}
-                                                        onClick={() => {
-                                                            setImagePackDatasourceId(
-                                                                datasource.id,
-                                                            );
-                                                            setImagePackOpen(true);
-                                                        }}
-                                                    >
-                                                        上传图片包
-                                                    </Button>
-                                                    <Button
-                                                        size="small"
-                                                        icon={<Settings size={14} />}
-                                                        onClick={() =>
-                                                            openImageFieldModal(
-                                                                datasource,
-                                                            )
-                                                        }
-                                                    >
-                                                        图片字段
-                                                    </Button>
-                                                    <Button
-                                                        danger
-                                                        size="small"
-                                                        icon={<Trash2 size={14} />}
-                                                        loading={
-                                                            deletingDatasourceId ===
-                                                            datasource.id
-                                                        }
-                                                        onClick={() =>
-                                                            confirmDeleteDatasource(
-                                                                datasource,
-                                                            )
-                                                        }
-                                                    >
-                                                        删除
-                                                    </Button>
-                                                </Space>
+                                            <div
+                                                className="muted"
+                                                style={{ marginTop: 4 }}
+                                            >
+                                                创建于 {datasource.createdAt}
                                             </div>
                                         </div>
-                                    ))}
+                                        <div>
+                                            <Tag
+                                                color={getDataSourceTypeColor(
+                                                    datasource.type,
+                                                )}
+                                            >
+                                                {getDataSourceTypeLabel(
+                                                    datasource.type,
+                                                )}
+                                            </Tag>
+                                        </div>
+                                        <div>
+                                            <Tag
+                                                color={getDataSourceStatusColor(
+                                                    datasource.status,
+                                                )}
+                                            >
+                                                {getDataSourceStatusLabel(
+                                                    datasource.status,
+                                                )}
+                                            </Tag>
+                                        </div>
+                                        <div>{datasource.questionCount}</div>
+                                        <div className="muted">
+                                            {datasource.originalFileName ?? "—"}
+                                            {typeof datasource.imageCount ===
+                                                "number" &&
+                                            datasource.imageCount > 0 ? (
+                                                <div style={{ marginTop: 4 }}>
+                                                    <Tag color="green">
+                                                        已关联{" "}
+                                                        {datasource.imageCount}{" "}
+                                                        张图片
+                                                    </Tag>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                        <div>
+                                            <Space size={4} wrap>
+                                                <Button
+                                                    size="small"
+                                                    icon={
+                                                        <ImageIcon size={14} />
+                                                    }
+                                                    onClick={() => {
+                                                        setImagePackDatasourceId(
+                                                            datasource.id,
+                                                        );
+                                                        setImagePackOpen(true);
+                                                    }}
+                                                >
+                                                    上传图片包
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    icon={<Settings size={14} />}
+                                                    onClick={() =>
+                                                        openImageFieldModal(
+                                                            datasource,
+                                                        )
+                                                    }
+                                                >
+                                                    图片字段
+                                                </Button>
+                                                <Button
+                                                    danger
+                                                    size="small"
+                                                    icon={<Trash2 size={14} />}
+                                                    loading={
+                                                        deletingDatasourceId ===
+                                                        datasource.id
+                                                    }
+                                                    onClick={() =>
+                                                        confirmDeleteDatasource(
+                                                            datasource,
+                                                        )
+                                                    }
+                                                >
+                                                    删除
+                                                </Button>
+                                            </Space>
+                                        </div>
+                                    </div>
+                                ))}
                                 </div>
-                            </div>
-                        ))}
+                            ) : (
+                                <Empty
+                                    className="datasource-empty"
+                                    description="当前项目还没有已导入的数据源"
+                                />
+                            )}
+                        </div>
                     </div>
                 ) : (
-                    <Empty description="当前还没有已导入的数据源" />
+                    <Empty description="当前还没有可用项目" />
                 )}
             </div>
 
@@ -464,7 +532,7 @@ export function ProjectDatasourceConsole({
                             <select
                                 id="import-projectId"
                                 name="projectId"
-                                defaultValue={projects[0]?.id ?? ""}
+                                defaultValue={selectedProjectId}
                                 className="field-select"
                             >
                                 {projects.length ? null : (

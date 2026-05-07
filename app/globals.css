@@ -3320,6 +3320,21 @@ a.overview-detail-item:hover {
         grid-column: auto;
     }
 
+    .datasource-browser {
+        grid-template-columns: 1fr;
+    }
+
+    .datasource-project-list {
+        border-right: none;
+        border-bottom: 1px solid var(--line-soft);
+        padding-right: 0;
+        padding-bottom: 14px;
+    }
+
+    .datasource-current-head {
+        flex-direction: column;
+    }
+
     .datasource-list-head,
     .datasource-list-row,
     .ai-provider-list-head,
