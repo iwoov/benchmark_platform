@@ -165,10 +165,18 @@ select {
 }
 
 .login-grid {
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 430px;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+}
+
+.login-form-card .ant-input-affix-wrapper,
+.login-form-card .ant-input-affix-wrapper > input.ant-input {
+    color: var(--text);
+    caret-color: var(--brand);
 }
 
 .dashboard-layout {
