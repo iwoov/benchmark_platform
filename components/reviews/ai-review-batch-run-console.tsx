@@ -32,6 +32,10 @@ type BatchRunView = {
     failedCount: number;
     skippedCount: number;
     errorMessage: string | null;
+    workerId: string | null;
+    lastHeartbeatAt: string | null;
+    isStale: boolean;
+    staleReason: string | null;
     createdAt: string;
     startedAt: string | null;
     finishedAt: string | null;
@@ -111,6 +115,9 @@ export function AiReviewBatchRunConsole({
     const [deletingBatchRunId, setDeletingBatchRunId] = useState<string | null>(
         null,
     );
+    const [restartingBatchRunId, setRestartingBatchRunId] = useState<
+        string | null
+    >(null);
 
     useEffect(() => {
         setRuns(initialRuns);
@@ -265,6 +272,48 @@ export function AiReviewBatchRunConsole({
         }
     }
 
+    async function restartBatchRun(batchRunId: string) {
+        setRestartingBatchRunId(batchRunId);
+
+        try {
+            const response = await fetch("/api/ai-review-strategy-batch-runs", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "restart",
+                    batchRunId,
+                }),
+            });
+            const payload = (await response.json().catch(() => null)) as {
+                error?: string;
+                success?: string;
+            } | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.error ?? "重启批量任务失败。");
+            }
+
+            notification.success({
+                message: "批量任务已重启",
+                description:
+                    payload?.success ?? "worker 会重新领取待执行题目。",
+                placement: "topRight",
+            });
+            await refreshRuns();
+        } catch (error) {
+            notification.error({
+                message: "重启批量任务失败",
+                description:
+                    error instanceof Error ? error.message : "请稍后再试。",
+                placement: "topRight",
+            });
+        } finally {
+            setRestartingBatchRunId(null);
+        }
+    }
+
     function pushProject(projectId: string) {
         router.push(`${listPath}?projectId=${projectId}`);
     }
@@ -360,9 +409,42 @@ export function AiReviewBatchRunConsole({
                                                 <Tag color={statusMeta.color}>
                                                     {statusMeta.label}
                                                 </Tag>
+                                                {run.isStale ? (
+                                                    <Tag color="error">
+                                                        疑似卡死
+                                                    </Tag>
+                                                ) : null}
                                                 <Tag>
                                                     并发 {run.concurrency}
                                                 </Tag>
+                                                {run.isStale ? (
+                                                    <Popconfirm
+                                                        title="重启卡死任务"
+                                                        description="会释放旧 worker 占用，并把运行中的题目重新放回待执行队列。"
+                                                        okText="重启"
+                                                        cancelText="取消"
+                                                        okButtonProps={{
+                                                            loading:
+                                                                restartingBatchRunId ===
+                                                                run.id,
+                                                        }}
+                                                        onConfirm={() =>
+                                                            restartBatchRun(
+                                                                run.id,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Button
+                                                            size="small"
+                                                            loading={
+                                                                restartingBatchRunId ===
+                                                                run.id
+                                                            }
+                                                        >
+                                                            重启
+                                                        </Button>
+                                                    </Popconfirm>
+                                                ) : null}
                                                 {isActiveBatchRunStatus(
                                                     run.status,
                                                 ) ? (
@@ -449,6 +531,20 @@ export function AiReviewBatchRunConsole({
                                                             item.questionExternalRecordId,
                                                     )
                                                     .join("；")}
+                                            </div>
+                                        ) : null}
+
+                                        {run.isStale ? (
+                                            <div className="strategy-run-error">
+                                                {run.staleReason ??
+                                                    "worker 心跳长时间未更新。"}
+                                                {run.lastHeartbeatAt
+                                                    ? ` 最后心跳：${new Date(
+                                                          run.lastHeartbeatAt,
+                                                      ).toLocaleString(
+                                                          "zh-CN",
+                                                      )}`
+                                                    : ""}
                                             </div>
                                         ) : null}
 

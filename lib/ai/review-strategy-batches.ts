@@ -32,6 +32,32 @@ const ACTIVE_BATCH_STATUSES = [
 const BATCH_RUN_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const STALE_BATCH_RUN_HEARTBEAT_MS = 15 * 60 * 1000;
 
+function getStaleBatchRunReason(run: {
+    status: BatchRunStatus;
+    workerId: string | null;
+    lastHeartbeatAt: Date | null;
+}) {
+    if (TERMINAL_BATCH_STATUSES.has(run.status)) {
+        return null;
+    }
+
+    if (!run.workerId) {
+        return null;
+    }
+
+    if (!run.lastHeartbeatAt) {
+        return "worker 已占用任务，但没有心跳记录。";
+    }
+
+    const staleBefore = Date.now() - STALE_BATCH_RUN_HEARTBEAT_MS;
+
+    if (run.lastHeartbeatAt.getTime() < staleBefore) {
+        return "worker 心跳已超过 15 分钟未更新。";
+    }
+
+    return null;
+}
+
 function parseStringArray(input: unknown) {
     if (!Array.isArray(input)) {
         return [] as string[];
@@ -208,6 +234,10 @@ export type AiReviewStrategyBatchRunView = {
     failedCount: number;
     skippedCount: number;
     errorMessage: string | null;
+    workerId: string | null;
+    lastHeartbeatAt: string | null;
+    isStale: boolean;
+    staleReason: string | null;
     createdAt: string;
     startedAt: string | null;
     finishedAt: string | null;
@@ -240,6 +270,8 @@ function mapBatchRunView(run: {
     failedCount: number;
     skippedCount: number;
     errorMessage: string | null;
+    workerId: string | null;
+    lastHeartbeatAt: Date | null;
     createdAt: Date;
     startedAt: Date | null;
     finishedAt: Date | null;
@@ -251,6 +283,8 @@ function mapBatchRunView(run: {
         question: { id: string; externalRecordId: string };
     }>;
 }): AiReviewStrategyBatchRunView {
+    const staleReason = getStaleBatchRunReason(run);
+
     return {
         id: run.id,
         status: run.status,
@@ -262,6 +296,10 @@ function mapBatchRunView(run: {
         failedCount: run.failedCount,
         skippedCount: run.skippedCount,
         errorMessage: run.errorMessage,
+        workerId: run.workerId,
+        lastHeartbeatAt: run.lastHeartbeatAt?.toISOString() ?? null,
+        isStale: Boolean(staleReason),
+        staleReason,
         createdAt: run.createdAt.toISOString(),
         startedAt: run.startedAt?.toISOString() ?? null,
         finishedAt: run.finishedAt?.toISOString() ?? null,
@@ -919,6 +957,65 @@ export async function deleteAiReviewStrategyBatchRun(batchRunId: string) {
             id: batchRunId,
         },
     });
+}
+
+export async function restartStaleAiReviewStrategyBatchRun(batchRunId: string) {
+    const batchRun = await prisma.aiReviewStrategyBatchRun.findUnique({
+        where: {
+            id: batchRunId,
+        },
+        select: {
+            id: true,
+            status: true,
+            workerId: true,
+            lastHeartbeatAt: true,
+        },
+    });
+
+    if (!batchRun) {
+        throw new Error("批量任务不存在。");
+    }
+
+    if (TERMINAL_BATCH_STATUSES.has(batchRun.status)) {
+        throw new Error("已结束的批量任务不能重启。");
+    }
+
+    const staleReason = getStaleBatchRunReason(batchRun);
+
+    if (!staleReason) {
+        throw new Error("该批量任务心跳仍在更新，不能判定为卡死任务。");
+    }
+
+    await prisma.$transaction(async (tx) => {
+        await tx.aiReviewStrategyBatchRunItem.updateMany({
+            where: {
+                batchRunId,
+                status: BatchRunItemStatus.RUNNING,
+            },
+            data: {
+                status: BatchRunItemStatus.PENDING,
+                errorMessage: null,
+                startedAt: null,
+                finishedAt: null,
+            },
+        });
+
+        await tx.aiReviewStrategyBatchRun.update({
+            where: {
+                id: batchRunId,
+            },
+            data: {
+                status: BatchRunStatus.PENDING,
+                workerId: null,
+                lastHeartbeatAt: null,
+                startedAt: null,
+                finishedAt: null,
+                errorMessage: null,
+            },
+        });
+    });
+
+    await syncBatchRunState(batchRunId);
 }
 
 export async function recoverAiReviewStrategyBatchRuns(workerId: string) {
