@@ -1544,12 +1544,13 @@ select {
 
 .datasource-browser {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(220px, clamp(260px, 28vw, 360px)) minmax(0, 1fr);
     gap: 20px;
     align-items: start;
 }
 
 .datasource-project-list {
+    min-width: 0;
     border-right: 1px solid var(--line-soft);
     padding-right: 16px;
 }
@@ -1581,6 +1582,11 @@ select {
     text-align: left;
 }
 
+.datasource-project-item > span:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
 .datasource-project-item:hover,
 .datasource-project-item-active {
     border-color: rgba(37, 99, 235, 0.16);
@@ -1607,6 +1613,7 @@ select {
 }
 
 .datasource-project-count {
+    flex: 0 0 auto;
     min-width: 26px;
     border-radius: 999px;
     background: #ffffff;
