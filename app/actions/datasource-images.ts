@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
+import { getProjectManagerScope } from "@/lib/auth/project-permissions";
 import { saveUploadedFile, toUploadUrl } from "@/lib/import/file-storage";
 import {
     extractImagesFromArchive,
@@ -62,11 +63,20 @@ export async function uploadDatasourceImagePackAction(
 
     const datasource = await prisma.projectDataSource.findUnique({
         where: { id: datasourceId },
-        select: { id: true, name: true, syncConfig: true },
+        select: { id: true, name: true, projectId: true, syncConfig: true },
     });
 
     if (!datasource) {
         return { error: "数据源不存在。" };
+    }
+
+    try {
+        await getProjectManagerScope(datasource.projectId);
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error ? error.message : "无权限上传图片包。",
+        };
     }
 
     try {
@@ -271,11 +281,20 @@ export async function updateDatasourceImageFieldsAction(input: {
 
     const datasource = await prisma.projectDataSource.findUnique({
         where: { id: input.datasourceId },
-        select: { id: true, syncConfig: true },
+        select: { id: true, projectId: true, syncConfig: true },
     });
 
     if (!datasource) {
         return { error: "数据源不存在。" };
+    }
+
+    try {
+        await getProjectManagerScope(datasource.projectId);
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error ? error.message : "无权限修改图片字段。",
+        };
     }
 
     const existingSyncConfig =

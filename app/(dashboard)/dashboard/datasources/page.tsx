@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { ProjectDatasourceConsole } from "@/components/dashboard/project-datasource-console";
 import {
@@ -6,10 +7,14 @@ import {
     readImageFields,
     readImageCount,
 } from "@/lib/datasources/sync-config";
+import { isSuperAdminRole } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
 export default async function DataSourcesPage() {
+    const session = await auth();
+    const canManageEveryProject = isSuperAdminRole(session?.user.platformRole);
+
     const projects = process.env.DATABASE_URL
         ? await prisma.project.findMany({
               where: {
@@ -22,6 +27,7 @@ export default async function DataSourcesPage() {
                   id: true,
                   name: true,
                   code: true,
+                  createdById: true,
               },
           })
         : [];
@@ -34,6 +40,7 @@ export default async function DataSourcesPage() {
                           id: true,
                           name: true,
                           code: true,
+                          createdById: true,
                       },
                   },
                   _count: {
@@ -62,7 +69,14 @@ export default async function DataSourcesPage() {
         <ProjectDatasourceConsole
             title="数据源"
             description="导入项目数据源并跟踪同步状态。"
-            projects={projects}
+            projects={projects.map((project) => ({
+                id: project.id,
+                name: project.name,
+                code: project.code,
+                canManage:
+                    canManageEveryProject ||
+                    project.createdById === session?.user.id,
+            }))}
             datasources={datasources.map((datasource) => ({
                 id: datasource.id,
                 name: datasource.name,
@@ -70,7 +84,14 @@ export default async function DataSourcesPage() {
                 status: datasource.status,
                 createdAt: datasource.createdAt.toLocaleString("zh-CN"),
                 questionCount: datasource._count.questions,
-                project: datasource.project,
+                canManage:
+                    canManageEveryProject ||
+                    datasource.project.createdById === session?.user.id,
+                project: {
+                    id: datasource.project.id,
+                    name: datasource.project.name,
+                    code: datasource.project.code,
+                },
                 originalFileName: readOriginalFileName(datasource.syncConfig),
                 rawFieldOrder: readRawFieldOrder(datasource.syncConfig),
                 imageFields: readImageFields(datasource.syncConfig),

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { getProjectMemberManagerScope } from "@/lib/auth/project-permissions";
 
@@ -36,8 +37,10 @@ export async function assignProjectMemberAction(
         };
     }
 
+    let managerScope: Awaited<ReturnType<typeof getProjectMemberManagerScope>>;
+
     try {
-        await getProjectMemberManagerScope(parsed.data.projectId);
+        managerScope = await getProjectMemberManagerScope(parsed.data.projectId);
     } catch (error) {
         return {
             error:
@@ -67,6 +70,7 @@ export async function assignProjectMemberAction(
             username: true,
             status: true,
             platformRole: true,
+            ownerAdminId: true,
         },
     });
 
@@ -80,6 +84,16 @@ export async function assignProjectMemberAction(
         return {
             error: "项目协作角色只能分配给普通账号。",
         };
+    }
+
+    if (managerScope === "PLATFORM_ADMIN") {
+        const session = await auth();
+
+        if (user.ownerAdminId !== session?.user.id) {
+            return {
+                error: "平台管理员只能分配自己创建的普通用户。",
+            };
+        }
     }
 
     await prisma.projectMember.upsert({

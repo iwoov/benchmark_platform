@@ -1,8 +1,10 @@
 import type { Prisma } from "@prisma/client";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { CreateProjectForm } from "@/components/dashboard/create-project-form";
 import { ProjectMembersManager } from "@/components/dashboard/project-members-manager";
 import { readRawFieldOrder } from "@/lib/datasources/sync-config";
+import { isSuperAdminRole } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,9 @@ function parseFieldLabelMap(
 }
 
 export default async function ProjectsPage() {
+    const session = await auth();
+    const canManageEveryProject = isSuperAdminRole(session?.user.platformRole);
+
     type ProjectWithRelations = Prisma.ProjectGetPayload<{
         include: {
             members: {
@@ -34,6 +39,11 @@ export default async function ProjectsPage() {
                             status: true;
                         };
                     };
+                };
+            };
+            createdBy: {
+                select: {
+                    id: true;
                 };
             };
             datasources: true;
@@ -52,6 +62,11 @@ export default async function ProjectsPage() {
     if (process.env.DATABASE_URL) {
         projects = await prisma.project.findMany({
             include: {
+                createdBy: {
+                    select: {
+                        id: true,
+                    },
+                },
                 members: {
                     include: {
                         user: {
@@ -76,6 +91,11 @@ export default async function ProjectsPage() {
             where: {
                 status: "ACTIVE",
                 platformRole: "USER",
+                ...(canManageEveryProject || !session?.user
+                    ? {}
+                    : {
+                          ownerAdminId: session.user.id,
+                      }),
             },
             orderBy: {
                 createdAt: "desc",
@@ -122,6 +142,9 @@ export default async function ProjectsPage() {
                         name: project.name,
                         code: project.code,
                         status: project.status,
+                        canManage:
+                            canManageEveryProject ||
+                            project.createdBy.id === session?.user.id,
                         datasourcesCount: project.datasources.length,
                         rawFieldKeys,
                         fieldLabelMap: parseFieldLabelMap(

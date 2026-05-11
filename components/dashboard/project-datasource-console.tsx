@@ -49,6 +49,7 @@ type ProjectOption = {
     id: string;
     name: string;
     code: string;
+    canManage: boolean;
 };
 
 type DataSourceItem = {
@@ -58,6 +59,7 @@ type DataSourceItem = {
     status: "ACTIVE" | "INACTIVE";
     createdAt: string;
     questionCount: number;
+    canManage: boolean;
     project: {
         id: string;
         name: string;
@@ -115,6 +117,13 @@ export function ProjectDatasourceConsole({
             : projects[0]?.id ?? "";
     const selectedProject =
         projects.find((project) => project.id === selectedProjectId) ?? null;
+    const manageableProjects = useMemo(
+        () => projects.filter((project) => project.canManage),
+        [projects],
+    );
+    const importProjectId = selectedProject?.canManage
+        ? selectedProject.id
+        : manageableProjects[0]?.id ?? "";
     const datasourceCountsByProject = useMemo(() => {
         const counts = new Map<string, number>();
 
@@ -280,7 +289,7 @@ export function ProjectDatasourceConsole({
                     type="primary"
                     icon={<Plus size={16} />}
                     onClick={() => setOpen(true)}
-                    disabled={!projects.length}
+                    disabled={!manageableProjects.length}
                 >
                     导入数据
                 </Button>
@@ -365,7 +374,12 @@ export function ProjectDatasourceConsole({
                                     type="primary"
                                     icon={<Plus size={16} />}
                                     onClick={() => setOpen(true)}
-                                    disabled={!selectedProject}
+                                    disabled={!selectedProject?.canManage}
+                                    title={
+                                        selectedProject?.canManage
+                                            ? undefined
+                                            : "只能向自己创建的项目导入数据"
+                                    }
                                 >
                                     导入到当前项目
                                 </Button>
@@ -442,6 +456,14 @@ export function ProjectDatasourceConsole({
                                                     icon={
                                                         <ImageIcon size={14} />
                                                     }
+                                                    disabled={
+                                                        !datasource.canManage
+                                                    }
+                                                    title={
+                                                        datasource.canManage
+                                                            ? undefined
+                                                            : "只能操作自己创建项目下的数据源"
+                                                    }
                                                     onClick={() => {
                                                         setImagePackDatasourceId(
                                                             datasource.id,
@@ -454,6 +476,14 @@ export function ProjectDatasourceConsole({
                                                 <Button
                                                     size="small"
                                                     icon={<Settings size={14} />}
+                                                    disabled={
+                                                        !datasource.canManage
+                                                    }
+                                                    title={
+                                                        datasource.canManage
+                                                            ? undefined
+                                                            : "只能操作自己创建项目下的数据源"
+                                                    }
                                                     onClick={() =>
                                                         openImageFieldModal(
                                                             datasource,
@@ -469,6 +499,14 @@ export function ProjectDatasourceConsole({
                                                     loading={
                                                         deletingDatasourceId ===
                                                         datasource.id
+                                                    }
+                                                    disabled={
+                                                        !datasource.canManage
+                                                    }
+                                                    title={
+                                                        datasource.canManage
+                                                            ? undefined
+                                                            : "只能删除自己创建项目下的数据源"
                                                     }
                                                     onClick={() =>
                                                         confirmDeleteDatasource(
@@ -532,15 +570,15 @@ export function ProjectDatasourceConsole({
                             <select
                                 id="import-projectId"
                                 name="projectId"
-                                defaultValue={selectedProjectId}
+                                defaultValue={importProjectId}
                                 className="field-select"
                             >
-                                {projects.length ? null : (
+                                {manageableProjects.length ? null : (
                                     <option value="" disabled>
                                         暂无可导入项目
                                     </option>
                                 )}
-                                {projects.map((project) => (
+                                {manageableProjects.map((project) => (
                                     <option key={project.id} value={project.id}>
                                         {project.name} ({project.code})
                                     </option>
@@ -601,7 +639,7 @@ export function ProjectDatasourceConsole({
                                 htmlType="submit"
                                 icon={<FileUp size={16} />}
                                 loading={isPending}
-                                disabled={!projects.length}
+                                disabled={!manageableProjects.length}
                             >
                                 开始导入
                             </Button>

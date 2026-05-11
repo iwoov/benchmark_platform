@@ -45,6 +45,7 @@ type ProjectOption = {
     name: string;
     code: string;
     status: string;
+    canManage: boolean;
     datasourcesCount: number;
     rawFieldKeys: string[];
     fieldLabelMap: Record<string, string>;
@@ -214,6 +215,12 @@ export function ProjectMembersManager({
                             <Space size={8}>
                                 <Button
                                     icon={<Settings2 size={16} />}
+                                    disabled={!project.canManage}
+                                    title={
+                                        project.canManage
+                                            ? undefined
+                                            : "只能管理自己创建的项目"
+                                    }
                                     onClick={() =>
                                         setActiveProjectId(project.id)
                                     }
@@ -222,6 +229,12 @@ export function ProjectMembersManager({
                                 </Button>
                                 <Button
                                     icon={<Map size={16} />}
+                                    disabled={!project.canManage}
+                                    title={
+                                        project.canManage
+                                            ? undefined
+                                            : "只能修改自己创建项目的字段映射"
+                                    }
                                     onClick={() => openFieldMapModal(project)}
                                 >
                                     字段映射
@@ -230,6 +243,12 @@ export function ProjectMembersManager({
                                     danger
                                     icon={<Trash2 size={16} />}
                                     loading={isDeletePending}
+                                    disabled={!project.canManage}
+                                    title={
+                                        project.canManage
+                                            ? undefined
+                                            : "只能删除自己创建的项目"
+                                    }
                                     onClick={() =>
                                         setPendingDeleteProject(project)
                                     }
