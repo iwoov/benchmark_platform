@@ -1,62 +1,186 @@
 "use client";
 
 import { useMemo, useTransition } from "react";
-import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Select, Spin, Table, Tooltip } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { HelpCircle } from "lucide-react";
 import type {
     PlatformAdminProjectOption,
     SubjectStat,
 } from "@/lib/dashboard/overview";
-
-const PIE_HEIGHT = 280;
-const COLUMN_HEIGHT = 360;
+import { Card, CardContent } from "@/components/ui/card";
+import { Select } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 
 const ALL_PROJECTS_VALUE = "__all__";
 
-function ChartFallback({ height = PIE_HEIGHT }: { height?: number }) {
+const CHART_COLORS = [
+    "var(--color-chart-1)",
+    "var(--color-chart-2)",
+    "var(--color-chart-3)",
+    "var(--color-chart-4)",
+    "var(--color-chart-5)",
+    "var(--color-chart-6)",
+];
+
+type Slice = { subject: string; value: number; rate: number };
+
+function DonutChart({ slices, height = 280 }: { slices: Slice[]; height?: number }) {
+    const total = slices.reduce((sum, s) => sum + s.value, 0);
+    if (total === 0) {
+        return (
+            <div
+                className="flex items-center justify-center text-sm text-muted-foreground"
+                style={{ height }}
+            >
+                暂无数据
+            </div>
+        );
+    }
+    const radius = 90;
+    const strokeWidth = 32;
+    const cx = 120;
+    const cy = 120;
+    const c = 2 * Math.PI * radius;
+
+    let offset = 0;
     return (
-        <div
-            style={{
-                height,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-            }}
-        >
-            <Spin />
+        <div className="flex items-center justify-center gap-6" style={{ minHeight: height }}>
+            <svg viewBox="0 0 240 240" width={240} height={240} aria-hidden>
+                <circle
+                    cx={cx}
+                    cy={cy}
+                    r={radius}
+                    fill="none"
+                    stroke="var(--color-muted)"
+                    strokeWidth={strokeWidth}
+                />
+                {slices.map((slice, idx) => {
+                    const length = (slice.value / total) * c;
+                    const dasharray = `${length} ${c - length}`;
+                    const dashoffset = -offset;
+                    offset += length;
+                    return (
+                        <circle
+                            key={slice.subject}
+                            cx={cx}
+                            cy={cy}
+                            r={radius}
+                            fill="none"
+                            stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                            strokeWidth={strokeWidth}
+                            strokeDasharray={dasharray}
+                            strokeDashoffset={dashoffset}
+                            transform={`rotate(-90 ${cx} ${cy})`}
+                        >
+                            <title>{`${slice.subject}: ${slice.value}`}</title>
+                        </circle>
+                    );
+                })}
+                <text
+                    x={cx}
+                    y={cy - 4}
+                    textAnchor="middle"
+                    className="fill-foreground"
+                    style={{ fontSize: 22, fontWeight: 700 }}
+                >
+                    {total.toLocaleString()}
+                </text>
+                <text
+                    x={cx}
+                    y={cy + 18}
+                    textAnchor="middle"
+                    className="fill-muted-foreground"
+                    style={{ fontSize: 11 }}
+                >
+                    总计
+                </text>
+            </svg>
+            <ul className="space-y-1.5 text-sm">
+                {slices.map((slice, idx) => (
+                    <li key={slice.subject} className="flex items-center gap-2">
+                        <span
+                            className="h-3 w-3 rounded-sm"
+                            style={{ background: CHART_COLORS[idx % CHART_COLORS.length] }}
+                        />
+                        <span className="font-medium text-foreground">{slice.subject}</span>
+                        <span className="text-muted-foreground">{slice.value}</span>
+                        <span className="text-xs text-muted-foreground">
+                            ({((slice.value / total) * 100).toFixed(1)}%)
+                        </span>
+                    </li>
+                ))}
+            </ul>
         </div>
     );
 }
 
-const Pie = dynamic(
-    () => import("@ant-design/charts").then((mod) => mod.Pie),
-    { ssr: false, loading: () => <ChartFallback /> },
-);
-const Column = dynamic(
-    () => import("@ant-design/charts").then((mod) => mod.Column),
-    { ssr: false, loading: () => <ChartFallback height={COLUMN_HEIGHT} /> },
-);
+type GroupBar = { subject: string; reviewed: number; unreviewed: number; total: number };
 
-function EmptyState({
-    text,
-    height = PIE_HEIGHT,
-}: {
-    text: string;
-    height?: number;
-}) {
+function GroupedBarChart({ data, height = 360 }: { data: GroupBar[]; height?: number }) {
+    if (!data.length) {
+        return (
+            <div
+                className="flex items-center justify-center text-sm text-muted-foreground"
+                style={{ height }}
+            >
+                暂无数据
+            </div>
+        );
+    }
+    const max = Math.max(...data.map((d) => d.total));
     return (
-        <div
-            className="overview-empty-state"
-            style={{
-                minHeight: height,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-            }}
-        >
-            {text}
+        <div className="space-y-3" style={{ minHeight: height }}>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="h-3 w-3 rounded-sm bg-chart-1" style={{ background: CHART_COLORS[0] }} />
+                    已审核
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="h-3 w-3 rounded-sm" style={{ background: CHART_COLORS[3] }} />
+                    未审核
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="h-3 w-3 rounded-sm" style={{ background: CHART_COLORS[1] }} />
+                    总数
+                </span>
+            </div>
+            <div className="space-y-3">
+                {data.map((row) => (
+                    <div key={row.subject} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="font-medium text-foreground">{row.subject}</span>
+                            <span className="font-mono text-muted-foreground">
+                                {row.reviewed} / {row.unreviewed} / {row.total}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { value: row.reviewed, color: CHART_COLORS[0] },
+                                { value: row.unreviewed, color: CHART_COLORS[3] },
+                                { value: row.total, color: CHART_COLORS[1] },
+                            ].map((bar, idx) => (
+                                <div key={idx} className="h-3 overflow-hidden rounded-full bg-muted">
+                                    <div
+                                        className="h-full rounded-full transition-[width] duration-500"
+                                        style={{
+                                            width: `${max ? (bar.value / max) * 100 : 0}%`,
+                                            background: bar.color,
+                                        }}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -75,159 +199,50 @@ export function SubjectStatsPanel({
     const searchParams = useSearchParams();
     const [isPending, startTransition] = useTransition();
 
-    const passSlices = useMemo(
+    const passSlices = useMemo<Slice[]>(
         () =>
             subjectStats
                 .filter((row) => row.approved > 0)
-                .map((row) => ({
-                    subject: row.subject,
-                    value: row.approved,
-                    rate: row.passRate,
-                })),
+                .map((row) => ({ subject: row.subject, value: row.approved, rate: row.passRate })),
         [subjectStats],
     );
 
-    const unreviewedSlices = useMemo(
+    const unreviewedSlices = useMemo<Slice[]>(
         () =>
             subjectStats
                 .filter((row) => row.unreviewed > 0)
-                .map((row) => ({
-                    subject: row.subject,
-                    value: row.unreviewed,
-                    rate: row.unreviewedRate,
-                })),
+                .map((row) => ({ subject: row.subject, value: row.unreviewed, rate: row.unreviewedRate })),
         [subjectStats],
     );
 
-    const columnData = useMemo(() => {
-        const out: Array<{ subject: string; type: string; value: number }> = [];
-        for (const row of subjectStats) {
-            const reviewed = row.approved + row.rejected;
-            out.push({ subject: row.subject, type: "已审核", value: reviewed });
-            out.push({
-                subject: row.subject,
-                type: "未审核",
-                value: row.unreviewed,
-            });
-            out.push({ subject: row.subject, type: "总数", value: row.total });
-        }
-        return out;
-    }, [subjectStats]);
-
-    type SubjectTableRow = {
-        key: string;
-        subject: string;
-        total: number;
-        approved: number;
-        passRate: number;
-    };
-
-    const tableData = useMemo<SubjectTableRow[]>(
+    const groupBarData = useMemo<GroupBar[]>(
         () =>
             subjectStats.map((row) => ({
-                key: row.subject,
                 subject: row.subject,
+                reviewed: row.approved + row.rejected,
+                unreviewed: row.unreviewed,
                 total: row.total,
-                approved: row.approved,
-                passRate: row.passRate,
             })),
         [subjectStats],
     );
 
     const tableSummary = useMemo(() => {
         const total = subjectStats.reduce((acc, row) => acc + row.total, 0);
-        const approved = subjectStats.reduce(
-            (acc, row) => acc + row.approved,
-            0,
-        );
-        const reviewed = subjectStats.reduce(
-            (acc, row) => acc + row.approved + row.rejected,
-            0,
-        );
+        const approved = subjectStats.reduce((acc, row) => acc + row.approved, 0);
+        const reviewed = subjectStats.reduce((acc, row) => acc + row.approved + row.rejected, 0);
         const passRate = reviewed > 0 ? (approved / reviewed) * 100 : 0;
         return { total, approved, passRate };
     }, [subjectStats]);
 
     const formatPassRate = (value: number) => `${value.toFixed(1)}%`;
-    const passRateColor = (value: number) => {
-        if (value >= 80) return "var(--color-success, #16a34a)";
-        if (value >= 50) return "var(--color-warning, #d97706)";
-        return "var(--color-danger, #dc2626)";
+    const passRateClass = (value: number) => {
+        if (value >= 80) return "text-success";
+        if (value >= 50) return "text-warning";
+        return "text-destructive";
     };
 
-    const tableColumns: ColumnsType<SubjectTableRow> = [
-        {
-            title: "学科",
-            dataIndex: "subject",
-            key: "subject",
-            width: 96,
-            ellipsis: true,
-            render: (value: string) => (
-                <span style={{ fontWeight: 500 }}>{value}</span>
-            ),
-        },
-        {
-            title: "总题目",
-            dataIndex: "total",
-            key: "total",
-            align: "right",
-            width: 80,
-            sorter: (a, b) => a.total - b.total,
-            render: (value: number) => value.toLocaleString(),
-        },
-        {
-            title: "通过题目",
-            dataIndex: "approved",
-            key: "approved",
-            align: "right",
-            width: 88,
-            sorter: (a, b) => a.approved - b.approved,
-            render: (value: number) => value.toLocaleString(),
-        },
-        {
-            title: (
-                <Tooltip title="通过率 = 通过 / 已审核(通过 + 驳回),不计入未审核题目。">
-                    <span
-                        style={{
-                            cursor: "help",
-                            borderBottom: "1px dashed currentColor",
-                        }}
-                    >
-                        通过率
-                    </span>
-                </Tooltip>
-            ),
-            dataIndex: "passRate",
-            key: "passRate",
-            align: "right",
-            width: 100,
-            sorter: (a, b) => a.passRate - b.passRate,
-            render: (value: number) => (
-                <span
-                    style={{
-                        color: passRateColor(value),
-                        fontVariantNumeric: "tabular-nums",
-                        fontWeight: 500,
-                    }}
-                >
-                    {formatPassRate(value)}
-                </span>
-            ),
-        },
-    ];
-
-    const projectOptions = useMemo(
-        () => [
-            { label: "全部项目", value: ALL_PROJECTS_VALUE },
-            ...projects.map((p) => ({
-                label: `${p.name} (${p.code})`,
-                value: p.id,
-            })),
-        ],
-        [projects],
-    );
-
-    const handleChange = (value: string) => {
+    const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const value = e.target.value;
         const params = new URLSearchParams(searchParams?.toString() ?? "");
         if (value === ALL_PROJECTS_VALUE) {
             params.delete("projectId");
@@ -242,218 +257,121 @@ export function SubjectStatsPanel({
     };
 
     const selectValue = selectedProjectId ?? ALL_PROJECTS_VALUE;
-    const selectedProject = selectedProjectId
-        ? projects.find((p) => p.id === selectedProjectId)
-        : null;
-    const scopeLabel = selectedProject
-        ? `${selectedProject.name} (${selectedProject.code})`
-        : "全部项目";
-
-    const buildPieConfig = (
-        data: Array<{ subject: string; value: number; rate: number }>,
-    ) => ({
-        data,
-        angleField: "value",
-        colorField: "subject",
-        height: PIE_HEIGHT,
-        radius: 0.9,
-        innerRadius: 0.55,
-        legend: {
-            color: {
-                position: "right" as const,
-                rowPadding: 6,
-            },
-        },
-        label: {
-            text: (d: { subject: string; value: number }) =>
-                `${d.subject}: ${d.value}`,
-            position: "outside" as const,
-            style: {
-                fontSize: 12,
-            },
-        },
-        tooltip: false as const,
-    });
+    const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) : null;
+    const scopeLabel = selectedProject ? `${selectedProject.name} (${selectedProject.code})` : "全部项目";
 
     return (
-        <section style={{ display: "grid", gap: 24 }}>
-            <div className="content-surface">
-                <div
-                    className="section-head"
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-end",
-                        gap: 16,
-                        flexWrap: "wrap",
-                    }}
-                >
-                    <div>
-                        <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}>
-                            学科审核概览
-                        </h2>
-                        <div className="muted" style={{ marginTop: 8 }}>
-                            选择项目查看该项目下各学科的审核分布；默认汇总所有项目。
+        <section className="space-y-6">
+            <Card>
+                <CardContent className="space-y-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <h2 className="text-base font-semibold tracking-tight">学科审核概览</h2>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                选择项目查看该项目下各学科的审核分布；默认汇总所有项目。
+                            </p>
+                        </div>
+                        <div className="min-w-[260px]">
+                            <Select value={selectValue} onChange={handleChange}>
+                                <option value={ALL_PROJECTS_VALUE}>全部项目</option>
+                                {projects.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} ({p.code})
+                                    </option>
+                                ))}
+                            </Select>
                         </div>
                     </div>
-                    <Select
-                        style={{ minWidth: 260 }}
-                        value={selectValue}
-                        onChange={handleChange}
-                        options={projectOptions}
-                        loading={isPending}
-                        showSearch
-                        optionFilterProp="label"
-                        placeholder="选择项目"
-                    />
-                </div>
-                <div
-                    style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        color: "var(--color-text-secondary, #888)",
-                    }}
-                >
-                    当前范围：{scopeLabel}
-                    {isPending ? "（加载中…）" : ""}
-                </div>
-            </div>
+                    <p className="text-xs text-muted-foreground">
+                        当前范围：{scopeLabel}
+                        {isPending ? "（加载中…）" : ""}
+                    </p>
+                </CardContent>
+            </Card>
 
-            <div className="overview-two-column">
-                <div className="content-surface">
-                    <div className="section-head">
+            <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                    <CardContent className="space-y-3">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>
-                                题目通过率
-                            </h2>
-                            <div className="muted" style={{ marginTop: 8 }}>
+                            <h3 className="text-base font-semibold tracking-tight">题目通过率</h3>
+                            <p className="mt-1 text-sm text-muted-foreground">
                                 按学科展示已通过题目分布；扇区面积代表通过题目数。
-                            </div>
+                            </p>
                         </div>
-                    </div>
-                    {passSlices.length === 0 ? (
-                        <EmptyState text="暂无通过的题目。" />
-                    ) : (
-                        <Pie {...buildPieConfig(passSlices)} />
-                    )}
-                </div>
+                        <DonutChart slices={passSlices} />
+                    </CardContent>
+                </Card>
 
-                <div className="content-surface">
-                    <div className="section-head">
+                <Card>
+                    <CardContent className="space-y-3">
                         <div>
-                            <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>
-                                未审核率
-                            </h2>
-                            <div className="muted" style={{ marginTop: 8 }}>
+                            <h3 className="text-base font-semibold tracking-tight">未审核率</h3>
+                            <p className="mt-1 text-sm text-muted-foreground">
                                 按学科展示尚未人工审核的题目分布；扇区面积代表未审核题目数。
-                            </div>
+                            </p>
                         </div>
-                    </div>
-                    {unreviewedSlices.length === 0 ? (
-                        <EmptyState text="暂无未审核题目。" />
-                    ) : (
-                        <Pie {...buildPieConfig(unreviewedSlices)} />
-                    )}
-                </div>
+                        <DonutChart slices={unreviewedSlices} />
+                    </CardContent>
+                </Card>
             </div>
 
-            <div className="content-surface">
-                <div className="section-head">
+            <Card>
+                <CardContent className="space-y-4">
                     <div>
-                        <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}>
-                            各学科审核数量
-                        </h2>
-                        <div className="muted" style={{ marginTop: 8 }}>
+                        <h3 className="text-base font-semibold tracking-tight">各学科审核数量</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
                             人工审核口径下，每个学科的已审核 / 未审核 / 总数对比。
-                        </div>
+                        </p>
                     </div>
-                </div>
-                {columnData.length === 0 ? (
-                    <EmptyState text="暂无学科数据。" height={COLUMN_HEIGHT} />
-                ) : (
-                    <div className="overview-two-column">
-                        <div style={{ minWidth: 0 }}>
-                            <Column
-                                data={columnData}
-                                xField="subject"
-                                yField="value"
-                                colorField="type"
-                                group
-                                height={COLUMN_HEIGHT}
-                                style={{ maxWidth: 56 }}
-                                axis={{
-                                    x: { labelAutoRotate: true },
-                                    y: { title: "题目数" },
-                                }}
-                                legend={{ color: { position: "top" } }}
-                                tooltip={false}
-                                label={{
-                                    text: "value",
-                                    textBaseline: "bottom",
-                                    position: "top",
-                                    style: {
-                                        fontSize: 12,
-                                        fontWeight: 500,
-                                        fill: "var(--color-text-primary, #333)",
-                                    },
-                                }}
-                            />
-                        </div>
-                        <div className="subject-stats-table">
-                            <Table<SubjectTableRow>
-                                size="small"
-                                bordered
-                                pagination={false}
-                                columns={tableColumns}
-                                dataSource={tableData}
-                                scroll={{ y: COLUMN_HEIGHT - 40 }}
-                                rowClassName={(_, index) =>
-                                    index % 2 === 1
-                                        ? "subject-stats-table__row--alt"
-                                        : ""
-                                }
-                                summary={() => (
-                                    <Table.Summary fixed>
-                                        <Table.Summary.Row className="subject-stats-table__summary">
-                                            <Table.Summary.Cell index={0}>
-                                                合计
-                                            </Table.Summary.Cell>
-                                            <Table.Summary.Cell
-                                                index={1}
-                                                align="right"
-                                            >
-                                                {tableSummary.total.toLocaleString()}
-                                            </Table.Summary.Cell>
-                                            <Table.Summary.Cell
-                                                index={2}
-                                                align="right"
-                                            >
-                                                {tableSummary.approved.toLocaleString()}
-                                            </Table.Summary.Cell>
-                                            <Table.Summary.Cell
-                                                index={3}
-                                                align="right"
-                                            >
-                                                <span
-                                                    style={{
-                                                        color: passRateColor(
-                                                            tableSummary.passRate,
-                                                        ),
-                                                    }}
-                                                >
-                                                    {formatPassRate(
-                                                        tableSummary.passRate,
-                                                    )}
-                                                </span>
-                                            </Table.Summary.Cell>
-                                        </Table.Summary.Row>
-                                    </Table.Summary>
-                                )}
-                            />
-                        </div>
+
+                    <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+                        <GroupedBarChart data={groupBarData} />
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>学科</TableHead>
+                                    <TableHead className="text-right">总题目</TableHead>
+                                    <TableHead className="text-right">通过题目</TableHead>
+                                    <TableHead className="text-right">
+                                        <span className="inline-flex items-center gap-1">
+                                            通过率
+                                            <Tooltip content="通过率 = 通过 / 已审核(通过 + 驳回)，不计入未审核题目。">
+                                                <HelpCircle size={12} />
+                                            </Tooltip>
+                                        </span>
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {subjectStats.map((row) => (
+                                    <TableRow key={row.subject}>
+                                        <TableCell className="font-medium">{row.subject}</TableCell>
+                                        <TableCell className="text-right font-mono">{row.total.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right font-mono">
+                                            {row.approved.toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className={`text-right font-mono ${passRateClass(row.passRate)}`}>
+                                            {formatPassRate(row.passRate)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                                <TableRow className="bg-muted/40 font-semibold">
+                                    <TableCell>合计</TableCell>
+                                    <TableCell className="text-right font-mono">
+                                        {tableSummary.total.toLocaleString()}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                        {tableSummary.approved.toLocaleString()}
+                                    </TableCell>
+                                    <TableCell className={`text-right font-mono ${passRateClass(tableSummary.passRate)}`}>
+                                        {formatPassRate(tableSummary.passRate)}
+                                    </TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
                     </div>
-                )}
-            </div>
+                </CardContent>
+            </Card>
         </section>
     );
 }

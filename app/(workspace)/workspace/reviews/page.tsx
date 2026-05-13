@@ -25,8 +25,12 @@ function parsePositiveInt(
 
 export default async function WorkspaceReviewsPage({
     searchParams,
+    mode = "quality",
+    listPath = "/workspace/reviews",
 }: {
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
+    mode?: "quality" | "cleaning";
+    listPath?: string;
 }) {
     const session = await auth();
     const workspaceContext = session?.user
@@ -56,6 +60,12 @@ export default async function WorkspaceReviewsPage({
             ? resolvedSearchParams.filters[0]
             : resolvedSearchParams.filters,
     );
+    const effectiveFilters =
+        mode === "cleaning"
+            ? filters.filter(
+                  (condition) => condition.fieldKey !== "manualReviewStatus",
+              )
+            : filters;
 
     const [questionPage, reviewStrategies, filterMeta, fieldPreference] =
         selectedProjectId
@@ -64,11 +74,13 @@ export default async function WorkspaceReviewsPage({
                       projectId: selectedProjectId,
                       page: requestedPage,
                       pageSize: requestedPageSize,
-                      conditions: filters,
+                      conditions: effectiveFilters,
                       viewer: {
                           userId: session?.user?.id ?? "",
                           platformRole: session?.user?.platformRole ?? "USER",
                       },
+                      requiredManualReviewStatus:
+                          mode === "cleaning" ? "PASS" : undefined,
                   }),
                   getReviewQuestionListAiStrategies([selectedProjectId], {
                       userId: session?.user?.id ?? "",
@@ -105,7 +117,8 @@ export default async function WorkspaceReviewsPage({
         <ReviewQuestionList
             canReview={Boolean(workspaceContext?.canReview)}
             scopeLabel="我的审核项目"
-            listPath="/workspace/reviews"
+            listPath={listPath}
+            mode={mode}
             projects={(workspaceContext?.reviewerProjects ?? []).map(
                 (membership) => ({
                     id: membership.project.id,
@@ -118,7 +131,7 @@ export default async function WorkspaceReviewsPage({
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}
-            activeConditions={filters}
+            activeConditions={effectiveFilters}
             datasourceOptions={filterMeta.datasourceOptions}
             rawFieldOptions={filterMeta.rawFieldOptions}
             fieldPreference={fieldPreference}

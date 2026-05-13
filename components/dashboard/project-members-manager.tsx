@@ -2,7 +2,6 @@
 
 import { useActionState, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Input, Modal, Space, Tag } from "antd";
 import { Map, Settings2, Trash2, UserPlus, X } from "lucide-react";
 import {
     assignProjectMemberAction,
@@ -14,9 +13,15 @@ import {
     saveProjectFieldLabelMapAction,
 } from "@/app/actions/projects";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { Input, Select } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 import {
-    getProjectRoleColor,
     getProjectRoleLabel,
+    getProjectRoleVariant,
 } from "@/lib/auth/role-display";
 
 type UserOption = {
@@ -53,6 +58,7 @@ type ProjectOption = {
 };
 
 const initialState: ProjectMemberFormState = {};
+const COL_TEMPLATE = "1.1fr 0.8fr 0.8fr 1fr 0.9fr";
 
 export function ProjectMembersManager({
     projects,
@@ -62,7 +68,7 @@ export function ProjectMembersManager({
     users: UserOption[];
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
+    const toast = useToast();
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
     const [assignState, assignAction, assignPending] = useActionState(
         assignProjectMemberAction,
@@ -73,61 +79,39 @@ export function ProjectMembersManager({
         initialState,
     );
     const [isDeletePending, startDeleteTransition] = useTransition();
-    const [pendingDeleteProject, setPendingDeleteProject] =
-        useState<ProjectOption | null>(null);
-    const [fieldMapProjectId, setFieldMapProjectId] = useState<string | null>(
-        null,
-    );
-    const [fieldMapDraft, setFieldMapDraft] = useState<Record<string, string>>(
-        {},
-    );
+    const [pendingDeleteProject, setPendingDeleteProject] = useState<ProjectOption | null>(null);
+    const [fieldMapProjectId, setFieldMapProjectId] = useState<string | null>(null);
+    const [fieldMapDraft, setFieldMapDraft] = useState<Record<string, string>>({});
     const [isSavingFieldMap, setIsSavingFieldMap] = useState(false);
 
-    useActionNotification(assignState, {
-        successTitle: "成员已更新",
-        errorTitle: "成员更新失败",
-    });
-    useActionNotification(removeState, {
-        successTitle: "成员已移除",
-        errorTitle: "成员移除失败",
-    });
+    useActionNotification(assignState, { successTitle: "成员已更新", errorTitle: "成员更新失败" });
+    useActionNotification(removeState, { successTitle: "成员已移除", errorTitle: "成员移除失败" });
 
     function handleDeleteConfirm() {
         if (!pendingDeleteProject) return;
-
+        const project = pendingDeleteProject;
         startDeleteTransition(async () => {
             const formData = new FormData();
-            formData.append("projectId", pendingDeleteProject.id);
+            formData.append("projectId", project.id);
             const result = await deleteProjectAction({}, formData);
-
             if (result.success) {
-                notification.success({
-                    message: "项目已删除",
-                    description: result.success,
-                    placement: "topRight",
-                });
+                toast.success({ title: "项目已删除", description: result.success });
+                router.refresh();
             }
             if (result.error) {
-                notification.error({
-                    message: "项目删除失败",
-                    description: result.error,
-                    placement: "topRight",
-                });
+                toast.error({ title: "项目删除失败", description: result.error });
             }
         });
         setPendingDeleteProject(null);
     }
 
     const activeProject = useMemo(
-        () =>
-            projects.find((project) => project.id === activeProjectId) ?? null,
+        () => projects.find((p) => p.id === activeProjectId) ?? null,
         [projects, activeProjectId],
     );
 
     const fieldMapProject = useMemo(
-        () =>
-            projects.find((project) => project.id === fieldMapProjectId) ??
-            null,
+        () => projects.find((p) => p.id === fieldMapProjectId) ?? null,
         [projects, fieldMapProjectId],
     );
 
@@ -138,29 +122,17 @@ export function ProjectMembersManager({
 
     async function saveFieldMap() {
         if (!fieldMapProjectId) return;
-
         setIsSavingFieldMap(true);
-
         try {
             const result = await saveProjectFieldLabelMapAction({
                 projectId: fieldMapProjectId,
                 labelMap: fieldMapDraft,
             });
-
             if (result.error) {
-                notification.error({
-                    message: "保存失败",
-                    description: result.error,
-                    placement: "topRight",
-                });
+                toast.error({ title: "保存失败", description: result.error });
                 return;
             }
-
-            notification.success({
-                message: "字段映射已保存",
-                description: result.success,
-                placement: "topRight",
-            });
+            toast.success({ title: "字段映射已保存", description: result.success });
             setFieldMapProjectId(null);
             router.refresh();
         } finally {
@@ -170,16 +142,10 @@ export function ProjectMembersManager({
 
     return (
         <>
-            <div className="table-surface">
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
                 <div
-                    style={{
-                        display: "grid",
-                        gridTemplateColumns: "1.1fr 0.8fr 0.8fr 1fr 0.9fr",
-                        gap: 16,
-                        padding: "14px 16px",
-                        background: "rgba(248, 250, 252, 0.9)",
-                        fontWeight: 700,
-                    }}
+                    className="grid items-center gap-4 bg-muted/40 px-4 py-3.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    style={{ gridTemplateColumns: COL_TEMPLATE }}
                 >
                     <div>项目名称</div>
                     <div>项目标识</div>
@@ -191,71 +157,50 @@ export function ProjectMembersManager({
                 {projects.map((project) => (
                     <div
                         key={project.id}
-                        style={{
-                            display: "grid",
-                            gridTemplateColumns: "1.1fr 0.8fr 0.8fr 1fr 0.9fr",
-                            gap: 16,
-                            padding: "16px",
-                            borderTop: "1px solid rgba(217, 224, 234, 0.85)",
-                            alignItems: "center",
-                        }}
+                        className="grid items-center gap-4 border-t border-border/70 px-4 py-4 text-sm"
+                        style={{ gridTemplateColumns: COL_TEMPLATE }}
                     >
                         <div>
-                            <div style={{ fontWeight: 700 }}>
-                                {project.name}
-                            </div>
-                            <div className="muted" style={{ marginTop: 4 }}>
+                            <div className="font-semibold text-foreground">{project.name}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
                                 当前状态：{project.status}
                             </div>
                         </div>
-                        <div>{project.code}</div>
-                        <div>{project.members.length}</div>
-                        <div>{project.datasourcesCount}</div>
-                        <div>
-                            <Space size={8}>
-                                <Button
-                                    icon={<Settings2 size={16} />}
-                                    disabled={!project.canManage}
-                                    title={
-                                        project.canManage
-                                            ? undefined
-                                            : "只能管理自己创建的项目"
-                                    }
-                                    onClick={() =>
-                                        setActiveProjectId(project.id)
-                                    }
-                                >
-                                    成员管理
-                                </Button>
-                                <Button
-                                    icon={<Map size={16} />}
-                                    disabled={!project.canManage}
-                                    title={
-                                        project.canManage
-                                            ? undefined
-                                            : "只能修改自己创建项目的字段映射"
-                                    }
-                                    onClick={() => openFieldMapModal(project)}
-                                >
-                                    字段映射
-                                </Button>
-                                <Button
-                                    danger
-                                    icon={<Trash2 size={16} />}
-                                    loading={isDeletePending}
-                                    disabled={!project.canManage}
-                                    title={
-                                        project.canManage
-                                            ? undefined
-                                            : "只能删除自己创建的项目"
-                                    }
-                                    onClick={() =>
-                                        setPendingDeleteProject(project)
-                                    }
-                                >
-                                    删除
-                                </Button>
-                            </Space>
+                        <div className="text-foreground">{project.code}</div>
+                        <div className="text-foreground">{project.members.length}</div>
+                        <div className="text-foreground">{project.datasourcesCount}</div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                leftIcon={<Settings2 size={14} />}
+                                disabled={!project.canManage}
+                                title={project.canManage ? undefined : "只能管理自己创建的项目"}
+                                onClick={() => setActiveProjectId(project.id)}
+                            >
+                                成员管理
+                            </Button>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                leftIcon={<Map size={14} />}
+                                disabled={!project.canManage}
+                                title={project.canManage ? undefined : "只能修改自己创建项目的字段映射"}
+                                onClick={() => openFieldMapModal(project)}
+                            >
+                                字段映射
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                leftIcon={<Trash2 size={14} />}
+                                loading={isDeletePending}
+                                disabled={!project.canManage}
+                                title={project.canManage ? undefined : "只能删除自己创建的项目"}
+                                onClick={() => setPendingDeleteProject(project)}
+                            >
+                                删除
+                            </Button>
                         </div>
                     </div>
                 ))}
@@ -263,154 +208,74 @@ export function ProjectMembersManager({
 
             <Modal
                 open={Boolean(activeProject)}
-                onCancel={() => setActiveProjectId(null)}
-                footer={null}
+                onOpenChange={(o) => !o && setActiveProjectId(null)}
+                title={activeProject ? `${activeProject.name} · 成员权限` : ""}
+                description="为当前项目分配出题用户或审核用户。"
                 width={880}
-                destroyOnHidden
-                title={
-                    activeProject ? (
-                        <div>
-                            <div style={{ fontSize: 20, fontWeight: 700 }}>
-                                {activeProject.name} · 成员权限
-                            </div>
-                            <div
-                                className="muted"
-                                style={{ marginTop: 4, fontSize: 13 }}
-                            >
-                                为当前项目分配出题用户或审核用户。
-                            </div>
-                        </div>
-                    ) : null
-                }
             >
-                {activeProject ? (
-                    <div style={{ display: "grid", gap: 20, marginTop: 8 }}>
+                {activeProject && (
+                    <div className="space-y-6">
                         <form action={assignAction}>
-                            <input
-                                type="hidden"
-                                name="projectId"
-                                value={activeProject.id}
-                            />
-                            <div className="member-form-grid">
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="userId"
-                                    >
+                            <input type="hidden" name="projectId" value={activeProject.id} />
+                            <div className="grid items-end gap-3 md:grid-cols-[1.2fr_0.9fr_auto]">
+                                <div className="space-y-1.5">
+                                    <label htmlFor="userId" className="text-sm font-medium">
                                         用户
                                     </label>
-                                    <select
-                                        id="userId"
-                                        name="userId"
-                                        defaultValue=""
-                                        className="field-select"
-                                    >
+                                    <Select id="userId" name="userId" defaultValue="" required>
                                         <option value="" disabled>
                                             请选择用户
                                         </option>
                                         {users.map((user) => (
-                                            <option
-                                                key={user.id}
-                                                value={user.id}
-                                            >
-                                                {user.name} (
-                                                {user.username ??
-                                                    user.email ??
-                                                    user.id}
-                                                )
+                                            <option key={user.id} value={user.id}>
+                                                {user.name} ({user.username ?? user.email ?? user.id})
                                             </option>
                                         ))}
-                                    </select>
+                                    </Select>
                                 </div>
 
-                                <div>
-                                    <label
-                                        className="field-label"
-                                        htmlFor="role"
-                                    >
+                                <div className="space-y-1.5">
+                                    <label htmlFor="role" className="text-sm font-medium">
                                         项目角色
                                     </label>
-                                    <select
-                                        id="role"
-                                        name="role"
-                                        defaultValue="AUTHOR"
-                                        className="field-select"
-                                    >
+                                    <Select id="role" name="role" defaultValue="AUTHOR">
                                         <option value="AUTHOR">出题用户</option>
-                                        <option value="REVIEWER">
-                                            审核用户
-                                        </option>
-                                    </select>
+                                        <option value="REVIEWER">审核用户</option>
+                                    </Select>
                                 </div>
 
-                                <div className="member-form-submit">
-                                    <Button
-                                        type="primary"
-                                        htmlType="submit"
-                                        icon={<UserPlus size={16} />}
-                                        loading={assignPending}
-                                    >
-                                        添加 / 更新成员
-                                    </Button>
-                                </div>
+                                <Button type="submit" leftIcon={<UserPlus size={14} />} loading={assignPending}>
+                                    添加 / 更新
+                                </Button>
                             </div>
                         </form>
 
-                        <div>
-                            <div
-                                style={{
-                                    marginBottom: 12,
-                                    fontSize: 14,
-                                    fontWeight: 700,
-                                }}
-                            >
-                                当前成员
-                            </div>
+                        <div className="space-y-3">
+                            <div className="text-sm font-semibold text-foreground">当前成员</div>
 
                             {activeProject.members.length ? (
-                                <div style={{ display: "grid", gap: 10 }}>
+                                <div className="space-y-2">
                                     {activeProject.members.map((member) => (
                                         <div
                                             key={member.id}
-                                            className="workspace-tip"
-                                            style={{
-                                                justifyContent: "space-between",
-                                            }}
+                                            className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-sm"
                                         >
-                                            <div
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: 12,
-                                                }}
-                                            >
-                                                <Tag
-                                                    color={getProjectRoleColor(
-                                                        member.role,
-                                                    )}
-                                                >
-                                                    {getProjectRoleLabel(
-                                                        member.role,
-                                                    )}
-                                                </Tag>
+                                            <div className="flex items-center gap-3">
+                                                <Badge variant={getProjectRoleVariant(member.role)} size="sm">
+                                                    {getProjectRoleLabel(member.role)}
+                                                </Badge>
                                                 <div>
-                                                    <div
-                                                        style={{
-                                                            fontWeight: 700,
-                                                        }}
-                                                    >
+                                                    <div className="font-semibold text-foreground">
                                                         {member.user.name}
                                                     </div>
-                                                    <div className="muted">
-                                                        {member.user.username ??
-                                                            member.user.email ??
-                                                            member.user.id}
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {member.user.username ?? member.user.email ?? member.user.id}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <Space size={12}>
-                                                <span className="muted">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs text-muted-foreground">
                                                     {member.joinedAt}
                                                 </span>
                                                 <form action={removeAction}>
@@ -420,146 +285,104 @@ export function ProjectMembersManager({
                                                         value={member.id}
                                                     />
                                                     <Button
-                                                        danger
-                                                        htmlType="submit"
-                                                        icon={<X size={14} />}
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        type="submit"
+                                                        leftIcon={<X size={12} />}
                                                         loading={removePending}
                                                     >
                                                         移除
                                                     </Button>
                                                 </form>
-                                            </Space>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="muted">
-                                    当前项目还没有成员。
-                                </div>
+                                <p className="text-sm text-muted-foreground">当前项目还没有成员。</p>
                             )}
                         </div>
                     </div>
-                ) : null}
+                )}
             </Modal>
 
             <Modal
                 open={Boolean(pendingDeleteProject)}
-                onCancel={() => setPendingDeleteProject(null)}
-                onOk={handleDeleteConfirm}
-                okText="确认删除"
-                okButtonProps={{ danger: true, loading: isDeletePending }}
-                cancelText="取消"
-                title={
-                    pendingDeleteProject ? (
-                        <div>
-                            <div style={{ fontSize: 18, fontWeight: 700 }}>
-                                确认删除项目
-                            </div>
-                            <div
-                                className="muted"
-                                style={{ marginTop: 4, fontSize: 13 }}
-                            >
-                                此操作不可恢复
-                            </div>
-                        </div>
-                    ) : null
+                onOpenChange={(o) => !o && setPendingDeleteProject(null)}
+                title="确认删除项目"
+                description="此操作不可恢复"
+                width={520}
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={() => setPendingDeleteProject(null)}>
+                            取消
+                        </Button>
+                        <Button variant="destructive" loading={isDeletePending} onClick={handleDeleteConfirm}>
+                            确认删除
+                        </Button>
+                    </>
                 }
             >
-                {pendingDeleteProject ? (
-                    <div style={{ lineHeight: 1.7 }}>
+                {pendingDeleteProject && (
+                    <div className="space-y-3 text-sm leading-relaxed text-foreground">
                         <p>
-                            确定要删除项目{" "}
-                            <strong>{pendingDeleteProject.name}</strong> 吗？
+                            确定要删除项目 <strong>{pendingDeleteProject.name}</strong> 吗？
                         </p>
                         <p>删除后将同时删除该项目下的所有关联数据，包括：</p>
-                        <ul style={{ marginTop: 8, paddingLeft: 20 }}>
-                            <li>
-                                {pendingDeleteProject.datasourcesCount} 个数据源
-                            </li>
-                            <li>
-                                {pendingDeleteProject.members.length} 个成员
-                            </li>
+                        <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                            <li>{pendingDeleteProject.datasourcesCount} 个数据源</li>
+                            <li>{pendingDeleteProject.members.length} 个成员</li>
                             <li>所有题目、审核记录、AI 审核结果等</li>
                         </ul>
-                        <p style={{ color: "var(--danger)", marginTop: 12 }}>
-                            此操作不可恢复，请谨慎操作。
-                        </p>
+                        <p className="text-destructive">此操作不可恢复，请谨慎操作。</p>
                     </div>
-                ) : null}
+                )}
             </Modal>
 
             <Modal
                 open={Boolean(fieldMapProject)}
-                onCancel={() => setFieldMapProjectId(null)}
-                onOk={saveFieldMap}
-                okText={isSavingFieldMap ? "保存中..." : "保存映射"}
-                cancelText="取消"
-                confirmLoading={isSavingFieldMap}
+                onOpenChange={(o) => !o && setFieldMapProjectId(null)}
+                title={fieldMapProject ? `字段名称映射 · ${fieldMapProject.name}` : ""}
+                description="为原始字段配置显示名称，空白则沿用原始字段名。"
                 width={680}
-                destroyOnHidden
-                title={
-                    fieldMapProject ? (
-                        <div>
-                            <div style={{ fontSize: 18, fontWeight: 700 }}>
-                                字段名称映射 · {fieldMapProject.name}
-                            </div>
-                            <div
-                                className="muted"
-                                style={{ marginTop: 4, fontSize: 13 }}
-                            >
-                                为原始字段配置显示名称，空白则沿用原始字段名。
-                            </div>
-                        </div>
-                    ) : null
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={() => setFieldMapProjectId(null)} disabled={isSavingFieldMap}>
+                            取消
+                        </Button>
+                        <Button onClick={saveFieldMap} loading={isSavingFieldMap}>
+                            保存映射
+                        </Button>
+                    </>
                 }
             >
-                {fieldMapProject ? (
-                    <div style={{ display: "grid", gap: 16, marginTop: 16 }}>
-                        <div className="workspace-tip">
-                            <Tag color="blue">说明</Tag>
-                            <span>
+                {fieldMapProject && (
+                    <div className="space-y-4">
+                        <div className="flex items-start gap-2 rounded-md border border-info/30 bg-info-soft px-3 py-2 text-sm">
+                            <Badge variant="info" size="sm">
+                                说明
+                            </Badge>
+                            <span className="text-foreground">
                                 配置后，题目列表、详情页及筛选条件中将显示映射后的名称，原始字段名作为辅助标注。
                             </span>
                         </div>
 
                         {fieldMapProject.rawFieldKeys.length === 0 ? (
-                            <Empty description="该项目暂无已导入的原始字段，请先导入数据源。" />
+                            <EmptyState
+                                title="暂无字段"
+                                description="该项目暂无已导入的原始字段，请先导入数据源。"
+                            />
                         ) : (
-                            <div style={{ display: "grid", gap: 10 }}>
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns: "1fr 1fr",
-                                        gap: 12,
-                                        padding: "0 4px",
-                                        fontSize: 12,
-                                        color: "var(--color-text-muted, #667085)",
-                                        fontWeight: 600,
-                                    }}
-                                >
+                            <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-3 px-1 text-xs font-semibold text-muted-foreground">
                                     <div>原始字段名</div>
                                     <div>显示名称</div>
                                 </div>
 
                                 {fieldMapProject.rawFieldKeys.map((key) => (
-                                    <div
-                                        key={key}
-                                        style={{
-                                            display: "grid",
-                                            gridTemplateColumns: "1fr 1fr",
-                                            gap: 12,
-                                            alignItems: "center",
-                                        }}
-                                    >
+                                    <div key={key} className="grid grid-cols-2 items-center gap-3">
                                         <div
-                                            className="muted"
-                                            style={{
-                                                fontFamily: "monospace",
-                                                fontSize: 13,
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                            }}
+                                            className="truncate font-mono text-xs text-muted-foreground"
                                             title={key}
                                         >
                                             {key}
@@ -567,7 +390,6 @@ export function ProjectMembersManager({
                                         <Input
                                             value={fieldMapDraft[key] ?? ""}
                                             placeholder={key}
-                                            size="middle"
                                             onChange={(e) =>
                                                 setFieldMapDraft((prev) => ({
                                                     ...prev,
@@ -580,7 +402,7 @@ export function ProjectMembersManager({
                             </div>
                         )}
                     </div>
-                ) : null}
+                )}
             </Modal>
         </>
     );

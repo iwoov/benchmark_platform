@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
 import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
+import { logWarn } from "@/lib/logging/app-logger";
 
 export type AiChatConfigView = {
     id: string;
@@ -31,14 +32,20 @@ function parseModelCodes(modelCode: string, raw: unknown): string[] {
     return [modelCode];
 }
 
-export async function getAiChatConfigs(): Promise<AiChatConfigView[]> {
-    if (!process.env.DATABASE_URL) return [];
+type AiChatConfigRow = Awaited<
+    ReturnType<typeof prisma.aiChatConfig.findMany>
+>[number];
 
-    const rows = await prisma.aiChatConfig.findMany({
-        orderBy: [{ updatedAt: "desc" }],
-    });
-
-    const modelCodes = [...new Set(rows.flatMap((row) => parseModelCodes(row.modelCode, row.modelCodes)))];
+async function buildChatConfigViews(
+    rows: AiChatConfigRow[],
+): Promise<AiChatConfigView[]> {
+    const modelCodes = [
+        ...new Set(
+            rows.flatMap((row) =>
+                parseModelCodes(row.modelCode, row.modelCodes),
+            ),
+        ),
+    ];
     const models = modelCodes.length
         ? await prisma.aiModel.findMany({
               where: {
@@ -53,7 +60,10 @@ export async function getAiChatConfigs(): Promise<AiChatConfigView[]> {
           })
         : [];
     const modelBuiltInToolsMap = Object.fromEntries(
-        models.map((model) => [model.code, model.builtInTools as AiBuiltInToolType[]]),
+        models.map((model) => [
+            model.code,
+            model.builtInTools as AiBuiltInToolType[],
+        ]),
     ) as Record<string, AiBuiltInToolType[]>;
 
     return rows.map((row) => ({
@@ -74,46 +84,39 @@ export async function getAiChatConfigs(): Promise<AiChatConfigView[]> {
     }));
 }
 
+function logChatConfigLoadFailure(error: unknown) {
+    logWarn("ai_chat_config.load_failed", {
+        error: error instanceof Error ? error.message : String(error),
+    });
+}
+
+export async function getAiChatConfigs(): Promise<AiChatConfigView[]> {
+    if (!process.env.DATABASE_URL) return [];
+
+    try {
+        const rows = await prisma.aiChatConfig.findMany({
+            orderBy: [{ updatedAt: "desc" }],
+        });
+
+        return buildChatConfigViews(rows);
+    } catch (error) {
+        logChatConfigLoadFailure(error);
+        return [];
+    }
+}
+
 export async function getEnabledAiChatConfigs(): Promise<AiChatConfigView[]> {
     if (!process.env.DATABASE_URL) return [];
 
-    const rows = await prisma.aiChatConfig.findMany({
-        where: { enabled: true },
-        orderBy: [{ updatedAt: "desc" }],
-    });
+    try {
+        const rows = await prisma.aiChatConfig.findMany({
+            where: { enabled: true },
+            orderBy: [{ updatedAt: "desc" }],
+        });
 
-    const modelCodes = [...new Set(rows.flatMap((row) => parseModelCodes(row.modelCode, row.modelCodes)))];
-    const models = modelCodes.length
-        ? await prisma.aiModel.findMany({
-              where: {
-                  code: {
-                      in: modelCodes,
-                  },
-              },
-              select: {
-                  code: true,
-                  builtInTools: true,
-              },
-          })
-        : [];
-    const modelBuiltInToolsMap = Object.fromEntries(
-        models.map((model) => [model.code, model.builtInTools as AiBuiltInToolType[]]),
-    ) as Record<string, AiBuiltInToolType[]>;
-
-    return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        modelCode: row.modelCode,
-        modelCodes: parseModelCodes(row.modelCode, row.modelCodes),
-        modelBuiltInTools: Object.fromEntries(
-            parseModelCodes(row.modelCode, row.modelCodes).map((code) => [
-                code,
-                modelBuiltInToolsMap[code] ?? [],
-            ]),
-        ) as Record<string, AiBuiltInToolType[]>,
-        systemPrompt: row.systemPrompt,
-        presetFields: parsePresetFields(row.presetFields),
-        enabled: row.enabled,
-        updatedAt: row.updatedAt.toISOString(),
-    }));
+        return buildChatConfigViews(rows);
+    } catch (error) {
+        logChatConfigLoadFailure(error);
+        return [];
+    }
 }

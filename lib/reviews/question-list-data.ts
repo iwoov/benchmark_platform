@@ -7,6 +7,7 @@ import {
     buildReviewCompositeKey,
     getLatestReviewSummaryMap,
     toReviewStatusValue,
+    type ReviewDecisionStatus,
     type ReviewSummary,
     type ReviewStatusValue,
 } from "@/lib/reviews/review-summary";
@@ -544,6 +545,7 @@ type NavigationContext = {
     projectId?: string;
     conditions?: ReviewQuestionFilterCondition[];
     viewer?: ReviewQuestionListViewer;
+    requiredManualReviewStatus?: ReviewDecisionStatus;
 };
 
 export type ReviewQuestionListPageData = {
@@ -685,6 +687,7 @@ export async function getReviewQuestionListPageData({
     pageSize = 50,
     conditions = [],
     viewer,
+    requiredManualReviewStatus,
 }: {
     projectId: string;
     datasourceId?: string;
@@ -692,6 +695,7 @@ export async function getReviewQuestionListPageData({
     pageSize?: number;
     conditions?: ReviewQuestionFilterCondition[];
     viewer?: ReviewQuestionListViewer;
+    requiredManualReviewStatus?: ReviewDecisionStatus;
 }): Promise<ReviewQuestionListPageData> {
     if (!process.env.DATABASE_URL || !projectId) {
         return {
@@ -846,6 +850,14 @@ export async function getReviewQuestionListPageData({
             };
         })
         .filter((question) => {
+            if (
+                requiredManualReviewStatus &&
+                toReviewStatusValue(question.manualReview) !==
+                    requiredManualReviewStatus
+            ) {
+                return false;
+            }
+
             if (
                 aiReviewStatusCondition?.operator === "equals" &&
                 validAiReviewStatusValue &&
@@ -1208,6 +1220,7 @@ export async function getReviewQuestionNavigation({
     projectId,
     conditions = [],
     viewer,
+    requiredManualReviewStatus,
 }: NavigationContext) {
     if (!process.env.DATABASE_URL) {
         return {
@@ -1340,6 +1353,24 @@ export async function getReviewQuestionNavigation({
                 ),
             ),
         )
+        .filter((question) => {
+            if (!requiredManualReviewStatus) {
+                return true;
+            }
+
+            const reviewSummary = reviewSummaryMap.get(
+                buildReviewCompositeKey({
+                    projectId: scopedProjectId,
+                    datasourceId: question.datasourceId,
+                    externalRecordId: question.externalRecordId,
+                }),
+            );
+
+            return (
+                toReviewStatusValue(reviewSummary?.manualReview ?? null) ===
+                requiredManualReviewStatus
+            );
+        })
         .sort((left, right) => {
             return compareQuestionsByDatasource(
                 {

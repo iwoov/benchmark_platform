@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-    App,
     Button,
     Checkbox,
     Empty,
@@ -19,7 +18,7 @@ import {
     Select,
     Space,
     Tag,
-} from "antd";
+} from "@/components/ui/legacy-ui-adapters";
 import {
     FileUp,
     Image as ImageIcon,
@@ -38,6 +37,7 @@ import {
     type ImagePackUploadState,
 } from "@/app/actions/datasource-images";
 import { useActionNotification } from "@/components/feedback/use-action-notification";
+import { useToast } from "@/components/ui/toast";
 import {
     getDataSourceStatusColor,
     getDataSourceStatusLabel,
@@ -88,7 +88,7 @@ export function ProjectDatasourceConsole({
     datasources: DataSourceItem[];
 }) {
     const router = useRouter();
-    const { modal, notification } = App.useApp();
+    const toast = useToast();
     const [state, formAction, isPending] = useActionState(
         importProjectDataAction,
         initialState,
@@ -110,6 +110,8 @@ export function ProjectDatasourceConsole({
     const [deletingDatasourceId, setDeletingDatasourceId] = useState<
         string | null
     >(null);
+    const [deleteConfirmDatasource, setDeleteConfirmDatasource] =
+        useState<DataSourceItem | null>(null);
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
     const selectedProjectId =
         activeProjectId && projects.some((project) => project.id === activeProjectId)
@@ -196,18 +198,16 @@ export function ProjectDatasourceConsole({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "保存失败",
+                toast.error({
+                    title: "保存失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "图片字段已更新",
+            toast.success({
+                title: "图片字段已更新",
                 description: result.success,
-                placement: "topRight",
             });
             setImageFieldOpen(false);
             router.refresh();
@@ -215,60 +215,40 @@ export function ProjectDatasourceConsole({
     }
 
     function confirmDeleteDatasource(datasource: DataSourceItem) {
-        modal.confirm({
-            title: `确认删除数据源“${datasource.name}”`,
-            centered: true,
-            okText: "确认删除",
-            cancelText: "取消",
-            okButtonProps: {
-                danger: true,
-            },
-            content: (
-                <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-                    <div>
-                        删除后将立即移除该数据源下的全部导入题目、关联图片、审核记录、AI
-                        回答与运行记录，且不可恢复。
-                    </div>
-                    <div className="workspace-tip">
-                        <Tag color="red">高风险操作</Tag>
-                        <span>
-                            当前数据源属于项目 {datasource.project.name} (
-                            {datasource.project.code})，当前可见题目数为{" "}
-                            {datasource.questionCount}。
-                        </span>
-                    </div>
-                </div>
-            ),
-            onOk: async () => {
-                setDeletingDatasourceId(datasource.id);
+        setDeleteConfirmDatasource(datasource);
+    }
 
-                try {
-                    const result = await deleteDatasourceAction({
-                        datasourceId: datasource.id,
-                    });
+    async function deleteConfirmedDatasource() {
+        if (!deleteConfirmDatasource) {
+            return;
+        }
 
-                    if (result.error) {
-                        notification.error({
-                            message: "删除失败",
-                            description: result.error,
-                            placement: "topRight",
-                        });
-                        throw new Error(result.error);
-                    }
+        setDeletingDatasourceId(deleteConfirmDatasource.id);
 
-                    notification.success({
-                        message: "数据源已删除",
-                        description: result.success,
-                        placement: "topRight",
-                    });
-                    router.refresh();
-                } finally {
-                    setDeletingDatasourceId((current) =>
-                        current === datasource.id ? null : current,
-                    );
-                }
-            },
-        });
+        try {
+            const result = await deleteDatasourceAction({
+                datasourceId: deleteConfirmDatasource.id,
+            });
+
+            if (result.error) {
+                toast.error({
+                    title: "删除失败",
+                    description: result.error,
+                });
+                return;
+            }
+
+            toast.success({
+                title: "数据源已删除",
+                description: result.success,
+            });
+            setDeleteConfirmDatasource(null);
+            router.refresh();
+        } finally {
+            setDeletingDatasourceId((current) =>
+                current === deleteConfirmDatasource.id ? null : current,
+            );
+        }
     }
 
     return (
@@ -761,6 +741,43 @@ export function ProjectDatasourceConsole({
                         />
                     </div>
                 </div>
+            </Modal>
+
+            <Modal
+                open={!!deleteConfirmDatasource}
+                onCancel={() => setDeleteConfirmDatasource(null)}
+                onOk={deleteConfirmedDatasource}
+                okText="确认删除"
+                cancelText="取消"
+                confirmLoading={
+                    !!deleteConfirmDatasource &&
+                    deletingDatasourceId === deleteConfirmDatasource.id
+                }
+                okButtonProps={{ danger: true }}
+                width={560}
+                title={
+                    deleteConfirmDatasource
+                        ? `确认删除数据源“${deleteConfirmDatasource.name}”`
+                        : "确认删除数据源"
+                }
+            >
+                {deleteConfirmDatasource ? (
+                    <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                        <div>
+                            删除后将立即移除该数据源下的全部导入题目、关联图片、审核记录、AI
+                            回答与运行记录，且不可恢复。
+                        </div>
+                        <div className="workspace-tip">
+                            <Tag color="red">高风险操作</Tag>
+                            <span>
+                                当前数据源属于项目{" "}
+                                {deleteConfirmDatasource.project.name} (
+                                {deleteConfirmDatasource.project.code})，当前可见题目数为{" "}
+                                {deleteConfirmDatasource.questionCount}。
+                            </span>
+                        </div>
+                    </div>
+                ) : null}
             </Modal>
         </section>
     );

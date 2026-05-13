@@ -1,0 +1,1 @@
+export const REVIEW_COMMENT_MAX_LENGTH = 12000;

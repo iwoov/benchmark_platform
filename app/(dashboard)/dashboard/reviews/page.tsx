@@ -1,4 +1,4 @@
-import { Empty, Tag } from "antd";
+import { Empty, Tag } from "@/components/ui/legacy-ui-adapters";
 import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";

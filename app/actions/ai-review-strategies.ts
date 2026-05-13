@@ -70,6 +70,7 @@ const runStrategySchema = z.object({
     strategyId: z.string().trim().min(1, "请选择要执行的策略"),
     questionId: z.string().trim().min(1, "缺少题目 ID"),
     enableBuiltInTools: z.boolean().optional(),
+    purpose: z.enum(["REVIEW", "CLEANING"]).optional(),
 });
 
 const retryRunItemSchema = z.object({
@@ -90,6 +91,7 @@ const createBatchRunSchema = z.object({
         .array(z.string().trim().min(1, "缺少题目 ID"))
         .min(1, "至少选择 1 道题目"),
     concurrency: z.number().int("并发数无效").min(1).max(2),
+    purpose: z.enum(["REVIEW", "CLEANING"]).optional(),
 });
 
 const cancelBatchRunSchema = z.object({
@@ -124,7 +126,9 @@ function revalidateStrategyPaths(questionId?: string) {
 
     if (questionId) {
         revalidatePath(`/admin/review-tasks/${questionId}`);
+        revalidatePath(`/admin/data-cleaning/${questionId}`);
         revalidatePath(`/workspace/reviews/${questionId}`);
+        revalidatePath(`/workspace/data-cleaning/${questionId}`);
     }
 }
 
@@ -176,19 +180,32 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
         }
     }
 
-    if (datasourceIds.length) {
-        const datasources = await prisma.projectDataSource.findMany({
-            where: {
-                id: {
-                    in: datasourceIds,
-                },
-            },
-            select: {
-                id: true,
-                projectId: true,
-            },
-        });
+    const datasourceScopeWhere = datasourceIds.length
+        ? {
+              id: {
+                  in: datasourceIds,
+              },
+          }
+        : {
+              status: "ACTIVE" as const,
+              ...(projectIds.length
+                  ? {
+                        projectId: {
+                            in: projectIds,
+                        },
+                    }
+                  : {}),
+          };
 
+    const datasources = await prisma.projectDataSource.findMany({
+        where: datasourceScopeWhere,
+        select: {
+            id: true,
+            projectId: true,
+        },
+    });
+
+    if (datasourceIds.length) {
         if (datasources.length !== datasourceIds.length) {
             return "部分数据源不存在，请刷新后重试。";
         }
@@ -201,11 +218,13 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
         ) {
             return "所选数据源与适用项目不匹配，请调整后再保存。";
         }
+    }
 
+    if (datasources.length) {
         const datasourceDetails = await prisma.projectDataSource.findMany({
             where: {
                 id: {
-                    in: datasourceIds,
+                    in: datasources.map((datasource) => datasource.id),
                 },
             },
             select: {
@@ -259,10 +278,6 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
             (fieldKey) => !systemFieldSet.has(fieldKey),
         );
 
-        if (rawDatasourceFields.length && !datasourceIds.length) {
-            return "请先选择适用数据源，再配置 AI 步骤要提交的原始字段。";
-        }
-
         if (
             rawDatasourceFields.some(
                 (fieldKey) => !datasourceFieldSet.has(fieldKey),
@@ -278,139 +293,154 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
 export async function saveAiReviewStrategyAction(
     input: z.input<typeof saveStrategySchema>,
 ): Promise<AiReviewStrategyActionState> {
-    const accessError = await requireStrategyAdminAccess();
+    try {
+        const accessError = await requireStrategyAdminAccess();
 
-    if (accessError) {
-        return accessError;
-    }
+        if (accessError) {
+            return accessError;
+        }
 
-    const parsed = saveStrategySchema.safeParse(input);
+        const parsed = saveStrategySchema.safeParse(input);
 
-    if (!parsed.success) {
-        return {
-            error: parsed.error.issues[0]?.message ?? "审核策略参数不完整。",
-        };
-    }
+        if (!parsed.success) {
+            return {
+                error:
+                    parsed.error.issues[0]?.message ?? "审核策略参数不完整。",
+            };
+        }
 
-    const validationError = await validateStrategyPayload(parsed.data.payload);
+        const validationError = await validateStrategyPayload(
+            parsed.data.payload,
+        );
 
-    if (validationError) {
-        return {
-            error: validationError,
-        };
-    }
+        if (validationError) {
+            return {
+                error: validationError,
+            };
+        }
 
-    const session = await auth();
-    const scopeAdminId =
-        session!.user.platformRole === "SUPER_ADMIN"
-            ? parsed.data.scopeAdminId
-            : session!.user.id;
+        const session = await auth();
+        const scopeAdminId =
+            session!.user.platformRole === "SUPER_ADMIN"
+                ? parsed.data.scopeAdminId
+                : session!.user.id;
 
-    if (!scopeAdminId) {
-        return {
-            error: "请选择策略所属管理员。",
-        };
-    }
+        if (!scopeAdminId) {
+            return {
+                error: "请选择策略所属管理员。",
+            };
+        }
 
-    const scopeAdmin = await prisma.user.findFirst({
-        where: {
-            id: scopeAdminId,
-            platformRole: {
-                in: ["SUPER_ADMIN", "PLATFORM_ADMIN"],
-            },
-        },
-        select: {
-            id: true,
-        },
-    });
-
-    if (!scopeAdmin) {
-        return {
-            error: "策略所属管理员不存在，请刷新后重试。",
-        };
-    }
-
-    const duplicate = await prisma.aiReviewStrategy.findFirst({
-        where: parsed.data.strategyId
-            ? {
-                  scopeAdminId,
-                  code: parsed.data.payload.code,
-                  NOT: {
-                      id: parsed.data.strategyId,
-                  },
-              }
-            : {
-                  scopeAdminId,
-                  code: parsed.data.payload.code,
-              },
-        select: {
-            id: true,
-        },
-    });
-
-    if (duplicate) {
-        return {
-            error: "策略编码已存在，请更换后再保存。",
-        };
-    }
-
-    const data = {
-        code: parsed.data.payload.code,
-        name: parsed.data.payload.name,
-        description: parsed.data.payload.description,
-        enabled: parsed.data.payload.enabled,
-        projectIds: parsed.data.payload.projectIds,
-        datasourceIds: parsed.data.payload.datasourceIds,
-        scopeAdminId,
-        definition: parsed.data.payload.definition,
-    };
-
-    if (parsed.data.strategyId) {
-        const current = await prisma.aiReviewStrategy.findUnique({
+        const scopeAdmin = await prisma.user.findFirst({
             where: {
-                id: parsed.data.strategyId,
+                id: scopeAdminId,
+                platformRole: {
+                    in: ["SUPER_ADMIN", "PLATFORM_ADMIN"],
+                },
             },
             select: {
                 id: true,
-                scopeAdminId: true,
             },
         });
 
-        if (!current) {
+        if (!scopeAdmin) {
             return {
-                error: "要编辑的审核策略不存在。",
+                error: "策略所属管理员不存在，请刷新后重试。",
             };
         }
 
-        if (
-            session!.user.platformRole !== "SUPER_ADMIN" &&
-            current.scopeAdminId !== session!.user.id
-        ) {
+        const duplicate = await prisma.aiReviewStrategy.findFirst({
+            where: parsed.data.strategyId
+                ? {
+                      scopeAdminId,
+                      code: parsed.data.payload.code,
+                      NOT: {
+                          id: parsed.data.strategyId,
+                      },
+                  }
+                : {
+                      scopeAdminId,
+                      code: parsed.data.payload.code,
+                  },
+            select: {
+                id: true,
+            },
+        });
+
+        if (duplicate) {
             return {
-                error: "你只能编辑自己名下的审核策略。",
+                error: "策略编码已存在，请更换后再保存。",
             };
         }
 
-        await prisma.aiReviewStrategy.update({
-            where: {
-                id: current.id,
-            },
-            data,
+        const data = {
+            code: parsed.data.payload.code,
+            name: parsed.data.payload.name,
+            description: parsed.data.payload.description,
+            enabled: parsed.data.payload.enabled,
+            projectIds: parsed.data.payload.projectIds,
+            datasourceIds: parsed.data.payload.datasourceIds,
+            scopeAdminId,
+            definition: parsed.data.payload.definition,
+        };
+
+        if (parsed.data.strategyId) {
+            const current = await prisma.aiReviewStrategy.findUnique({
+                where: {
+                    id: parsed.data.strategyId,
+                },
+                select: {
+                    id: true,
+                    scopeAdminId: true,
+                },
+            });
+
+            if (!current) {
+                return {
+                    error: "要编辑的审核策略不存在。",
+                };
+            }
+
+            if (
+                session!.user.platformRole !== "SUPER_ADMIN" &&
+                current.scopeAdminId !== session!.user.id
+            ) {
+                return {
+                    error: "你只能编辑自己名下的审核策略。",
+                };
+            }
+
+            await prisma.aiReviewStrategy.update({
+                where: {
+                    id: current.id,
+                },
+                data,
+            });
+        } else {
+            await prisma.aiReviewStrategy.create({
+                data: {
+                    ...data,
+                    createdById: session!.user.id,
+                },
+            });
+        }
+
+        revalidateStrategyPaths();
+
+        return {
+            success: `审核策略 ${parsed.data.payload.name} 已保存。`,
+        };
+    } catch (error) {
+        logError("保存 AI 审核策略失败", {
+            error: error instanceof Error ? error.message : String(error),
         });
-    } else {
-        await prisma.aiReviewStrategy.create({
-            data: {
-                ...data,
-                createdById: session!.user.id,
-            },
-        });
+        return {
+            error:
+                error instanceof Error
+                    ? `保存失败：${error.message}`
+                    : "保存失败，请稍后重试。",
+        };
     }
-
-    revalidateStrategyPaths();
-
-    return {
-        success: `审核策略 ${parsed.data.payload.name} 已保存。`,
-    };
 }
 
 export async function deleteAiReviewStrategyAction(
@@ -582,16 +612,21 @@ export async function runAiReviewStrategyAction(
             },
         );
 
-        const reviewMessage =
-            execution.parsedResult.reviewPersistence?.status === "SAVED"
-                ? "系统已自动保存审核结论。"
-                : execution.parsedResult.reviewPersistence?.status === "FAILED"
-                  ? `自动保存审核结论失败：${execution.parsedResult.reviewPersistence.message}`
-                  : "本次运行未自动保存审核结论。";
+        const isCleaningPurpose = parsed.data.purpose === "CLEANING";
+        const runPurposeLabel = isCleaningPurpose ? "数据清洗" : " AI 审核";
+        const reviewMessage = isCleaningPurpose
+            ? "清洗结果已保存到运行记录。"
+            : execution.parsedResult.reviewPersistence?.status === "SAVED"
+              ? "系统已自动保存审核结论。"
+              : execution.parsedResult.reviewPersistence?.status === "FAILED"
+                ? `自动保存审核结论失败：${execution.parsedResult.reviewPersistence.message}`
+                : "本次运行未自动保存审核结论。";
 
         revalidatePath("/admin/reviews");
         revalidatePath("/admin/review-tasks");
+        revalidatePath("/admin/data-cleaning");
         revalidatePath("/workspace/reviews");
+        revalidatePath("/workspace/data-cleaning");
         revalidateStrategyPaths(question.id);
 
         logInfo("user.request.run_strategy.success", {
@@ -605,7 +640,7 @@ export async function runAiReviewStrategyAction(
         });
 
         return {
-            success: `题目 ${question.title} 的 AI 审核策略已执行完成。${reviewMessage}`,
+            success: `题目 ${question.title} 的${runPurposeLabel}策略已执行完成。${reviewMessage}`,
         };
     } catch (error) {
         revalidateStrategyPaths(question.id);
@@ -833,6 +868,8 @@ export async function createAiReviewStrategyBatchRunAction(
         };
     }
 
+    const isCleaningPurpose = parsed.data.purpose === "CLEANING";
+    const batchPurposeLabel = isCleaningPurpose ? "清洗" : "审核";
     const uniqueQuestionIds = [...new Set(parsed.data.questionIds)];
     const questions = await prisma.question.findMany({
         where: {
@@ -987,7 +1024,9 @@ export async function createAiReviewStrategyBatchRunAction(
         });
 
         revalidatePath("/admin/review-tasks");
+        revalidatePath("/admin/data-cleaning");
         revalidatePath("/workspace/reviews");
+        revalidatePath("/workspace/data-cleaning");
 
         logInfo("user.request.create_batch_run.success", {
             userId: session.user.id,
@@ -998,10 +1037,10 @@ export async function createAiReviewStrategyBatchRunAction(
 
         return {
             success: pendingExternalRecordIds.length
-                ? `批量任务已创建（新增 ${creatableQuestionIds.length} 题）。以下外部记录 ID 已在待执行/执行中，已自动跳过：${formatExternalRecordIdsForMessage(
+                ? `批量${batchPurposeLabel}任务已创建（新增 ${creatableQuestionIds.length} 题）。以下外部记录 ID 已在待执行/执行中，已自动跳过：${formatExternalRecordIdsForMessage(
                       pendingExternalRecordIds,
                   )}`
-                : "批量任务已创建，后台 worker 会继续执行。",
+                : `批量${batchPurposeLabel}任务已创建，后台 worker 会继续执行。`,
             batchRunId: batchRun.id,
         };
     } catch (error) {

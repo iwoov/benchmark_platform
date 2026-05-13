@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Popconfirm, Select, Space, Tag } from "antd";
+import { Button, Empty, Popconfirm, Select, Space, Tag } from "@/components/ui/legacy-ui-adapters";
 import { Bot, RefreshCcw } from "lucide-react";
 import {
     cancelAiReviewStrategyBatchRunAction,
     deleteAiReviewStrategyBatchRunAction,
 } from "@/app/actions/ai-review-strategies";
+import { useToast } from "@/components/ui/toast";
 
 type ProjectOption = {
     id: string;
@@ -106,7 +107,7 @@ export function AiReviewBatchRunConsole({
     listPath: string;
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
+    const toast = useToast();
     const [runs, setRuns] = useState(initialRuns);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [cancellingBatchRunId, setCancellingBatchRunId] = useState<
@@ -198,11 +199,10 @@ export function AiReviewBatchRunConsole({
 
             setRuns(payload?.runs ?? []);
         } catch (error) {
-            notification.error({
-                message: "刷新批量任务失败",
+            toast.error({
+                title: "刷新批量任务失败",
                 description:
                     error instanceof Error ? error.message : "请稍后再试。",
-                placement: "topRight",
             });
         } finally {
             setIsRefreshing(false);
@@ -218,19 +218,17 @@ export function AiReviewBatchRunConsole({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "取消批量任务失败",
+                toast.error({
+                    title: "取消批量任务失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "已请求取消批量任务",
+            toast.success({
+                title: "已请求取消批量任务",
                 description:
                     result.success ?? "worker 会在安全点停止后续题目执行。",
-                placement: "topRight",
             });
             setRuns((current) =>
                 current.map((run) =>
@@ -253,18 +251,16 @@ export function AiReviewBatchRunConsole({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "删除批量任务失败",
+                toast.error({
+                    title: "删除批量任务失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "批量任务已删除",
+            toast.success({
+                title: "批量任务已删除",
                 description: result.success ?? "该任务已从列表移除。",
-                placement: "topRight",
             });
             setRuns((current) => current.filter((run) => run.id !== batchRunId));
         } finally {
@@ -295,19 +291,17 @@ export function AiReviewBatchRunConsole({
                 throw new Error(payload?.error ?? "重启批量任务失败。");
             }
 
-            notification.success({
-                message: "批量任务已重启",
+            toast.success({
+                title: "批量任务已重启",
                 description:
                     payload?.success ?? "worker 会重新领取待执行题目。",
-                placement: "topRight",
             });
             await refreshRuns();
         } catch (error) {
-            notification.error({
-                message: "重启批量任务失败",
+            toast.error({
+                title: "重启批量任务失败",
                 description:
                     error instanceof Error ? error.message : "请稍后再试。",
-                placement: "topRight",
             });
         } finally {
             setRestartingBatchRunId(null);

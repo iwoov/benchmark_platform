@@ -2,16 +2,14 @@
 
 import { LogOut } from "lucide-react";
 import { logoutAction } from "@/app/actions/auth";
+import { Button } from "@/components/ui/button";
 
 export function LogoutButton() {
   return (
     <form action={logoutAction}>
-      <button type="submit" className="logout-trigger">
-        <span className="logout-trigger-icon">
-          <LogOut size={15} />
-        </span>
-        <span className="logout-trigger-label">退出登录</span>
-      </button>
+      <Button type="submit" variant="secondary" size="sm" leftIcon={<LogOut size={14} />}>
+        退出登录
+      </Button>
     </form>
   );
 }

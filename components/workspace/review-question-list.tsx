@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-    App,
     Button,
     Checkbox,
     Empty,
@@ -13,17 +12,19 @@ import {
     Pagination,
     Select,
     Tag,
-} from "antd";
+} from "@/components/ui/legacy-ui-adapters";
 import {
     Bot,
     Download,
     Eye,
     FileText,
     SlidersHorizontal,
+    Sparkles,
     X,
 } from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
 import { ReviewFieldSettingsModal } from "@/components/reviews/review-field-settings-modal";
+import { useToast } from "@/components/ui/toast";
 import {
     exportReviewQuestionsAction,
     exportReviewReportAction,
@@ -57,6 +58,9 @@ type ReviewStrategyOption = {
     stepCount: number;
     projectIds: string[];
     datasourceIds: string[];
+    toolTypes: string[];
+    hasCleaningStep: boolean;
+    hasReviewStep: boolean;
 };
 
 type ReviewQuestionItem = {
@@ -190,6 +194,7 @@ export function ReviewQuestionList({
     canReview,
     scopeLabel,
     listPath,
+    mode = "quality",
     projects,
     questions,
     selectedProjectId,
@@ -205,6 +210,7 @@ export function ReviewQuestionList({
     canReview: boolean;
     scopeLabel?: string;
     listPath: string;
+    mode?: "quality" | "cleaning";
     projects: ProjectOption[];
     questions: ReviewQuestionItem[];
     selectedProjectId: string;
@@ -218,7 +224,7 @@ export function ReviewQuestionList({
     reviewStrategies: ReviewStrategyOption[];
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
+    const toast = useToast();
     const [modalOpen, setModalOpen] = useState(false);
     const [fieldSettingsOpen, setFieldSettingsOpen] = useState(false);
     const [draftConditions, setDraftConditions] = useState<
@@ -231,6 +237,12 @@ export function ReviewQuestionList({
     const [selectedStrategyId, setSelectedStrategyId] = useState("");
     const [batchConcurrency, setBatchConcurrency] = useState(1);
     const [isCreatingBatchRun, setIsCreatingBatchRun] = useState(false);
+    const [cleaningModalOpen, setCleaningModalOpen] = useState(false);
+    const [selectedCleaningStrategyId, setSelectedCleaningStrategyId] =
+        useState("");
+    const [cleaningConcurrency, setCleaningConcurrency] = useState(1);
+    const [isCreatingCleaningBatchRun, setIsCreatingCleaningBatchRun] =
+        useState(false);
     const [exportModalOpen, setExportModalOpen] = useState(false);
     const [exportScope, setExportScope] = useState<ExportScope>("selected");
     const [exportFormat, setExportFormat] = useState<ExportFormat>("excel");
@@ -252,6 +264,22 @@ export function ReviewQuestionList({
     ]);
     const [isExportingReport, setIsExportingReport] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);
+    const pageLabels =
+        mode === "cleaning"
+            ? {
+                  title: "数据清洗",
+                  description:
+                      "仅展示人工审核通过的题目。选择数据后可批量运行清洗策略，点击列表行可进入清洗详情页。",
+                  noPermission:
+                      "你当前没有 REVIEWER 项目角色，暂时无法进入数据清洗。",
+              }
+            : {
+                  title: "数据质检",
+                  description:
+                      "展示原始 JSON / Excel 导入字段。先选择项目，再按条件叠加筛选记录，点击列表行可进入数据质检详情页。",
+                  noPermission:
+                      "你当前没有 REVIEWER 项目角色，暂时无法进入数据质检。",
+              };
 
     const listColumns = useMemo(
         () => {
@@ -371,7 +399,7 @@ export function ReviewQuestionList({
 
         return [...baseFields, ...rawFields];
     }, [rawFieldOptions]);
-    const projectReviewStrategies = useMemo(
+    const projectStrategies = useMemo(
         () =>
             reviewStrategies.filter(
                 (strategy) =>
@@ -380,13 +408,29 @@ export function ReviewQuestionList({
             ),
         [reviewStrategies, selectedProjectId],
     );
-    const effectiveSelectedStrategyId = projectReviewStrategies.some(
+    const reviewBatchStrategies = useMemo(
+        () => projectStrategies.filter((strategy) => strategy.hasReviewStep),
+        [projectStrategies],
+    );
+    const cleaningBatchStrategies = useMemo(
+        () => projectStrategies.filter((strategy) => strategy.hasCleaningStep),
+        [projectStrategies],
+    );
+    const effectiveSelectedStrategyId = reviewBatchStrategies.some(
         (strategy) => strategy.id === selectedStrategyId,
     )
         ? selectedStrategyId
-        : (projectReviewStrategies[0]?.id ?? "");
-    const selectedStrategy = projectReviewStrategies.find(
+        : (reviewBatchStrategies[0]?.id ?? "");
+    const selectedStrategy = reviewBatchStrategies.find(
         (strategy) => strategy.id === effectiveSelectedStrategyId,
+    );
+    const effectiveSelectedCleaningStrategyId = cleaningBatchStrategies.some(
+        (strategy) => strategy.id === selectedCleaningStrategyId,
+    )
+        ? selectedCleaningStrategyId
+        : (cleaningBatchStrategies[0]?.id ?? "");
+    const selectedCleaningStrategy = cleaningBatchStrategies.find(
+        (strategy) => strategy.id === effectiveSelectedCleaningStrategyId,
     );
     const allVisibleSelected =
         visibleQuestionIds.length > 0 &&
@@ -429,11 +473,19 @@ export function ReviewQuestionList({
 
     useEffect(() => {
         setSelectedStrategyId((current) =>
-            projectReviewStrategies.some((strategy) => strategy.id === current)
+            reviewBatchStrategies.some((strategy) => strategy.id === current)
                 ? current
-                : (projectReviewStrategies[0]?.id ?? ""),
+                : (reviewBatchStrategies[0]?.id ?? ""),
         );
-    }, [projectReviewStrategies]);
+    }, [reviewBatchStrategies]);
+
+    useEffect(() => {
+        setSelectedCleaningStrategyId((current) =>
+            cleaningBatchStrategies.some((strategy) => strategy.id === current)
+                ? current
+                : (cleaningBatchStrategies[0]?.id ?? ""),
+        );
+    }, [cleaningBatchStrategies]);
 
     useEffect(() => {
         if (!selectedProjectId) {
@@ -559,19 +611,17 @@ export function ReviewQuestionList({
 
     async function createBatchRun() {
         if (!selectedQuestions.length) {
-            notification.warning({
-                message: "请先勾选题目",
-                description: "至少选择 1 道题目后才能批量运行 AI 审核策略。",
-                placement: "topRight",
+            toast.warning({
+                title: "请先勾选题目",
+                description: "至少选择 1 道题目后才能批量运行数据质检策略。",
             });
             return;
         }
 
         if (!effectiveSelectedStrategyId || !selectedStrategy) {
-            notification.warning({
-                message: "请选择策略",
-                description: "当前项目没有可批量执行的 AI 审核策略。",
-                placement: "topRight",
+            toast.warning({
+                title: "请选择策略",
+                description: "当前项目没有可批量执行的数据质检策略。",
             });
             return;
         }
@@ -587,23 +637,22 @@ export function ReviewQuestionList({
                     2,
                     Math.max(1, Math.floor(batchConcurrency || 1)),
                 ),
+                purpose: "REVIEW",
             });
 
             if (result.error) {
-                notification.error({
-                    message: "创建批量任务失败",
+                toast.error({
+                    title: "创建批量任务失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "批量任务已创建",
+            toast.success({
+                title: "批量任务已创建",
                 description:
                     result.success ??
-                    "后台 worker 会继续执行当前批量审核任务。",
-                placement: "topRight",
+                    "后台 worker 会继续执行当前批量质检任务。",
                 duration: 5,
             });
 
@@ -614,12 +663,65 @@ export function ReviewQuestionList({
         }
     }
 
+    async function createCleaningBatchRun() {
+        if (!selectedQuestions.length) {
+            toast.warning({
+                title: "请先勾选题目",
+                description: "至少选择 1 道题目后才能批量清洗字段。",
+            });
+            return;
+        }
+
+        if (!effectiveSelectedCleaningStrategyId || !selectedCleaningStrategy) {
+            toast.warning({
+                title: "请选择清洗策略",
+                description: "当前项目没有可批量执行的数据清洗策略。",
+            });
+            return;
+        }
+
+        setIsCreatingCleaningBatchRun(true);
+
+        try {
+            const result = await createAiReviewStrategyBatchRunAction({
+                strategyId: selectedCleaningStrategy.id,
+                projectId: selectedProjectId,
+                questionIds: selectedQuestions.map((question) => question.id),
+                concurrency: Math.min(
+                    2,
+                    Math.max(1, Math.floor(cleaningConcurrency || 1)),
+                ),
+                purpose: "CLEANING",
+            });
+
+            if (result.error) {
+                toast.error({
+                    title: "创建批量清洗任务失败",
+                    description: result.error,
+                });
+                return;
+            }
+
+            toast.success({
+                title: "批量清洗任务已创建",
+                description:
+                    result.success ??
+                    "后台 worker 会继续执行当前批量清洗任务。",
+                duration: 5,
+            });
+
+            setSelectedQuestionIds([]);
+            setCleaningModalOpen(false);
+        } finally {
+            setIsCreatingCleaningBatchRun(false);
+        }
+    }
+
     function openExportModal() {
         if (!selectedQuestionIds.length && !totalQuestions) {
-            notification.warning({
-                message: "没有可导出数据",
+            toast.warning({
+                title: "没有可导出数据",
                 description: "当前项目下没有可导出的题目。",
-                placement: "topRight",
             });
             return;
         }
@@ -641,19 +743,17 @@ export function ReviewQuestionList({
 
     async function exportSelectedQuestions() {
         if (exportScope === "selected" && !selectedQuestions.length) {
-            notification.warning({
-                message: "请先勾选题目",
+            toast.warning({
+                title: "请先勾选题目",
                 description: "请选择“仅导出勾选题目”时至少勾选 1 道题目。",
-                placement: "topRight",
             });
             return;
         }
 
         if (!selectedExportFields.length) {
-            notification.warning({
-                message: "请选择导出字段",
+            toast.warning({
+                title: "请选择导出字段",
                 description: "至少选择 1 个字段后再导出。",
-                placement: "topRight",
             });
             return;
         }
@@ -671,19 +771,17 @@ export function ReviewQuestionList({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "导出失败",
+                toast.error({
+                    title: "导出失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
             if (!result.base64 || !result.fileName || !result.mimeType) {
-                notification.error({
-                    message: "导出失败",
+                toast.error({
+                    title: "导出失败",
                     description: "导出结果不完整，请稍后重试。",
-                    placement: "topRight",
                 });
                 return;
             }
@@ -701,18 +799,16 @@ export function ReviewQuestionList({
             anchor.remove();
             URL.revokeObjectURL(objectUrl);
 
-            notification.success({
-                message: "导出成功",
+            toast.success({
+                title: "导出成功",
                 description: result.success ?? "文件已开始下载。",
-                placement: "topRight",
             });
             setExportModalOpen(false);
         } catch (error) {
-            notification.error({
-                message: "导出失败",
+            toast.error({
+                title: "导出失败",
                 description:
                     error instanceof Error ? error.message : "请稍后再试。",
-                placement: "topRight",
             });
         } finally {
             setIsExporting(false);
@@ -721,10 +817,9 @@ export function ReviewQuestionList({
 
     function openReportModal() {
         if (!selectedQuestionIds.length && !totalQuestions) {
-            notification.warning({
-                message: "没有可导出数据",
+            toast.warning({
+                title: "没有可导出数据",
                 description: "当前项目下没有可导出的题目。",
-                placement: "topRight",
             });
             return;
         }
@@ -738,19 +833,17 @@ export function ReviewQuestionList({
 
     async function exportReport() {
         if (!reportSubjectFieldKey) {
-            notification.warning({
-                message: "请选择学科字段",
+            toast.warning({
+                title: "请选择学科字段",
                 description: "请选择用于按学科分组的原始字段。",
-                placement: "topRight",
             });
             return;
         }
 
         if (!reportDetailFields.length) {
-            notification.warning({
-                message: "请选择详情字段",
+            toast.warning({
+                title: "请选择详情字段",
                 description: "至少选择 1 个详情字段后再导出。",
-                placement: "topRight",
             });
             return;
         }
@@ -770,19 +863,17 @@ export function ReviewQuestionList({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "导出失败",
+                toast.error({
+                    title: "导出失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
             if (!result.base64 || !result.fileName || !result.mimeType) {
-                notification.error({
-                    message: "导出失败",
+                toast.error({
+                    title: "导出失败",
                     description: "导出结果不完整，请稍后重试。",
-                    placement: "topRight",
                 });
                 return;
             }
@@ -800,18 +891,16 @@ export function ReviewQuestionList({
             anchor.remove();
             URL.revokeObjectURL(objectUrl);
 
-            notification.success({
-                message: "导出成功",
+            toast.success({
+                title: "导出成功",
                 description: result.success ?? "文件已开始下载。",
-                placement: "topRight",
             });
             setReportModalOpen(false);
         } catch (error) {
-            notification.error({
-                message: "导出失败",
+            toast.error({
+                title: "导出失败",
                 description:
                     error instanceof Error ? error.message : "请稍后再试。",
-                placement: "topRight",
             });
         } finally {
             setIsExportingReport(false);
@@ -822,10 +911,9 @@ export function ReviewQuestionList({
         <section className="content-surface review-content-surface review-compact-scope">
             <div className="section-head" style={{ marginBottom: 16 }}>
                 <div>
-                    <h3 className="review-page-title">题目列表</h3>
+                    <h3 className="review-page-title">{pageLabels.title}</h3>
                     <p className="muted review-page-copy">
-                        {scopeLabel ?? "当前项目"}内展示原始 JSON / Excel
-                        导入字段。先选择项目，再按条件叠加筛选记录，点击列表行可进入题目详情页。
+                        {scopeLabel ?? "当前项目"}内{pageLabels.description}
                     </p>
                 </div>
                 <Tag color="blue">
@@ -834,7 +922,7 @@ export function ReviewQuestionList({
             </div>
 
             {!canReview ? (
-                <Empty description="你当前没有 REVIEWER 项目角色，暂时无法进入审核任务。" />
+                <Empty description={pageLabels.noPermission} />
             ) : !projects.length ? (
                 <Empty description="当前没有可切换的项目数据" />
             ) : (
@@ -906,17 +994,31 @@ export function ReviewQuestionList({
                                     清空筛选
                                 </Button>
                             ) : null}
-                            <Button
-                                type="primary"
-                                icon={<Bot size={16} />}
-                                disabled={
-                                    !selectedQuestionIds.length ||
-                                    !projectReviewStrategies.length
-                                }
-                                onClick={() => setBatchModalOpen(true)}
-                            >
-                                批量运行 AI 审核
-                            </Button>
+                            {mode === "quality" ? (
+                                <Button
+                                    type="primary"
+                                    icon={<Bot size={16} />}
+                                    disabled={
+                                        !selectedQuestionIds.length ||
+                                        !reviewBatchStrategies.length
+                                    }
+                                    onClick={() => setBatchModalOpen(true)}
+                                >
+                                    批量运行 AI 质检
+                                </Button>
+                            ) : (
+                                <Button
+                                    type="primary"
+                                    icon={<Sparkles size={16} />}
+                                    disabled={
+                                        !selectedQuestionIds.length ||
+                                        !cleaningBatchStrategies.length
+                                    }
+                                    onClick={() => setCleaningModalOpen(true)}
+                                >
+                                    批量清洗
+                                </Button>
+                            )}
                             <Button
                                 icon={<Download size={16} />}
                                 disabled={
@@ -1570,7 +1672,7 @@ export function ReviewQuestionList({
                     <Modal
                         open={batchModalOpen}
                         rootClassName="review-dialog"
-                        title="批量运行 AI 审核"
+                        title="批量运行数据质检"
                         okText={isCreatingBatchRun ? "创建中" : "创建后台任务"}
                         cancelText="取消"
                         onOk={createBatchRun}
@@ -1613,7 +1715,7 @@ export function ReviewQuestionList({
                                     onChange={(value) =>
                                         setSelectedStrategyId(value)
                                     }
-                                    options={projectReviewStrategies.map(
+                                    options={reviewBatchStrategies.map(
                                         (strategy) => ({
                                             value: strategy.id,
                                             label: `${strategy.name} · ${strategy.stepCount} 步`,
@@ -1622,7 +1724,7 @@ export function ReviewQuestionList({
                                     placeholder="请选择批量运行策略"
                                     disabled={
                                         isCreatingBatchRun ||
-                                        !projectReviewStrategies.length
+                                        !reviewBatchStrategies.length
                                     }
                                     size="middle"
                                 />
@@ -1656,6 +1758,96 @@ export function ReviewQuestionList({
                                         setBatchConcurrency(value ?? 1)
                                     }
                                     disabled={isCreatingBatchRun}
+                                    size="middle"
+                                    style={{ width: 160 }}
+                                />
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={cleaningModalOpen}
+                        rootClassName="review-dialog"
+                        title="批量清洗字段"
+                        okText={
+                            isCreatingCleaningBatchRun
+                                ? "创建中"
+                                : "创建后台任务"
+                        }
+                        cancelText="取消"
+                        onOk={createCleaningBatchRun}
+                        onCancel={() => setCleaningModalOpen(false)}
+                        confirmLoading={isCreatingCleaningBatchRun}
+                        destroyOnHidden
+                    >
+                        <div
+                            style={{ display: "grid", gap: 16, marginTop: 16 }}
+                        >
+                            <div className="workspace-tip">
+                                <Tag color="blue">
+                                    已选 {selectedQuestions.length} 题
+                                </Tag>
+                                <span>
+                                    清洗策略会按配置字段逐题生成清洗结果。建议并发不要超过
+                                    2，避免模型接口限流。
+                                </span>
+                            </div>
+
+                            <div className="workspace-tip">
+                                <Tag color="gold">结果查看</Tag>
+                                <span>
+                                    创建后可关闭此窗口。清洗结果会在题目详情页“数据清洗”区域和对应字段卡片中展示。
+                                </span>
+                            </div>
+
+                            <div style={{ display: "grid", gap: 8 }}>
+                                <div className="review-toolbar-label">
+                                    清洗策略
+                                </div>
+                                <Select
+                                    value={effectiveSelectedCleaningStrategyId}
+                                    onChange={(value) =>
+                                        setSelectedCleaningStrategyId(value)
+                                    }
+                                    options={cleaningBatchStrategies.map(
+                                        (strategy) => ({
+                                            value: strategy.id,
+                                            label: `${strategy.name} · ${strategy.stepCount} 步`,
+                                        }),
+                                    )}
+                                    placeholder="请选择批量清洗策略"
+                                    disabled={
+                                        isCreatingCleaningBatchRun ||
+                                        !cleaningBatchStrategies.length
+                                    }
+                                    size="middle"
+                                />
+                                {selectedCleaningStrategy?.description ? (
+                                    <div className="muted">
+                                        {selectedCleaningStrategy.description}
+                                    </div>
+                                ) : null}
+                                {selectedCleaningStrategy?.datasourceIds
+                                    .length ? (
+                                    <div className="muted">
+                                        当前清洗策略限制了部分数据源，不匹配的题目会自动跳过。
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <div style={{ display: "grid", gap: 8 }}>
+                                <div className="review-toolbar-label">
+                                    题目级并发
+                                </div>
+                                <InputNumber
+                                    min={1}
+                                    max={2}
+                                    precision={0}
+                                    value={cleaningConcurrency}
+                                    onChange={(value) =>
+                                        setCleaningConcurrency(value ?? 1)
+                                    }
+                                    disabled={isCreatingCleaningBatchRun}
                                     size="middle"
                                     style={{ width: 160 }}
                                 />

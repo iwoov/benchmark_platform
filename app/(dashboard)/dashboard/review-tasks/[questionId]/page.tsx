@@ -14,16 +14,23 @@ import {
     getReviewQuestionDetail,
     getReviewQuestionNavigation,
 } from "@/lib/reviews/question-list-data";
-import { parseReviewQuestionFilterConditions } from "@/lib/reviews/question-list-filters";
+import {
+    parseReviewQuestionFilterConditions,
+    serializeReviewQuestionFilterConditions,
+} from "@/lib/reviews/question-list-filters";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReviewTaskDetailPage({
     params,
     searchParams,
+    listPathBase = "/admin/review-tasks",
+    initialRightTab = "quality",
 }: {
     params: Promise<{ questionId: string }>;
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
+    listPathBase?: string;
+    initialRightTab?: "quality" | "cleaning";
 }) {
     const session = await auth();
 
@@ -45,20 +52,27 @@ export default async function ReviewTaskDetailPage({
     }
 
     const resolvedSearchParams = (await searchParams) ?? {};
+    const listConditions = parseReviewQuestionFilterConditions(
+        Array.isArray(resolvedSearchParams.filters)
+            ? resolvedSearchParams.filters[0]
+            : resolvedSearchParams.filters,
+    ).filter((condition) =>
+        initialRightTab === "cleaning"
+            ? condition.fieldKey !== "manualReviewStatus"
+            : true,
+    );
     const navigation = await getReviewQuestionNavigation({
         questionId,
         projectId: Array.isArray(resolvedSearchParams.projectId)
             ? resolvedSearchParams.projectId[0]
             : resolvedSearchParams.projectId,
-        conditions: parseReviewQuestionFilterConditions(
-            Array.isArray(resolvedSearchParams.filters)
-                ? resolvedSearchParams.filters[0]
-                : resolvedSearchParams.filters,
-        ),
+        conditions: listConditions,
         viewer: {
             userId: session.user.id,
             platformRole: session.user.platformRole,
         },
+        requiredManualReviewStatus:
+            initialRightTab === "cleaning" ? "PASS" : undefined,
     });
     const listSearch = new URLSearchParams();
 
@@ -67,7 +81,6 @@ export default async function ReviewTaskDetailPage({
         "datasourceId",
         "page",
         "pageSize",
-        "filters",
     ]) {
         const value = resolvedSearchParams[key];
         const normalized = Array.isArray(value) ? value[0] : value;
@@ -75,6 +88,13 @@ export default async function ReviewTaskDetailPage({
         if (normalized) {
             listSearch.set(key, normalized);
         }
+    }
+
+    const serializedFilters =
+        serializeReviewQuestionFilterConditions(listConditions);
+
+    if (serializedFilters) {
+        listSearch.set("filters", serializedFilters);
     }
 
     const [
@@ -110,10 +130,11 @@ export default async function ReviewTaskDetailPage({
             canReview
             listPath={
                 listSearch.size
-                    ? `/admin/review-tasks?${listSearch.toString()}`
-                    : "/admin/review-tasks"
+                    ? `${listPathBase}?${listSearch.toString()}`
+                    : listPathBase
             }
             navigation={navigation}
+            initialRightTab={initialRightTab}
             fieldPreference={fieldPreference}
             reviewStrategies={reviewStrategies}
             strategyRuns={strategyRuns}

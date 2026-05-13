@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { isAdminRole } from "@/lib/auth/roles";
+import { logError } from "@/lib/logging/app-logger";
 
 const saveSchema = z.object({
     id: z.string().optional(),
@@ -20,36 +21,53 @@ export async function saveAiChatConfigAction(input: unknown): Promise<{
     error?: string;
     success?: string;
 }> {
-    const session = await auth();
-    if (!session?.user || !isAdminRole(session.user.platformRole)) {
-        return { error: "没有权限执行此操作。" };
-    }
-
-    const parsed = saveSchema.safeParse(input);
-    if (!parsed.success) {
-        return { error: parsed.error.issues[0]?.message ?? "参数不合法。" };
-    }
-
-    const {
-        id,
-        name,
-        modelCode,
-        modelCodes,
-        systemPrompt,
-        presetFields,
-        enabled,
-    } = parsed.data;
-
-    if (id) {
-        const existing = await prisma.aiChatConfig.findUnique({
-            where: { id },
-        });
-        if (!existing) {
-            return { error: "配置不存在。" };
+    try {
+        const session = await auth();
+        if (!session?.user || !isAdminRole(session.user.platformRole)) {
+            return { error: "没有权限执行此操作。" };
         }
 
-        await prisma.aiChatConfig.update({
-            where: { id },
+        const parsed = saveSchema.safeParse(input);
+        if (!parsed.success) {
+            return { error: parsed.error.issues[0]?.message ?? "参数不合法。" };
+        }
+
+        const {
+            id,
+            name,
+            modelCode,
+            modelCodes,
+            systemPrompt,
+            presetFields,
+            enabled,
+        } = parsed.data;
+
+        if (id) {
+            const existing = await prisma.aiChatConfig.findUnique({
+                where: { id },
+            });
+            if (!existing) {
+                return { error: "配置不存在。" };
+            }
+
+            await prisma.aiChatConfig.update({
+                where: { id },
+                data: {
+                    name,
+                    modelCode,
+                    modelCodes: modelCodes ?? [modelCode],
+                    systemPrompt: systemPrompt ?? null,
+                    presetFields: presetFields ?? [],
+                    enabled: enabled ?? true,
+                },
+            });
+
+            revalidatePath("/dashboard/ai-strategies");
+            revalidatePath("/admin/ai-strategies");
+            return { success: `已更新对话配置「${name}」。` };
+        }
+
+        await prisma.aiChatConfig.create({
             data: {
                 name,
                 modelCode,
@@ -62,48 +80,55 @@ export async function saveAiChatConfigAction(input: unknown): Promise<{
 
         revalidatePath("/dashboard/ai-strategies");
         revalidatePath("/admin/ai-strategies");
-        return { success: `已更新对话配置「${name}」。` };
+        return { success: `已创建对话配置「${name}」。` };
+    } catch (error) {
+        logError("保存 AI 对话配置失败", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return {
+            error:
+                error instanceof Error
+                    ? `保存失败：${error.message}`
+                    : "保存失败，请稍后重试。",
+        };
     }
-
-    await prisma.aiChatConfig.create({
-        data: {
-            name,
-            modelCode,
-            modelCodes: modelCodes ?? [modelCode],
-            systemPrompt: systemPrompt ?? null,
-            presetFields: presetFields ?? [],
-            enabled: enabled ?? true,
-        },
-    });
-
-    revalidatePath("/dashboard/ai-strategies");
-    revalidatePath("/admin/ai-strategies");
-    return { success: `已创建对话配置「${name}」。` };
 }
 
 export async function deleteAiChatConfigAction(input: {
     id: string;
 }): Promise<{ error?: string; success?: string }> {
-    const session = await auth();
-    if (!session?.user || !isAdminRole(session.user.platformRole)) {
-        return { error: "没有权限执行此操作。" };
+    try {
+        const session = await auth();
+        if (!session?.user || !isAdminRole(session.user.platformRole)) {
+            return { error: "没有权限执行此操作。" };
+        }
+
+        if (!input.id) {
+            return { error: "缺少配置 ID。" };
+        }
+
+        const existing = await prisma.aiChatConfig.findUnique({
+            where: { id: input.id },
+        });
+
+        if (!existing) {
+            return { error: "配置不存在或已被删除。" };
+        }
+
+        await prisma.aiChatConfig.delete({ where: { id: input.id } });
+
+        revalidatePath("/dashboard/ai-strategies");
+        revalidatePath("/admin/ai-strategies");
+        return { success: `已删除对话配置「${existing.name}」。` };
+    } catch (error) {
+        logError("删除 AI 对话配置失败", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return {
+            error:
+                error instanceof Error
+                    ? `删除失败：${error.message}`
+                    : "删除失败，请稍后重试。",
+        };
     }
-
-    if (!input.id) {
-        return { error: "缺少配置 ID。" };
-    }
-
-    const existing = await prisma.aiChatConfig.findUnique({
-        where: { id: input.id },
-    });
-
-    if (!existing) {
-        return { error: "配置不存在或已被删除。" };
-    }
-
-    await prisma.aiChatConfig.delete({ where: { id: input.id } });
-
-    revalidatePath("/dashboard/ai-strategies");
-    revalidatePath("/admin/ai-strategies");
-    return { success: `已删除对话配置「${existing.name}」。` };
 }

@@ -1,20 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import {
-    App,
-    Button,
-    Empty,
-    Input,
-    InputNumber,
-    Modal,
-    Popconfirm,
-    Select,
-    Space,
-    Switch,
-    Tag,
-} from "antd";
+    cloneElement,
+    isValidElement,
+    useMemo,
+    useState,
+    useTransition,
+    type CSSProperties,
+    type FormEvent,
+    type ReactElement,
+    type ReactNode,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
     ArrowDown,
     ArrowUp,
@@ -24,6 +21,7 @@ import {
     PencilLine,
     Plus,
     Save,
+    Sparkles,
     Trash2,
 } from "lucide-react";
 import {
@@ -36,6 +34,19 @@ import {
 } from "@/app/actions/ai-chat-config";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
 import { defaultAiChatPresetFields } from "@/lib/ai/chat-preset-fields";
+import { Badge } from "@/components/ui/badge";
+import { Button as UiButton, type ButtonProps } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import {
+    Input as UiInput,
+    Select as UiSelect,
+    Textarea,
+} from "@/components/ui/input";
+import { Modal as UiModal } from "@/components/ui/modal";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { Popconfirm as UiPopconfirm } from "@/components/ui/popconfirm";
+import { Switch as UiSwitch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/toast";
 import {
     aiReviewAggregateLabels,
     aiReviewComparisonOperators,
@@ -54,6 +65,329 @@ import {
     type AiReviewStrategyStep,
 } from "@/lib/ai/review-strategy-schema";
 
+type SelectOption = {
+    value: string;
+    label: ReactNode;
+};
+
+type SelectProps = {
+    id?: string;
+    mode?: "multiple";
+    value?: string | string[];
+    onChange?: (value: any) => void;
+    options?: SelectOption[];
+    placeholder?: string;
+    allowClear?: boolean;
+    disabled?: boolean;
+    className?: string;
+    style?: CSSProperties;
+    size?: "large" | "middle" | "small";
+    showSearch?: boolean;
+    optionFilterProp?: string;
+    maxTagCount?: "responsive" | number;
+    maxTagTextLength?: number;
+    popupMatchSelectWidth?: boolean;
+};
+
+function Select({
+    id,
+    mode,
+    value,
+    onChange,
+    options = [],
+    placeholder,
+    allowClear,
+    disabled,
+    className,
+    style,
+}: SelectProps) {
+    if (mode === "multiple") {
+        return (
+            <MultiSelect
+                id={id}
+                value={Array.isArray(value) ? value : []}
+                onChange={(nextValue) => onChange?.(nextValue)}
+                options={options.map((option) => ({
+                    value: option.value,
+                    label:
+                        typeof option.label === "string"
+                            ? option.label
+                            : String(option.value),
+                }))}
+                placeholder={placeholder}
+                disabled={disabled}
+                className={className}
+            />
+        );
+    }
+
+    return (
+        <UiSelect
+            id={id}
+            value={typeof value === "string" ? value : ""}
+            onChange={(event) => {
+                const nextValue = event.target.value;
+                onChange?.(allowClear && nextValue === "" ? undefined : nextValue);
+            }}
+            disabled={disabled}
+            className={className}
+            style={style}
+        >
+            {placeholder ? (
+                <option value="" disabled={!allowClear}>
+                    {placeholder}
+                </option>
+            ) : null}
+            {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </UiSelect>
+    );
+}
+
+type LocalButtonProps = Omit<ButtonProps, "type" | "leftIcon" | "variant"> & {
+    type?: "primary" | "default" | "link";
+    htmlType?: "button" | "submit" | "reset";
+    icon?: ReactNode;
+    danger?: boolean;
+};
+
+function Button({
+    type,
+    htmlType = "button",
+    icon,
+    danger,
+    children,
+    ...props
+}: LocalButtonProps) {
+    const variant = danger
+        ? "destructive"
+        : type === "primary"
+          ? "default"
+          : type === "link"
+            ? "link"
+            : "secondary";
+
+    return (
+        <UiButton
+            {...props}
+            type={htmlType}
+            variant={variant}
+            leftIcon={icon}
+        >
+            {children}
+        </UiButton>
+    );
+}
+
+function Empty({ description }: { description?: ReactNode }) {
+    return (
+        <EmptyState
+            title={typeof description === "string" ? description : "暂无数据"}
+            description={
+                typeof description === "string" ? undefined : undefined
+            }
+        />
+    );
+}
+
+function InputAdapter({
+    size: _size,
+    ...props
+}: Omit<React.ComponentProps<typeof UiInput>, "size"> & {
+    size?: "large" | "middle" | "small";
+}) {
+    return <UiInput {...props} />;
+}
+
+function TextAreaAdapter({
+    size: _size,
+    ...props
+}: Omit<React.ComponentProps<typeof Textarea>, "size"> & {
+    size?: "large" | "middle" | "small";
+}) {
+    return <Textarea {...props} />;
+}
+
+const Input: typeof InputAdapter & { TextArea: typeof TextAreaAdapter } =
+    Object.assign(InputAdapter, {
+        TextArea: TextAreaAdapter,
+    });
+
+function Switch({
+    checkedChildren: _checkedChildren,
+    unCheckedChildren: _unCheckedChildren,
+    ...props
+}: React.ComponentProps<typeof UiSwitch> & {
+    checkedChildren?: ReactNode;
+    unCheckedChildren?: ReactNode;
+}) {
+    return <UiSwitch {...props} />;
+}
+
+function InputNumber({
+    value,
+    onChange,
+    min,
+    max,
+    step,
+    style,
+    size: _size,
+}: {
+    value?: number;
+    onChange?: (value: number | null) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    style?: CSSProperties;
+    size?: "large" | "middle" | "small";
+}) {
+    return (
+        <UiInput
+            type="number"
+            value={value ?? ""}
+            min={min}
+            max={max}
+            step={step}
+            style={style}
+            onChange={(event) => {
+                const rawValue = event.target.value;
+                onChange?.(rawValue === "" ? null : Number(rawValue));
+            }}
+        />
+    );
+}
+
+function Modal({
+    title,
+    open,
+    onCancel,
+    children,
+    width,
+    footer,
+    wrapClassName,
+}: {
+    title?: ReactNode;
+    open: boolean;
+    onCancel?: () => void;
+    children: ReactNode;
+    width?: number | string;
+    footer?: ReactNode;
+    destroyOnHidden?: boolean;
+    wrapClassName?: string;
+}) {
+    return (
+        <UiModal
+            title={title}
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen) {
+                    onCancel?.();
+                }
+            }}
+            width={width}
+            footer={footer === null ? undefined : footer}
+            className={wrapClassName}
+        >
+            {children}
+        </UiModal>
+    );
+}
+
+function Popconfirm({
+    title,
+    description,
+    okText,
+    cancelText,
+    onConfirm,
+    children,
+}: {
+    title: ReactNode;
+    description?: ReactNode;
+    okText?: string;
+    cancelText?: string;
+    onConfirm: () => void | Promise<void>;
+    children: ReactNode;
+}) {
+    return (
+        <UiPopconfirm
+            title={title}
+            description={description}
+            confirmText={okText}
+            cancelText={cancelText}
+            tone="destructive"
+            onConfirm={onConfirm}
+        >
+            {(open) =>
+                isValidElement(children) ? (
+                    cloneElement(children as ReactElement<{ onClick?: () => void }>, {
+                        onClick: open,
+                    })
+                ) : (
+                    <span onClick={open}>{children}</span>
+                )
+            }
+        </UiPopconfirm>
+    );
+}
+
+function Space({
+    children,
+    size = 8,
+    align,
+    wrap,
+}: {
+    children: ReactNode;
+    size?: number;
+    align?: "start" | "end" | "center" | "baseline";
+    wrap?: boolean;
+}) {
+    const alignItems =
+        align === "end"
+            ? "flex-end"
+            : align === "start"
+              ? "flex-start"
+              : align === "baseline"
+                ? "baseline"
+                : "center";
+
+    return (
+        <div
+            style={{
+                display: "flex",
+                gap: size,
+                alignItems,
+                flexWrap: wrap ? "wrap" : "nowrap",
+            }}
+        >
+            {children}
+        </div>
+    );
+}
+
+function Tag({
+    children,
+    color,
+}: {
+    children: ReactNode;
+    color?: "success" | "default" | "green" | string;
+}) {
+    return (
+        <Badge
+            variant={
+                color === "success" || color === "green"
+                    ? "success"
+                    : "outline"
+            }
+            size="sm"
+        >
+            {children}
+        </Badge>
+    );
+}
+
 type StrategyFormState = {
     strategyId?: string;
     scopeAdminId: string;
@@ -66,7 +400,10 @@ type StrategyFormState = {
     definition: AiReviewStrategyDefinition;
 };
 
-function createDefaultStrategyForm(scopeAdminId = ""): StrategyFormState {
+function createDefaultStrategyForm(
+    scopeAdminId = "",
+    initialToolType: AiReviewAiToolType = "TEXT_QUALITY_CHECK",
+): StrategyFormState {
     return {
         scopeAdminId,
         name: "",
@@ -77,7 +414,7 @@ function createDefaultStrategyForm(scopeAdminId = ""): StrategyFormState {
         datasourceIds: [],
         definition: {
             version: 1,
-            steps: [createDefaultAiToolStep("TEXT_QUALITY_CHECK")],
+            steps: [createDefaultAiToolStep(initialToolType)],
         },
     };
 }
@@ -143,14 +480,30 @@ function sourceStepToolType(
 function getDatasourceFieldSet(
     datasources: Array<{
         id: string;
+        projectId: string;
         rawFieldOrder: string[];
     }>,
+    projectIds: string[],
     datasourceIds: string[],
 ) {
+    const activeDatasources = datasources.filter(
+        (datasource) =>
+            (datasourceIds.length
+                ? datasourceIds.includes(datasource.id)
+                : true) &&
+            (projectIds.length
+                ? projectIds.includes(datasource.projectId)
+                : true),
+    );
+
     return new Set(
-        datasources
-            .filter((datasource) => datasourceIds.includes(datasource.id))
-            .flatMap((datasource) => datasource.rawFieldOrder),
+        systemFieldOptions
+            .map((option) => option.value)
+            .concat(
+                activeDatasources.flatMap(
+                    (datasource) => datasource.rawFieldOrder,
+                ),
+            ),
     );
 }
 
@@ -166,6 +519,61 @@ function getStepTypeLabel(step: AiReviewStrategyStep) {
     return step.kind === "AI_TOOL"
         ? aiReviewToolLabels[step.toolType]
         : aiReviewRuleLabels[step.ruleType];
+}
+
+type StrategyCategory = "REVIEW" | "CLEANING" | "EVALUATION" | "CHAT";
+
+const STRATEGY_CATEGORIES: Array<{
+    value: StrategyCategory;
+    label: string;
+    description: string;
+    defaultTool: AiReviewAiToolType | null;
+    createButtonLabel: string;
+}> = [
+    {
+        value: "REVIEW",
+        label: "审核策略",
+        description: "面向题干、答案、解析的内容审核",
+        defaultTool: "TEXT_QUALITY_CHECK",
+        createButtonLabel: "新建审核策略",
+    },
+    {
+        value: "CLEANING",
+        label: "清洗策略",
+        description: "字段清洗与文本归一化",
+        defaultTool: "FIELD_CLEANING",
+        createButtonLabel: "新建清洗策略",
+    },
+    {
+        value: "EVALUATION",
+        label: "评测策略",
+        description: "难度评估与综合打分",
+        defaultTool: "DIFFICULTY_EVALUATION",
+        createButtonLabel: "新建评测策略",
+    },
+    {
+        value: "CHAT",
+        label: "AI 对话配置",
+        description: "配置审核场景的 AI 对话助手，选择可用模型、系统提示词与预设字段",
+        defaultTool: null,
+        createButtonLabel: "新建对话配置",
+    },
+];
+
+function getStrategyCategory(strategy: {
+    definition: { steps: AiReviewStrategyStep[] };
+}): Exclude<StrategyCategory, "CHAT"> {
+    const aiSteps = strategy.definition.steps.filter(
+        (step): step is Extract<AiReviewStrategyStep, { kind: "AI_TOOL" }> =>
+            step.kind === "AI_TOOL",
+    );
+    if (aiSteps.some((step) => step.toolType === "FIELD_CLEANING")) {
+        return "CLEANING";
+    }
+    if (aiSteps.some((step) => step.toolType === "DIFFICULTY_EVALUATION")) {
+        return "EVALUATION";
+    }
+    return "REVIEW";
 }
 
 const systemFieldOptions = [
@@ -256,7 +664,7 @@ export function AiReviewStrategyConsole({
 }) {
     const pathname = usePathname();
     const router = useRouter();
-    const { notification } = App.useApp();
+    const toast = useToast();
     const [form, setForm] = useState<StrategyFormState>(
         createDefaultStrategyForm(activeScopeAdminId ?? ""),
     );
@@ -274,6 +682,28 @@ export function AiReviewStrategyConsole({
     const [isSavingChat, startSavingChat] = useTransition();
     const [isDeletingChat, startDeletingChat] = useTransition();
     const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+    const [activeCategory, setActiveCategory] = useState<StrategyCategory>("REVIEW");
+
+    type StrategyBucketKey = Exclude<StrategyCategory, "CHAT">;
+    const strategiesByCategory = useMemo(() => {
+        const buckets: Record<StrategyBucketKey, typeof strategies> = {
+            REVIEW: [],
+            CLEANING: [],
+            EVALUATION: [],
+        };
+        for (const strategy of strategies) {
+            buckets[getStrategyCategory(strategy)].push(strategy);
+        }
+        return buckets;
+    }, [strategies]);
+
+    const visibleStrategies =
+        activeCategory === "CHAT"
+            ? []
+            : strategiesByCategory[activeCategory as StrategyBucketKey];
+    const activeCategoryMeta = STRATEGY_CATEGORIES.find(
+        (c) => c.value === activeCategory,
+    )!;
     const canSelectScope =
         currentPlatformRole === "SUPER_ADMIN" && adminScopeOptions.length > 0;
 
@@ -315,11 +745,15 @@ export function AiReviewStrategyConsole({
     );
 
     const rawFieldOptions = useMemo(() => {
-        const activeDatasources = form.datasourceIds.length
-            ? datasources.filter((datasource) =>
-                  form.datasourceIds.includes(datasource.id),
-              )
-            : [];
+        const activeDatasources = datasources.filter(
+            (datasource) =>
+                (form.datasourceIds.length
+                    ? form.datasourceIds.includes(datasource.id)
+                    : true) &&
+                (form.projectIds.length
+                    ? form.projectIds.includes(datasource.projectId)
+                    : true),
+        );
         const fieldOrder = [
             ...new Set(
                 activeDatasources.flatMap(
@@ -335,26 +769,24 @@ export function AiReviewStrategyConsole({
                 label: field,
             })),
         ];
-    }, [datasources, form.datasourceIds]);
+    }, [datasources, form.datasourceIds, form.projectIds]);
 
     const totalProjectCount = projects.length;
     const totalDatasourceCount = datasources.length;
 
     function notifyResult(result: { error?: string; success?: string }) {
         if (result.error) {
-            notification.error({
-                message: "操作失败",
+            toast.error({
+                title: "操作失败",
                 description: result.error,
-                placement: "topRight",
             });
             return false;
         }
 
         if (result.success) {
-            notification.success({
-                message: "操作成功",
+            toast.success({
+                title: "操作成功",
                 description: result.success,
-                placement: "topRight",
             });
         }
 
@@ -362,8 +794,15 @@ export function AiReviewStrategyConsole({
         return true;
     }
 
-    function openCreateModal() {
-        setForm(createDefaultStrategyForm(activeScopeAdminId ?? ""));
+    function openCreateModal(
+        initialToolType: AiReviewAiToolType = "TEXT_QUALITY_CHECK",
+    ) {
+        setForm(
+            createDefaultStrategyForm(
+                activeScopeAdminId ?? "",
+                initialToolType,
+            ),
+        );
         setModalOpen(true);
     }
 
@@ -504,25 +943,36 @@ export function AiReviewStrategyConsole({
 
         setSavingId(form.strategyId ?? "new");
         startSaving(async () => {
-            const result = await saveAiReviewStrategyAction({
-                strategyId: form.strategyId,
-                scopeAdminId: form.scopeAdminId,
-                payload: {
-                    name: form.name,
-                    code: form.code,
-                    description: form.description,
-                    enabled: form.enabled,
-                    projectIds: form.projectIds,
-                    datasourceIds: form.datasourceIds,
-                    definition: form.definition,
-                },
-            });
+            try {
+                const result = await saveAiReviewStrategyAction({
+                    strategyId: form.strategyId,
+                    scopeAdminId: form.scopeAdminId,
+                    payload: {
+                        name: form.name,
+                        code: form.code,
+                        description: form.description,
+                        enabled: form.enabled,
+                        projectIds: form.projectIds,
+                        datasourceIds: form.datasourceIds,
+                        definition: form.definition,
+                    },
+                });
 
-            const success = notifyResult(result);
-            setSavingId(null);
+                const success = notifyResult(result);
 
-            if (success) {
-                closeModal();
+                if (success) {
+                    closeModal();
+                }
+            } catch (error) {
+                toast.error({
+                    title: "保存失败",
+                    description:
+                        error instanceof Error
+                            ? error.message
+                            : "保存策略时发生未知错误。",
+                });
+            } finally {
+                setSavingId(null);
             }
         });
     }
@@ -620,14 +1070,14 @@ export function AiReviewStrategyConsole({
                         <h2
                             style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
                         >
-                            审核策略
+                            AI 策略
                         </h2>
                         <p
                             className="muted"
                             style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                         >
-                            这里维护题目审核场景的 AI
-                            工具和规则步骤。管理员创建策略，审核员在题目详情页选择并执行。
+                            这里维护题目审核与数据清洗场景的 AI
+                            工具和规则步骤。管理员创建策略，审核员在列表或详情页选择并执行。
                         </p>
                     </div>
                     <Space size={12} align="end">
@@ -652,271 +1102,158 @@ export function AiReviewStrategyConsole({
                         ) : null}
                         <Button
                             type="primary"
-                            icon={<Plus size={16} />}
-                            onClick={openCreateModal}
+                            icon={
+                                activeCategory === "CHAT" ? (
+                                    <MessageSquare size={16} />
+                                ) : activeCategory === "CLEANING" ? (
+                                    <Sparkles size={16} />
+                                ) : (
+                                    <Plus size={16} />
+                                )
+                            }
+                            onClick={() => {
+                                if (activeCategory === "CHAT") {
+                                    openCreateChatModal();
+                                } else if (activeCategoryMeta.defaultTool) {
+                                    openCreateModal(activeCategoryMeta.defaultTool);
+                                }
+                            }}
                         >
-                            新建策略
+                            {activeCategoryMeta.createButtonLabel}
                         </Button>
                     </Space>
                 </div>
 
+                <div className="strategy-tabs" role="tablist">
+                    {STRATEGY_CATEGORIES.map((cat) => {
+                        const count =
+                            cat.value === "CHAT"
+                                ? chatConfigs.length
+                                : strategiesByCategory[
+                                      cat.value as Exclude<
+                                          StrategyCategory,
+                                          "CHAT"
+                                      >
+                                  ].length;
+                        const isActive = cat.value === activeCategory;
+                        return (
+                            <button
+                                key={cat.value}
+                                type="button"
+                                role="tab"
+                                aria-selected={isActive}
+                                onClick={() => setActiveCategory(cat.value)}
+                                className={`strategy-tab${
+                                    isActive ? " strategy-tab-active" : ""
+                                }`}
+                            >
+                                <span className="strategy-tab-label">
+                                    {cat.label}
+                                </span>
+                                <span className="strategy-tab-count">{count}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <p
+                    className="muted"
+                    style={{ margin: "12px 0 16px", fontSize: 13 }}
+                >
+                    {activeCategoryMeta.description}
+                </p>
+
                 {!databaseEnabled ? (
-                    <Empty description="当前未配置数据库，无法保存审核策略。" />
-                ) : !strategies.length ? (
-                    <Empty description="当前还没有审核策略，请先创建一条策略。" />
-                ) : (
-                    <div className="strategy-card-grid">
-                        {strategies.map((strategy) => (
-                            <div key={strategy.id} className="strategy-card">
-                                <div className="strategy-card-head">
-                                    <div style={{ minWidth: 0, flex: 1 }}>
-                                        <div className="strategy-title-row">
-                                            <h3
-                                                style={{
-                                                    margin: 0,
-                                                    fontSize: 18,
-                                                }}
-                                            >
-                                                {strategy.name}
+                    <Empty
+                        description={
+                            activeCategory === "CHAT"
+                                ? "当前未配置数据库，无法保存对话配置。"
+                                : "当前未配置数据库，无法保存 AI 策略。"
+                        }
+                    />
+                ) : activeCategory === "CHAT" ? (
+                    !chatConfigs.length ? (
+                        <Empty description="当前还没有 AI 对话配置，点击右上角创建。" />
+                    ) : (
+                        <div className="strategy-row-list">
+                            {chatConfigs.map((config) => (
+                                <article
+                                    key={config.id}
+                                    className="strategy-row"
+                                >
+                                    <div className="strategy-row-main">
+                                        <div className="strategy-row-identity">
+                                            <MessageSquare
+                                                size={16}
+                                                className="strategy-row-icon"
+                                            />
+                                            <h3 className="strategy-row-name">
+                                                {config.name}
                                             </h3>
-                                            <Tag>{strategy.code}</Tag>
                                             <Tag
                                                 color={
-                                                    strategy.enabled
+                                                    config.enabled
                                                         ? "success"
                                                         : "default"
                                                 }
                                             >
-                                                {strategy.enabled
+                                                {config.enabled
                                                     ? "启用中"
                                                     : "已停用"}
                                             </Tag>
                                         </div>
-                                        {strategy.description ? (
-                                            <p
-                                                className="muted"
-                                                style={{
-                                                    margin: "8px 0 0",
-                                                    lineHeight: 1.7,
-                                                    display: "-webkit-box",
-                                                    WebkitLineClamp: 2,
-                                                    WebkitBoxOrient:
-                                                        "vertical",
-                                                    overflow: "hidden",
-                                                }}
-                                            >
-                                                {strategy.description}
+
+                                        {config.systemPrompt ? (
+                                            <p className="strategy-row-desc">
+                                                {config.systemPrompt}
                                             </p>
                                         ) : null}
-                                    </div>
-                                    <Space size={8} wrap>
-                                        <Button
-                                            icon={<PencilLine size={16} />}
-                                            onClick={() =>
-                                                openEditModal(strategy)
-                                            }
-                                        >
-                                            编辑
-                                        </Button>
-                                        <Popconfirm
-                                            title="删除审核策略"
-                                            description="删除后历史执行记录会一并失效，确认继续吗？"
-                                            okText="删除"
-                                            cancelText="取消"
-                                            onConfirm={() =>
-                                                handleDelete(strategy.id)
-                                            }
-                                        >
-                                            <Button
-                                                danger
-                                                icon={<Trash2 size={16} />}
-                                                loading={
-                                                    isDeleting &&
-                                                    deletingId === strategy.id
-                                                }
+
+                                        <div className="strategy-row-meta">
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    模型
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {config.modelCodes.join("、")}
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
                                             >
-                                                删除
-                                            </Button>
-                                        </Popconfirm>
-                                    </Space>
-                                </div>
-
-                                <div className="strategy-meta-row">
-                                    <Tag bordered={false}>
-                                        {strategy.definition.steps.length}{" "}
-                                        个步骤
-                                    </Tag>
-                                    <Tag bordered={false}>
-                                        AI 步骤：
-                                        {
-                                            strategy.definition.steps.filter(
-                                                (step) =>
-                                                    step.kind === "AI_TOOL",
-                                            ).length
-                                        }
-                                    </Tag>
-                                    <Tag bordered={false}>
-                                        规则步骤：
-                                        {
-                                            strategy.definition.steps.filter(
-                                                (step) => step.kind === "RULE",
-                                            ).length
-                                        }
-                                    </Tag>
-                                    <Tag bordered={false}>
-                                        维护人：{strategy.createdByName}
-                                    </Tag>
-                                    <Tag bordered={false}>
-                                        生效管理员：{strategy.scopeAdminName}
-                                    </Tag>
-                                    <Tag bordered={false}>
-                                        更新于{" "}
-                                        {new Date(
-                                            strategy.updatedAt,
-                                        ).toLocaleString("zh-CN")}
-                                    </Tag>
-                                </div>
-
-                                <div className="strategy-overview-grid">
-                                    <div className="strategy-overview-card">
-                                        <div className="strategy-overview-label">
-                                            适用项目
-                                        </div>
-                                        <div className="strategy-overview-value">
-                                            {summarizeScope(
-                                                strategy.projectIds.length,
-                                                totalProjectCount,
-                                                "全部项目",
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="strategy-overview-card">
-                                        <div className="strategy-overview-label">
-                                            适用数据源
-                                        </div>
-                                        <div className="strategy-overview-value">
-                                            {summarizeScope(
-                                                strategy.datasourceIds.length,
-                                                totalDatasourceCount,
-                                                "全部数据源",
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="strategy-overview-card">
-                                        <div className="strategy-overview-label">
-                                            首步执行
-                                        </div>
-                                        <div className="strategy-overview-value">
-                                            {strategy.definition.steps[0]
-                                                ? getStepTypeLabel(
-                                                      strategy.definition
-                                                          .steps[0],
-                                                  )
-                                                : "未配置"}
-                                        </div>
-                                    </div>
-                                    <div className="strategy-overview-card">
-                                        <div className="strategy-overview-label">
-                                            末步输出
-                                        </div>
-                                        <div className="strategy-overview-value">
-                                            {strategy.definition.steps.at(-1)
-                                                ? getStepTypeLabel(
-                                                      strategy.definition.steps.at(
-                                                          -1,
-                                                      )!,
-                                                  )
-                                                : "未配置"}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="strategy-scope-inline">
-                                    具体适用项目、数据源、字段和提示词已收纳到编辑弹窗中。
-                                </div>
-
-                                <div className="strategy-tag-wrap">
-                                    {strategy.definition.steps
-                                        .slice(0, 3)
-                                        .map((step, index) => (
-                                            <Tag key={step.id} color="blue">
-                                                {index + 1}. {step.name}
-                                            </Tag>
-                                        ))}
-                                    {strategy.definition.steps.length > 3 ? (
-                                        <Tag>
-                                            +{strategy.definition.steps.length - 3}{" "}
-                                            个步骤
-                                        </Tag>
-                                    ) : null}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            {/* AI Chat Config Section */}
-            <section className="content-surface" style={{ marginTop: 24 }}>
-                <div className="section-head ai-review-strategy-head">
-                    <div>
-                        <h2
-                            style={{ margin: 0, fontSize: 24, lineHeight: 1.1 }}
-                        >
-                            AI 对话配置
-                        </h2>
-                        <p
-                            className="muted"
-                            style={{ margin: "10px 0 0", lineHeight: 1.7 }}
-                        >
-                            配置审核场景的 AI
-                            对话助手。选择可用模型、编写系统提示词、指定预设发送给
-                            AI 的题目字段。
-                        </p>
-                    </div>
-                    <Button
-                        type="primary"
-                        icon={<Plus size={16} />}
-                        onClick={openCreateChatModal}
-                    >
-                        新建配置
-                    </Button>
-                </div>
-
-                {!databaseEnabled ? (
-                    <Empty description="当前未配置数据库，无法保存对话配置。" />
-                ) : !chatConfigs.length ? (
-                    <Empty description="当前还没有 AI 对话配置，请先创建一条配置。" />
-                ) : (
-                    <div className="strategy-card-grid">
-                        {chatConfigs.map((config) => (
-                            <div key={config.id} className="strategy-card">
-                                <div className="strategy-card-head">
-                                    <div>
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                                flexWrap: "wrap",
-                                            }}
-                                        >
-                                            <MessageSquare size={18} />
-                                            <strong>{config.name}</strong>
-                                            <Tag
-                                                color={
-                                                    config.enabled
-                                                        ? "green"
-                                                        : "default"
-                                                }
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    预设字段
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {config.presetFields.length
+                                                        ? `${config.presetFields.length} 个`
+                                                        : "无"}
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
                                             >
-                                                {config.enabled
-                                                    ? "启用"
-                                                    : "已停用"}
-                                            </Tag>
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    更新
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {new Date(
+                                                        config.updatedAt,
+                                                    ).toLocaleString("zh-CN")}
+                                                </span>
+                                            </span>
                                         </div>
                                     </div>
-                                    <Space size={8} wrap>
+
+                                    <div className="strategy-row-actions">
                                         <Button
                                             icon={<PencilLine size={16} />}
                                             onClick={() =>
@@ -945,47 +1282,201 @@ export function AiReviewStrategyConsole({
                                                 删除
                                             </Button>
                                         </Popconfirm>
-                                    </Space>
-                                </div>
-
-                                <div className="strategy-meta-row">
-                                    <Tag bordered={false}>
-                                        模型：{config.modelCodes.join("、")}
-                                    </Tag>
-                                    {config.presetFields.length > 0 && (
-                                        <Tag bordered={false}>
-                                            预设字段：
-                                            {config.presetFields.length} 个
-                                        </Tag>
-                                    )}
-                                    <Tag bordered={false}>
-                                        更新于{" "}
-                                        {new Date(
-                                            config.updatedAt,
-                                        ).toLocaleString("zh-CN")}
-                                    </Tag>
-                                </div>
-
-                                {config.systemPrompt ? (
-                                    <div
-                                        className="muted"
-                                        style={{
-                                            marginTop: 8,
-                                            fontSize: 13,
-                                            lineHeight: 1.7,
-                                            whiteSpace: "pre-wrap",
-                                            maxHeight: 80,
-                                            overflow: "hidden",
-                                        }}
-                                    >
-                                        {config.systemPrompt}
                                     </div>
-                                ) : null}
-                            </div>
-                        ))}
+                                </article>
+                            ))}
+                        </div>
+                    )
+                ) : !visibleStrategies.length ? (
+                    <Empty
+                        description={`当前还没有${activeCategoryMeta.label}，点击右上角创建。`}
+                    />
+                ) : (
+                    <div className="strategy-row-list">
+                        {visibleStrategies.map((strategy) => {
+                            const aiStepCount = strategy.definition.steps.filter(
+                                (step) => step.kind === "AI_TOOL",
+                            ).length;
+                            const ruleStepCount =
+                                strategy.definition.steps.filter(
+                                    (step) => step.kind === "RULE",
+                                ).length;
+                            return (
+                                <article
+                                    key={strategy.id}
+                                    className="strategy-row"
+                                >
+                                    <div className="strategy-row-main">
+                                        <div className="strategy-row-identity">
+                                            <h3 className="strategy-row-name">
+                                                {strategy.name}
+                                            </h3>
+                                            <Tag>{strategy.code}</Tag>
+                                            <Tag
+                                                color={
+                                                    strategy.enabled
+                                                        ? "success"
+                                                        : "default"
+                                                }
+                                            >
+                                                {strategy.enabled
+                                                    ? "启用中"
+                                                    : "已停用"}
+                                            </Tag>
+                                        </div>
+
+                                        {strategy.description ? (
+                                            <p className="strategy-row-desc">
+                                                {strategy.description}
+                                            </p>
+                                        ) : null}
+
+                                        <div className="strategy-row-meta">
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    步骤
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {strategy.definition.steps.length}{" "}
+                                                    (AI {aiStepCount} / 规则{" "}
+                                                    {ruleStepCount})
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
+                                            >
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    适用项目
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {summarizeScope(
+                                                        strategy.projectIds.length,
+                                                        totalProjectCount,
+                                                        "全部",
+                                                    )}
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
+                                            >
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    数据源
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {summarizeScope(
+                                                        strategy.datasourceIds
+                                                            .length,
+                                                        totalDatasourceCount,
+                                                        "全部",
+                                                    )}
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
+                                            >
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    维护人
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {strategy.createdByName}
+                                                </span>
+                                            </span>
+                                            <span
+                                                className="strategy-row-meta-divider"
+                                                aria-hidden
+                                            >
+                                                ·
+                                            </span>
+                                            <span className="strategy-row-meta-item">
+                                                <span className="strategy-row-meta-key">
+                                                    更新
+                                                </span>
+                                                <span className="strategy-row-meta-value">
+                                                    {new Date(
+                                                        strategy.updatedAt,
+                                                    ).toLocaleString("zh-CN")}
+                                                </span>
+                                            </span>
+                                        </div>
+
+                                        {strategy.definition.steps.length ? (
+                                            <div className="strategy-row-steps">
+                                                {strategy.definition.steps
+                                                    .slice(0, 4)
+                                                    .map((step, index) => (
+                                                        <span
+                                                            key={step.id}
+                                                            className="strategy-row-step"
+                                                        >
+                                                            <span className="strategy-row-step-index">
+                                                                {index + 1}
+                                                            </span>
+                                                            <span className="strategy-row-step-name">
+                                                                {step.name}
+                                                            </span>
+                                                        </span>
+                                                    ))}
+                                                {strategy.definition.steps.length >
+                                                4 ? (
+                                                    <span className="strategy-row-step strategy-row-step-more">
+                                                        +
+                                                        {strategy.definition.steps
+                                                            .length - 4}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="strategy-row-actions">
+                                        <Button
+                                            icon={<PencilLine size={16} />}
+                                            onClick={() =>
+                                                openEditModal(strategy)
+                                            }
+                                        >
+                                            编辑
+                                        </Button>
+                                        <Popconfirm
+                                            title="删除 AI 策略"
+                                            description="删除后历史执行记录会一并失效，确认继续吗？"
+                                            okText="删除"
+                                            cancelText="取消"
+                                            onConfirm={() =>
+                                                handleDelete(strategy.id)
+                                            }
+                                        >
+                                            <Button
+                                                danger
+                                                icon={<Trash2 size={16} />}
+                                                loading={
+                                                    isDeleting &&
+                                                    deletingId === strategy.id
+                                                }
+                                            >
+                                                删除
+                                            </Button>
+                                        </Popconfirm>
+                                    </div>
+                                </article>
+                            );
+                        })}
                     </div>
                 )}
             </section>
+
 
             {/* Chat Config Modal */}
             <Modal
@@ -1116,7 +1607,7 @@ export function AiReviewStrategyConsole({
             </Modal>
 
             <Modal
-                title={form.strategyId ? "编辑审核策略" : "新建审核策略"}
+                title={form.strategyId ? "编辑 AI 策略" : "新建 AI 策略"}
                 open={modalOpen}
                 onCancel={closeModal}
                 width={920}
@@ -1209,7 +1700,7 @@ export function AiReviewStrategyConsole({
                                     description: event.target.value,
                                 }))
                             }
-                            placeholder="简要说明该策略的适用数据源、审核目标和触发标准。"
+                            placeholder="简要说明该策略的适用数据源、处理目标和触发标准。"
                         />
                     </div>
 
@@ -1228,6 +1719,9 @@ export function AiReviewStrategyConsole({
                                 id="strategy-projects"
                                 mode="multiple"
                                 value={form.projectIds}
+                                maxTagCount="responsive"
+                                maxTagTextLength={18}
+                                popupMatchSelectWidth
                                 onChange={(value) =>
                                     setForm((current) => {
                                         const nextDatasourceIds =
@@ -1254,6 +1748,7 @@ export function AiReviewStrategyConsole({
                                         const allowedFields =
                                             getDatasourceFieldSet(
                                                 datasources,
+                                                value,
                                                 nextDatasourceIds,
                                             );
 
@@ -1287,6 +1782,7 @@ export function AiReviewStrategyConsole({
                                 options={projectOptions}
                                 placeholder="留空表示适用于全部项目"
                                 size="large"
+                                className="strategy-scope-select"
                             />
                         </div>
                         <div>
@@ -1300,11 +1796,15 @@ export function AiReviewStrategyConsole({
                                 id="strategy-datasources"
                                 mode="multiple"
                                 value={form.datasourceIds}
+                                maxTagCount="responsive"
+                                maxTagTextLength={18}
+                                popupMatchSelectWidth
                                 onChange={(value) =>
                                     setForm((current) => {
                                         const allowedFields =
                                             getDatasourceFieldSet(
                                                 datasources,
+                                                current.projectIds,
                                                 value,
                                             );
 
@@ -1337,6 +1837,7 @@ export function AiReviewStrategyConsole({
                                 options={datasourceOptions}
                                 placeholder="留空表示适用于全部数据源"
                                 size="large"
+                                className="strategy-scope-select"
                             />
                         </div>
                     </div>
@@ -1345,7 +1846,7 @@ export function AiReviewStrategyConsole({
                         <div>
                             <div style={{ fontWeight: 600 }}>启用策略</div>
                             <div className="muted" style={{ marginTop: 4 }}>
-                                停用后审核页不会再展示该策略。
+                                停用后列表和详情页不会再展示该策略。
                             </div>
                         </div>
                         <Switch

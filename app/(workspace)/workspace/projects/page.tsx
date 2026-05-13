@@ -1,4 +1,4 @@
-import { Empty, Tag } from "antd";
+import { Empty, Tag } from "@/components/ui/legacy-ui-adapters";
 import { auth } from "@/auth";
 import {
   getProjectRoleColor,

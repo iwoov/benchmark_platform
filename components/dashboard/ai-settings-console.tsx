@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  App,
   Button,
   Empty,
   Input,
@@ -16,7 +15,7 @@ import {
   Switch,
   Tag,
   Tooltip,
-} from "antd";
+} from "@/components/ui/legacy-ui-adapters";
 import {
   ArrowDown,
   ArrowUp,
@@ -32,6 +31,7 @@ import {
   saveAiModelAction,
   updateAiProviderConfigAction,
 } from "@/app/actions/ai-settings";
+import { useToast } from "@/components/ui/toast";
 import {
   aiBuiltInToolLabels,
   aiBuiltInToolOptions,
@@ -195,7 +195,7 @@ export function AiSettingsConsole({
   mode?: "all" | "models" | "routes";
 }) {
   const router = useRouter();
-  const { notification } = App.useApp();
+  const toast = useToast();
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [providerPendingId, setProviderPendingId] = useState<string | null>(
@@ -264,19 +264,17 @@ export function AiSettingsConsole({
 
   function notifyResult(result: { error?: string; success?: string }) {
     if (result.error) {
-      notification.error({
-        message: "保存失败",
+      toast.error({
+        title: "保存失败",
         description: result.error,
-        placement: "topRight",
       });
       return false;
     }
 
     if (result.success) {
-      notification.success({
-        message: "保存成功",
+      toast.success({
+        title: "保存成功",
         description: result.success,
-        placement: "topRight",
       });
     }
 
@@ -650,81 +648,117 @@ export function AiSettingsConsole({
           ) : !models.length ? (
             <Empty description="当前还没有模型路由，点击右上角开始添加。" />
           ) : (
-            <div className="ai-model-overview-grid">
-              {models.map((model) => (
-                <article key={model.id} className="ai-model-overview-card">
-                  <div className="ai-model-overview-head">
-                    <div>
-                      <div className="ai-provider-overview-title">
-                        <h3 style={{ margin: 0, fontSize: 18 }}>{model.code}</h3>
+            <div className="model-row-list">
+              {models.map((model) => {
+                const primaryRoute = model.routes[0];
+                const fallbackCount = Math.max(0, model.routes.length - 1);
+                const hasTools =
+                  model.protocol === "OPENAI_RESPONSES" &&
+                  model.builtInTools.length > 0;
+
+                return (
+                  <article key={model.id} className="model-row">
+                    <div className="model-row-main">
+                      <div className="model-row-identity">
+                        <h3 className="model-row-code">{model.code}</h3>
                         <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
-                        <Tag>{model.routes.length} 条路由</Tag>
-                        {model.protocol === "OPENAI_RESPONSES" &&
-                        model.builtInTools.length ? (
-                          <Tag color="gold">{model.builtInTools.length} 个工具</Tag>
+                        {model.label ? (
+                          <span className="model-row-label">{model.label}</span>
                         ) : null}
                       </div>
-                      {model.label ? (
-                        <div className="muted" style={{ marginTop: 6 }}>
-                          {model.label}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="ai-model-overview-meta">
-                      <span className="muted">
-                        {model.routes[0]
-                          ? `主路由：${endpointLabel(
-                              model.routes[0].providerName,
-                              model.routes[0].label,
-                            )}`
-                          : "未配置路由"}
-                      </span>
-                      {model.note ? (
-                        <span className="muted">备注：{model.note}</span>
-                      ) : null}
-                      {model.protocol === "OPENAI_RESPONSES" &&
-                      model.builtInTools.length ? (
-                        <span className="muted">
-                          工具：
-                          {model.builtInTools
-                            .map((tool) => aiBuiltInToolLabels[tool])
-                            .join("、")}
-                          {model.toolChoice
-                            ? ` · ${aiToolChoiceLabels[model.toolChoice]}`
-                            : ""}
-                          {model.maxToolCalls
-                            ? ` · 最多 ${model.maxToolCalls} 次`
-                            : ""}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
 
-                  <div className="ai-model-overview-actions">
-                    <Button
-                      icon={<PencilLine size={16} />}
-                      onClick={() => openEditModelModal(model)}
-                    >
-                      编辑
-                    </Button>
-                    <Popconfirm
-                      title="删除模型"
-                      description={`确认删除 ${model.code} 吗？`}
-                      okText="删除"
-                      cancelText="取消"
-                      onConfirm={() => handleDeleteModel(model)}
-                    >
+                      <div className="model-row-meta">
+                        <span className="model-row-meta-item">
+                          <span className="model-row-meta-key">主路由</span>
+                          <span className="model-row-meta-value">
+                            {primaryRoute
+                              ? endpointLabel(
+                                  primaryRoute.providerName,
+                                  primaryRoute.label,
+                                )
+                              : "未配置"}
+                          </span>
+                        </span>
+                        <span className="model-row-meta-divider" aria-hidden>
+                          ·
+                        </span>
+                        <span className="model-row-meta-item">
+                          <span className="model-row-meta-key">备用</span>
+                          <span className="model-row-meta-value">
+                            {fallbackCount > 0 ? `${fallbackCount} 条` : "无"}
+                          </span>
+                        </span>
+                        {hasTools ? (
+                          <>
+                            <span
+                              className="model-row-meta-divider"
+                              aria-hidden
+                            >
+                              ·
+                            </span>
+                            <span className="model-row-meta-item">
+                              <span className="model-row-meta-key">工具</span>
+                              <span className="model-row-meta-value">
+                                {model.builtInTools
+                                  .map((tool) => aiBuiltInToolLabels[tool])
+                                  .join("、")}
+                                {model.toolChoice
+                                  ? ` · ${aiToolChoiceLabels[model.toolChoice]}`
+                                  : ""}
+                                {model.maxToolCalls
+                                  ? ` · 最多 ${model.maxToolCalls} 次`
+                                  : ""}
+                              </span>
+                            </span>
+                          </>
+                        ) : null}
+                        {model.note ? (
+                          <>
+                            <span
+                              className="model-row-meta-divider"
+                              aria-hidden
+                            >
+                              ·
+                            </span>
+                            <span className="model-row-meta-item">
+                              <span className="model-row-meta-key">备注</span>
+                              <span className="model-row-meta-value">
+                                {model.note}
+                              </span>
+                            </span>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="model-row-actions">
                       <Button
-                        danger
-                        icon={<Trash2 size={16} />}
-                        loading={isDeletingModel && deletingModelId === model.id}
+                        icon={<PencilLine size={16} />}
+                        onClick={() => openEditModelModal(model)}
                       >
-                        删除
+                        编辑
                       </Button>
-                    </Popconfirm>
-                  </div>
-                </article>
-              ))}
+                      <Popconfirm
+                        title="删除模型"
+                        description={`确认删除 ${model.code} 吗？`}
+                        okText="删除"
+                        cancelText="取消"
+                        onConfirm={() => handleDeleteModel(model)}
+                      >
+                        <Button
+                          danger
+                          icon={<Trash2 size={16} />}
+                          loading={
+                            isDeletingModel && deletingModelId === model.id
+                          }
+                        >
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

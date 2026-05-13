@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const aiReviewAiToolTypes = [
+    "FIELD_CLEANING",
     "COMPREHENSIVE_CHECK",
     "QUESTION_COMPLETENESS_CHECK",
     "TEXT_QUALITY_CHECK",
@@ -39,8 +40,18 @@ export const aiReviewMatchLevels = [
 ] as const;
 export const aiReviewRiskLevels = ["LOW", "MEDIUM", "HIGH"] as const;
 export const aiReviewDifficultyLevels = ["EASY", "MEDIUM", "HARD"] as const;
+export const aiReviewFieldCleaningChangeTypes = [
+    "UNCHANGED",
+    "TRIM",
+    "FORMAT",
+    "TYPO",
+    "NORMALIZATION",
+    "TRANSLATION",
+    "OTHER",
+] as const;
 
 export const aiReviewToolLabels: Record<AiReviewAiToolType, string> = {
+    FIELD_CLEANING: "字段数据清洗",
     COMPREHENSIVE_CHECK: "全面检查",
     QUESTION_COMPLETENESS_CHECK: "题目完整性检查",
     TEXT_QUALITY_CHECK: "文本质量检查",
@@ -72,6 +83,8 @@ export const aiReviewOutcomeLabelMap: Record<AiReviewOutcomeLabel, string> = {
 };
 
 export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
+    FIELD_CLEANING:
+        "你现在是题目数据清洗助手。请逐字段清洗 selectedFields 中的每一个字段，目标是提升格式一致性、可读性和入库质量。允许修正：前后空白、多余换行、明显乱码、HTML/Markdown 噪音、全角半角不一致、标点空格、明显错别字、列表/选项编号格式。字段规则：如果字段名为 secondary，表示二级学科；若原值是中文，请翻译为对应的英文二级学科名称；若原值已是英文或无法可靠判断对应英文二级学科，请保持原值不变；该字段发生中英翻译时 changeType 使用 TRANSLATION。禁止改动：题意、答案事实、数值、公式含义、选项语义、解析推理结论；无法确定时保持原值不变。必须为每个输入字段返回一条 fieldResults 记录。输出要求：必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。所有 cleanedValue 使用纯文本；如果字段原本是 JSON/数组/对象，请返回清洗后的 JSON 字符串。",
     COMPREHENSIVE_CHECK:
         "你现在是题目内容审校助手。你的任务不是独立解答题目，也不是根据你自己的解题结果判断题目对错，而是从审核视角检查题干、标准答案、解析文本本身是否存在质量问题。检查范围：1. 题干是否完整、清晰、无歧义；2. 是否存在漏条件、条件冲突、信息缺失、无法正常理解作答的问题；3. 标准答案是否明确，是否与题干或解析文本存在明显冲突；4. 解析是否完整，是否存在明显事实错误、逻辑跳步、推理断裂、公式误用、概念错误或结论前后不一致；5. 是否存在明显学科事实错误、常识性错误、错别字、病句、格式问题。边界规则：不要独立解题；不要因为 AI 可能答错就判题目有问题；只有题干/答案/解析文本本身出现明确矛盾或错误时才判定问题；若必须完整重做题才能判断，请在 summary 明确“无法在本步骤中确定”；多解或无法作答风险仅在题干文本已明显体现时指出；不要因 options 为空就判缺陷。输出要求：必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。所有字符串字段必须是纯文本，禁止 LaTeX 与反斜杠数学命令（如 \\frac、\\sqrt、\\chi、\\sinh）；若需表达公式请用 ASCII 文本（如 sqrt(x), sinh(1), a/b）。",
     QUESTION_COMPLETENESS_CHECK:
@@ -123,6 +136,10 @@ export const aiReviewMetricOptionsByToolType: Record<
     AiReviewAiToolType,
     Array<{ value: string; label: string }>
 > = {
+    FIELD_CLEANING: [
+        { value: "changedFieldCount", label: "修改字段数" },
+        { value: "cleanedFieldCount", label: "清洗字段数" },
+    ],
     COMPREHENSIVE_CHECK: [
         { value: "passed", label: "是否通过" },
         { value: "issueCount", label: "问题数" },
@@ -191,7 +208,7 @@ export const aiToolStepSchema = strategyStepBaseSchema.extend({
         .string()
         .trim()
         .min(2, "提示词至少 2 个字符")
-        .max(4000, "提示词不能超过 4000 个字符"),
+        .max(12000, "提示词不能超过 12000 个字符"),
     runCount: z
         .number()
         .int("执行次数必须是整数")
@@ -412,7 +429,27 @@ export const reviewSummaryOutputSchema = z.object({
     keyIssues: z.array(z.string()).default([]),
 });
 
+export const fieldCleaningOutputSchema = z.object({
+    summary: z.string().min(1),
+    fieldResults: z
+        .array(
+            z.object({
+                fieldKey: z.string().min(1),
+                originalValue: z.string().nullable(),
+                cleanedValue: z.string().nullable(),
+                changed: z.boolean(),
+                changeType: z.enum(aiReviewFieldCleaningChangeTypes),
+                reason: z.string().min(1),
+                confidence: z.number().min(0).max(1).optional(),
+                issues: z.array(z.string()).default([]),
+            }),
+        )
+        .default([]),
+    warnings: z.array(z.string()).default([]),
+});
+
 export const aiReviewOutputSchemas = {
+    FIELD_CLEANING: fieldCleaningOutputSchema,
     COMPREHENSIVE_CHECK: comprehensiveCheckOutputSchema,
     QUESTION_COMPLETENESS_CHECK: completenessOutputSchema,
     TEXT_QUALITY_CHECK: textQualityOutputSchema,
@@ -430,6 +467,8 @@ export type AiReviewRuleAggregate = (typeof aiReviewRuleAggregates)[number];
 export type AiReviewComparisonOperator =
     (typeof aiReviewComparisonOperators)[number];
 export type AiReviewOutcomeLabel = (typeof aiReviewOutcomeLabels)[number];
+export type AiReviewFieldCleaningChangeType =
+    (typeof aiReviewFieldCleaningChangeTypes)[number];
 export type AiReviewStrategyDefinition = z.infer<
     typeof aiReviewStrategyDefinitionSchema
 >;
@@ -444,6 +483,7 @@ export type AiReviewStrategyPersistedInput = z.infer<
 >;
 
 export type AiReviewToolOutputMap = {
+    FIELD_CLEANING: z.infer<typeof fieldCleaningOutputSchema>;
     COMPREHENSIVE_CHECK: z.infer<typeof comprehensiveCheckOutputSchema>;
     QUESTION_COMPLETENESS_CHECK: z.infer<typeof completenessOutputSchema>;
     TEXT_QUALITY_CHECK: z.infer<typeof textQualityOutputSchema>;
@@ -465,7 +505,7 @@ export function createDefaultAiToolStep(
         kind: "AI_TOOL",
         toolType: type,
         modelCode: "",
-        fieldKeys: [],
+        fieldKeys: type === "FIELD_CLEANING" ? ["secondary"] : [],
         promptTemplate: aiReviewDefaultPrompts[type],
         runCount: 1,
         sourceStepId: undefined,

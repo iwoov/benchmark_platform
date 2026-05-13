@@ -15,6 +15,7 @@ import {
 } from "@/lib/ai/invoke";
 import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
 import {
+    aiReviewFieldCleaningChangeTypes,
     aiReviewOutputSchemas,
     aiReviewStrategyDefinitionSchema,
     aiReviewToolLabels,
@@ -577,6 +578,8 @@ async function resolveImageParts(
 
 function getToolContract(type: AiReviewAiToolType) {
     switch (type) {
+        case "FIELD_CLEANING":
+            return `{"summary":string,"fieldResults":[{"fieldKey":string,"originalValue":string|null,"cleanedValue":string|null,"changed":boolean,"changeType":"UNCHANGED|TRIM|FORMAT|TYPO|NORMALIZATION|TRANSLATION|OTHER","reason":string,"confidence":0-1,"issues":string[]}],"warnings":string[]}`;
         case "COMPREHENSIVE_CHECK":
             return `{"passed":boolean,"summary":string,"issues":[{"category":string,"severity":"LOW|MEDIUM|HIGH","field":string,"title":string,"detail":string}],"warnings":string[],"suggestions":string[]}`;
         case "QUESTION_COMPLETENESS_CHECK":
@@ -638,6 +641,16 @@ function buildUserPrompt(
         },
         selectedFields: filteredFields,
     };
+
+    if (
+        step.toolType === "FIELD_CLEANING" &&
+        Object.prototype.hasOwnProperty.call(filteredFields, "secondary")
+    ) {
+        payload.fieldSpecificInstructions = {
+            secondary:
+                "secondary 表示二级学科。若原值是中文，请翻译为对应的英文二级学科名称；若原值已是英文或无法可靠判断对应英文二级学科，请保持原值不变；发生中英翻译时 changeType 使用 TRANSLATION。",
+        };
+    }
 
     if (sourceOutput) {
         payload.upstreamResult = sourceOutput;
@@ -734,6 +747,128 @@ function coerceAiOutput(
             normalized === "HIGH"
             ? normalized
             : "MEDIUM";
+    };
+    const normalizeCleaningChangeType = (value: unknown) => {
+        if (typeof value !== "string") {
+            return "OTHER";
+        }
+
+        const normalized = value.trim().toUpperCase();
+        return (
+            aiReviewFieldCleaningChangeTypes as readonly string[]
+        ).includes(normalized)
+            ? normalized
+            : "OTHER";
+    };
+    const coerceCleaningFieldResults = (value: unknown) => {
+        if (!Array.isArray(value)) {
+            return [] as Array<{
+                fieldKey: string;
+                originalValue: string | null;
+                cleanedValue: string | null;
+                changed: boolean;
+                changeType:
+                    | "UNCHANGED"
+                    | "TRIM"
+                    | "FORMAT"
+                    | "TYPO"
+                    | "NORMALIZATION"
+                    | "TRANSLATION"
+                    | "OTHER";
+                reason: string;
+                confidence: number | undefined;
+                issues: string[];
+            }>;
+        }
+
+        return value
+            .map((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) {
+                    return null;
+                }
+
+                const record = item as Record<string, unknown>;
+                const fieldKey =
+                    toLooseString(record.fieldKey) ??
+                    toLooseString(record.field) ??
+                    toLooseString(record.key);
+
+                if (!fieldKey) {
+                    return null;
+                }
+
+                const originalValue =
+                    toLooseString(record.originalValue) ??
+                    toLooseString(record.original) ??
+                    null;
+                const cleanedValue =
+                    toLooseString(record.cleanedValue) ??
+                    toLooseString(record.cleaned) ??
+                    toLooseString(record.value) ??
+                    null;
+                let confidence =
+                    typeof record.confidence === "number"
+                        ? record.confidence
+                        : typeof record.confidence === "string"
+                          ? Number(record.confidence)
+                          : undefined;
+
+                if (
+                    typeof confidence === "number" &&
+                    (Number.isNaN(confidence) ||
+                        confidence < 0 ||
+                        confidence > 1)
+                ) {
+                    confidence = undefined;
+                }
+
+                return {
+                    fieldKey,
+                    originalValue,
+                    cleanedValue,
+                    changed:
+                        typeof record.changed === "boolean"
+                            ? record.changed
+                            : originalValue !== cleanedValue,
+                    changeType: normalizeCleaningChangeType(
+                        record.changeType ?? record.type,
+                    ) as
+                        | "UNCHANGED"
+                        | "TRIM"
+                        | "FORMAT"
+                        | "TYPO"
+                        | "NORMALIZATION"
+                        | "TRANSLATION"
+                        | "OTHER",
+                    reason:
+                        toLooseString(record.reason) ??
+                        toLooseString(record.summary) ??
+                        "已完成字段清洗。",
+                    confidence,
+                    issues: toStringList(record.issues),
+                };
+            })
+            .filter(
+                (
+                    item,
+                ): item is {
+                    fieldKey: string;
+                    originalValue: string | null;
+                    cleanedValue: string | null;
+                    changed: boolean;
+                    changeType:
+                        | "UNCHANGED"
+                        | "TRIM"
+                        | "FORMAT"
+                        | "TYPO"
+                        | "NORMALIZATION"
+                        | "TRANSLATION"
+                        | "OTHER";
+                    reason: string;
+                    confidence: number | undefined;
+                    issues: string[];
+                } => Boolean(item),
+            );
     };
     const coerceComprehensiveIssues = (value: unknown) => {
         if (!Array.isArray(value)) {
@@ -834,6 +969,13 @@ function coerceAiOutput(
     };
 
     payload.summary = toLooseString(payload.summary) ?? "";
+
+    if (toolType === "FIELD_CLEANING") {
+        payload.fieldResults = coerceCleaningFieldResults(
+            payload.fieldResults ?? payload.cleanedFields ?? payload.fields,
+        );
+        payload.warnings = toStringList(payload.warnings);
+    }
 
     if (toolType === "AI_SOLVE_QUESTION") {
         const answer = toLooseString(payload.answer) ?? "";
@@ -961,6 +1103,17 @@ function deriveMetrics(
 
     if (typeof output.recommendedDecision === "string") {
         metrics.recommendedDecision = output.recommendedDecision;
+    }
+
+    if (toolType === "FIELD_CLEANING" && Array.isArray(output.fieldResults)) {
+        const fieldResults = output.fieldResults.filter(
+            (item) => item && typeof item === "object",
+        ) as Array<Record<string, unknown>>;
+
+        metrics.cleanedFieldCount = fieldResults.length;
+        metrics.changedFieldCount = fieldResults.filter(
+            (item) => item.changed === true,
+        ).length;
     }
 
     if (toolType === "AI_SOLVE_QUESTION") {
@@ -1607,6 +1760,29 @@ function isRunnableReviewStrategy(definition: AiReviewStrategyDefinition) {
     );
 }
 
+function summarizeStrategyCapabilities(definition: AiReviewStrategyDefinition) {
+    const toolTypes = [
+        ...new Set(
+            definition.steps
+                .filter((step) => step.kind === "AI_TOOL")
+                .map((step) => step.toolType),
+        ),
+    ];
+    const hasCleaningStep = toolTypes.includes("FIELD_CLEANING");
+    const hasReviewStep = definition.steps.some(
+        (step) =>
+            step.kind === "AI_TOOL" &&
+            step.toolType !== "FIELD_CLEANING" &&
+            step.toolType !== "TRANSLATE_TO_CHINESE",
+    );
+
+    return {
+        toolTypes,
+        hasCleaningStep,
+        hasReviewStep,
+    };
+}
+
 export async function getAiReviewStrategyConsoleData(input: {
     userId: string;
     platformRole: PlatformRoleValue;
@@ -1873,6 +2049,7 @@ export async function getApplicableAiReviewStrategies(
                     ),
                 ),
             ];
+            const capabilities = summarizeStrategyCapabilities(definition);
 
             return {
                 id: strategy.id,
@@ -1882,6 +2059,7 @@ export async function getApplicableAiReviewStrategies(
                 stepCount: definition.steps.length,
                 datasourceIds: parseStringArray(strategy.datasourceIds),
                 builtInTools,
+                ...capabilities,
             };
         })
         .filter((strategy): strategy is NonNullable<typeof strategy> =>
@@ -1944,6 +2122,7 @@ export async function getReviewQuestionListAiStrategies(
                 stepCount: definition.steps.length,
                 projectIds: strategyProjectIds,
                 datasourceIds: parseStringArray(strategy.datasourceIds),
+                ...summarizeStrategyCapabilities(definition),
             };
         })
         .filter((strategy): strategy is NonNullable<typeof strategy> =>

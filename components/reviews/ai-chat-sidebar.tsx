@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Button, Input, Select, Switch, Tag } from "antd";
+import {
+    useEffect,
+    useRef,
+    useState,
+    type CSSProperties,
+    type ReactNode,
+} from "react";
 import {
     ChevronDown,
     ChevronRight,
@@ -11,8 +16,139 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Badge } from "@/components/ui/badge";
+import { Button as UiButton, type ButtonProps } from "@/components/ui/button";
+import { Select as UiSelect, Textarea } from "@/components/ui/input";
+import { Switch as UiSwitch } from "@/components/ui/switch";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
 import { aiBuiltInToolLabels } from "@/lib/ai/provider-catalog";
+
+type SelectOption = {
+    value: string;
+    label: ReactNode;
+};
+
+function Select({
+    value,
+    onChange,
+    options,
+    placeholder,
+    style,
+}: {
+    value?: string;
+    onChange?: (value: string) => void;
+    options?: SelectOption[];
+    placeholder?: string;
+    size?: "small" | "middle" | "large";
+    style?: CSSProperties;
+}) {
+    return (
+        <UiSelect
+            value={value ?? ""}
+            onChange={(event) => onChange?.(event.target.value)}
+            style={style}
+        >
+            {placeholder ? <option value="">{placeholder}</option> : null}
+            {(options ?? []).map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </UiSelect>
+    );
+}
+
+type LocalButtonProps = Omit<ButtonProps, "type" | "leftIcon" | "variant" | "size"> & {
+    type?: "primary" | "default" | "text";
+    icon?: ReactNode;
+    size?: "small" | "middle" | "large";
+};
+
+function Button({
+    type,
+    icon,
+    size,
+    children,
+    ...props
+}: LocalButtonProps) {
+    return (
+        <UiButton
+            {...props}
+            variant={
+                type === "primary"
+                    ? "default"
+                    : type === "text"
+                      ? "ghost"
+                      : "secondary"
+            }
+            size={size === "small" ? "sm" : size === "large" ? "lg" : "default"}
+            leftIcon={icon}
+        >
+            {children}
+        </UiButton>
+    );
+}
+
+function Tag({
+    children,
+    color,
+    style,
+    closable,
+    onClose,
+}: {
+    children: ReactNode;
+    color?: string;
+    style?: CSSProperties;
+    closable?: boolean;
+    onClose?: (event: { preventDefault: () => void }) => void;
+}) {
+    return (
+        <Badge
+            variant={color === "gold" ? "warning" : "outline"}
+            size="sm"
+            style={style}
+        >
+            {children}
+            {closable ? (
+                <button
+                    type="button"
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        onClose?.({ preventDefault: () => undefined });
+                    }}
+                    aria-label="移除"
+                >
+                    ×
+                </button>
+            ) : null}
+        </Badge>
+    );
+}
+
+function TextAreaAdapter({
+    size: _size,
+    autoSize: _autoSize,
+    ...props
+}: Omit<React.ComponentProps<typeof Textarea>, "size"> & {
+    size?: "small" | "middle" | "large";
+    autoSize?: { minRows?: number; maxRows?: number };
+}) {
+    return <Textarea {...props} />;
+}
+
+const Input = {
+    TextArea: TextAreaAdapter,
+};
+
+function Switch({
+    size: _size,
+    ...props
+}: React.ComponentProps<typeof UiSwitch> & {
+    size?: "small" | "middle" | "large";
+}) {
+    return <UiSwitch {...props} />;
+}
 
 type ChatMessage = {
     id: string;

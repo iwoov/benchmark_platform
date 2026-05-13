@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useTransition,
+    type CSSProperties,
+    type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Empty, Modal, Select, Space, Switch, Tag } from "antd";
 import { Bot, ChevronDown, Code, Play, RefreshCcw } from "lucide-react";
 import {
     runAiReviewStrategyAction,
@@ -14,6 +22,173 @@ import {
     type AiBuiltInToolType,
 } from "@/lib/ai/provider-catalog";
 import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
+import { Badge } from "@/components/ui/badge";
+import { Button as UiButton, type ButtonProps } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { Select as UiSelect } from "@/components/ui/input";
+import { Modal as UiModal } from "@/components/ui/modal";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/toast";
+
+type SelectOption = {
+    value: string;
+    label: ReactNode;
+};
+
+function Select({
+    value,
+    onChange,
+    options = [],
+    style,
+}: {
+    value?: string;
+    onChange?: (value: string) => void;
+    options?: SelectOption[];
+    size?: "large" | "middle" | "small";
+    style?: CSSProperties;
+}) {
+    return (
+        <UiSelect
+            value={value ?? ""}
+            onChange={(event) => onChange?.(event.target.value)}
+            style={style}
+        >
+            {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </UiSelect>
+    );
+}
+
+type LocalButtonProps = Omit<ButtonProps, "type" | "leftIcon" | "variant" | "size"> & {
+    type?: "primary" | "default" | "link" | "text";
+    icon?: ReactNode;
+    size?: "small" | "middle" | "large";
+};
+
+function Button({
+    type,
+    icon,
+    size,
+    children,
+    ...props
+}: LocalButtonProps) {
+    const variant =
+        type === "primary"
+            ? "default"
+            : type === "link"
+              ? "link"
+              : type === "text"
+                ? "ghost"
+                : "secondary";
+
+    return (
+        <UiButton
+            {...props}
+            variant={variant}
+            size={size === "small" ? "sm" : size === "large" ? "lg" : "default"}
+            leftIcon={icon}
+        >
+            {children}
+        </UiButton>
+    );
+}
+
+function Empty({ description }: { description?: ReactNode }) {
+    return (
+        <EmptyState
+            title={typeof description === "string" ? description : "暂无数据"}
+        />
+    );
+}
+
+function Tag({
+    children,
+    color,
+    style,
+}: {
+    children: ReactNode;
+    color?: string;
+    style?: CSSProperties;
+}) {
+    const variant =
+        color === "success"
+            ? "success"
+            : color === "error"
+              ? "destructive"
+              : color === "warning" || color === "gold"
+                ? "warning"
+                : color === "blue" || color === "processing"
+                  ? "info"
+                  : color === "purple"
+                    ? "primary"
+                    : "outline";
+
+    return (
+        <Badge variant={variant} size="sm" style={style}>
+            {children}
+        </Badge>
+    );
+}
+
+function Space({
+    children,
+    size = 8,
+    style,
+    ...props
+}: React.HTMLAttributes<HTMLDivElement> & {
+    size?: number;
+}) {
+    return (
+        <div
+            {...props}
+            style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: size,
+                ...style,
+            }}
+        >
+            {children}
+        </div>
+    );
+}
+
+function Modal({
+    title,
+    open,
+    onCancel,
+    footer,
+    width,
+    children,
+}: {
+    title?: ReactNode;
+    open: boolean;
+    onCancel?: () => void;
+    footer?: ReactNode;
+    width?: number | string;
+    styles?: { body?: CSSProperties };
+    children: ReactNode;
+}) {
+    return (
+        <UiModal
+            title={title}
+            open={open}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen) {
+                    onCancel?.();
+                }
+            }}
+            footer={footer === null ? undefined : footer}
+            width={width}
+            bodyClassName="max-h-[70vh] overflow-auto"
+        >
+            {children}
+        </UiModal>
+    );
+}
 
 type StrategyRunResult = {
     version: 1;
@@ -188,6 +363,26 @@ function getStepItemInlineTags(
     const data = output as Record<string, unknown>;
 
     switch (stepType) {
+        case "FIELD_CLEANING": {
+            const fieldResults = Array.isArray(data.fieldResults)
+                ? (data.fieldResults as Array<Record<string, unknown>>)
+                : [];
+            const changedCount = fieldResults.filter(
+                (item) => item.changed === true,
+            ).length;
+
+            return [
+                {
+                    label: `${fieldResults.length} 字段`,
+                    color: "blue",
+                },
+                {
+                    label: `修改 ${changedCount}`,
+                    color: changedCount ? "gold" : "success",
+                },
+            ];
+        }
+
         case "COMPREHENSIVE_CHECK":
             return [
                 {
@@ -328,6 +523,125 @@ function renderStepItemOutput(stepType: string, output: unknown) {
     const data = output as Record<string, unknown>;
 
     switch (stepType) {
+        case "FIELD_CLEANING": {
+            const fieldResults = Array.isArray(data.fieldResults)
+                ? (data.fieldResults as Array<Record<string, unknown>>)
+                : [];
+            const changedCount = fieldResults.filter(
+                (item) => item.changed === true,
+            ).length;
+
+            return (
+                <div className="step-output-rendered">
+                    <div className="step-output-row">
+                        <Tag color="blue">{fieldResults.length} 个字段</Tag>
+                        <Tag color={changedCount ? "gold" : "success"}>
+                            修改 {changedCount} 个
+                        </Tag>
+                    </div>
+                    <div className="step-output-summary">
+                        {String(data.summary ?? "")}
+                    </div>
+                    {fieldResults.length ? (
+                        <div style={{ marginTop: 8 }}>
+                            <div className="step-output-section-label">
+                                字段清洗结果
+                            </div>
+                            <div style={{ display: "grid", gap: 8 }}>
+                                {fieldResults.map((field, index) => (
+                                    <div
+                                        key={`${String(field.fieldKey ?? index)}-${index}`}
+                                        className="step-output-issue"
+                                    >
+                                        <div className="step-output-issue-head">
+                                            <Tag
+                                                color={
+                                                    field.changed
+                                                        ? "gold"
+                                                        : "success"
+                                                }
+                                            >
+                                                {field.changed
+                                                    ? "已修改"
+                                                    : "未修改"}
+                                            </Tag>
+                                            <strong>
+                                                {String(
+                                                    field.fieldKey ?? "unknown",
+                                                )}
+                                            </strong>
+                                            {field.changeType ? (
+                                                <span
+                                                    className="muted"
+                                                    style={{ fontSize: 12 }}
+                                                >
+                                                    {String(field.changeType)}
+                                                </span>
+                                            ) : null}
+                                            {typeof field.confidence ===
+                                            "number" ? (
+                                                <Tag>
+                                                    置信度{" "}
+                                                    {(
+                                                        field.confidence * 100
+                                                    ).toFixed(0)}
+                                                    %
+                                                </Tag>
+                                            ) : null}
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: "grid",
+                                                gap: 8,
+                                                marginTop: 8,
+                                            }}
+                                        >
+                                            <div>
+                                                <div className="step-output-section-label">
+                                                    原值
+                                                </div>
+                                                <div className="step-output-issue-detail">
+                                                    {String(
+                                                        field.originalValue ??
+                                                            "",
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="step-output-section-label">
+                                                    清洗后
+                                                </div>
+                                                <div className="step-output-issue-detail">
+                                                    {String(
+                                                        field.cleanedValue ??
+                                                            "",
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="muted">
+                                                {String(field.reason ?? "")}
+                                            </div>
+                                            <RenderStringList
+                                                label="问题"
+                                                items={
+                                                    (field.issues as string[]) ??
+                                                    []
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                    <RenderStringList
+                        label="警告"
+                        items={(data.warnings as string[]) ?? []}
+                    />
+                </div>
+            );
+        }
+
         case "COMPREHENSIVE_CHECK":
             return (
                 <div className="step-output-rendered">
@@ -646,6 +960,7 @@ function renderStepItemOutput(stepType: string, output: unknown) {
 }
 
 const CORE_STEP_TYPES = new Set([
+    "FIELD_CLEANING",
     "COMPREHENSIVE_CHECK",
     "TEXT_QUALITY_CHECK",
     "AI_SOLVE_QUESTION",
@@ -662,6 +977,7 @@ export function AiReviewStrategyRunner({
     runs,
     retryStates,
     hideHeader,
+    mode = "review",
 }: {
     questionId: string;
     strategies: Array<{
@@ -672,18 +988,64 @@ export function AiReviewStrategyRunner({
         stepCount: number;
         datasourceIds: string[];
         builtInTools: AiBuiltInToolType[];
+        toolTypes?: string[];
+        hasCleaningStep?: boolean;
+        hasReviewStep?: boolean;
     }>;
     runs: RunnerRun[];
     retryStates: RetryState[];
     hideHeader?: boolean;
+    mode?: "review" | "cleaning";
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
-    const notificationRef = useRef(notification);
+    const toast = useToast();
+    const toastRef = useRef(toast);
+    const labels = useMemo(
+        () =>
+            mode === "cleaning"
+                ? {
+                      title: "数据清洗",
+                      emptyStrategies:
+                          "当前项目没有可用的数据清洗策略，请先在 AI 配置中创建包含字段数据清洗步骤的策略。",
+                      emptyRuns: "当前题目还没有执行过数据清洗策略。",
+                      selectLabel: "选择清洗策略",
+                      startInfoTitle: "数据清洗已启动",
+                      startInfoDescription:
+                          "正在持续刷新清洗进度，结果会逐步展示。",
+                      errorTitle: "数据清洗执行失败",
+                      successTitle: "数据清洗已完成",
+                      runButton: "启动清洗",
+                      refreshError: "获取清洗状态失败。",
+                  }
+                : {
+                      title: "AI 审核辅助",
+                      emptyStrategies:
+                          "当前项目没有可用的 AI 审核策略，请联系管理员先创建并绑定策略。",
+                      emptyRuns: "当前题目还没有执行过 AI 审核策略。",
+                      selectLabel: "选择策略",
+                      startInfoTitle: "AI 审核已启动",
+                      startInfoDescription:
+                          "正在持续刷新执行进度，结果会逐步展示。",
+                      errorTitle: "AI 审核执行失败",
+                      successTitle: "AI 审核已完成",
+                      runButton: "启动运行",
+                      refreshError: "获取运行状态失败。",
+                  },
+        [mode],
+    );
+    const strategyIdSet = useMemo(
+        () => new Set(strategies.map((strategy) => strategy.id)),
+        [strategies],
+    );
+    const filterRunsByStrategies = useCallback(
+        (nextRuns: RunnerRun[]) =>
+            nextRuns.filter((run) => strategyIdSet.has(run.strategy.id)),
+        [strategyIdSet],
+    );
     const [selectedStrategyId, setSelectedStrategyId] = useState(
         strategies[0]?.id ?? "",
     );
-    const [liveRuns, setLiveRuns] = useState(runs);
+    const [liveRuns, setLiveRuns] = useState(filterRunsByStrategies(runs));
     const [liveRetryStates, setLiveRetryStates] = useState(retryStates);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pollingEnabled, setPollingEnabled] = useState(false);
@@ -713,14 +1075,24 @@ export function AiReviewStrategyRunner({
     );
 
     useEffect(() => {
-        notificationRef.current = notification;
-    }, [notification]);
+        toastRef.current = toast;
+    }, [toast]);
 
     useEffect(() => {
         setLiveRuns((current) =>
-            areRunsEqual(current, runs) ? current : runs,
+            areRunsEqual(current, filterRunsByStrategies(runs))
+                ? current
+                : filterRunsByStrategies(runs),
         );
-    }, [runs]);
+    }, [filterRunsByStrategies, runs]);
+
+    useEffect(() => {
+        setSelectedStrategyId((current) =>
+            strategies.some((strategy) => strategy.id === current)
+                ? current
+                : (strategies[0]?.id ?? ""),
+        );
+    }, [strategies]);
 
     useEffect(() => {
         setEnableBuiltInTools(false);
@@ -761,11 +1133,11 @@ export function AiReviewStrategyRunner({
                 } | null;
 
                 if (!response.ok) {
-                    throw new Error(payload?.error ?? "获取运行状态失败。");
+                    throw new Error(payload?.error ?? labels.refreshError);
                 }
 
                 if (!disposed && payload?.runs) {
-                    setLiveRuns(payload.runs);
+                    setLiveRuns(filterRunsByStrategies(payload.runs));
                 }
 
                 if (!disposed) {
@@ -773,13 +1145,12 @@ export function AiReviewStrategyRunner({
                 }
             } catch (error) {
                 if (!disposed) {
-                    notificationRef.current.error({
-                        message: "获取运行状态失败",
+                    toastRef.current.error({
+                        title: labels.refreshError,
                         description:
                             error instanceof Error
                                 ? error.message
                                 : "请稍后再试。",
-                        placement: "topRight",
                     });
                 }
             } finally {
@@ -797,7 +1168,14 @@ export function AiReviewStrategyRunner({
                 clearTimeout(timer);
             }
         };
-    }, [hasActiveRetry, hasActiveRun, pollingEnabled, questionId]);
+    }, [
+        filterRunsByStrategies,
+        hasActiveRetry,
+        hasActiveRun,
+        labels.refreshError,
+        pollingEnabled,
+        questionId,
+    ]);
 
     async function refreshRuns(manual = false) {
         if (manual) {
@@ -818,13 +1196,14 @@ export function AiReviewStrategyRunner({
             } | null;
 
             if (!response.ok) {
-                throw new Error(payload?.error ?? "获取运行状态失败。");
+                throw new Error(payload?.error ?? labels.refreshError);
             }
 
+            const scopedRuns = filterRunsByStrategies(payload?.runs ?? []);
             setLiveRuns((current) =>
-                areRunsEqual(current, payload?.runs ?? [])
+                areRunsEqual(current, scopedRuns)
                     ? current
-                    : (payload?.runs ?? []),
+                    : scopedRuns,
             );
             setLiveRetryStates((current) =>
                 areRunsEqual(current, payload?.retryStates ?? [])
@@ -832,11 +1211,10 @@ export function AiReviewStrategyRunner({
                     : (payload?.retryStates ?? []),
             );
         } catch (error) {
-            notification.error({
-                message: "刷新结果失败",
+            toast.error({
+                title: mode === "cleaning" ? "刷新清洗结果失败" : "刷新结果失败",
                 description:
                     error instanceof Error ? error.message : "请稍后再试。",
-                placement: "topRight",
             });
         } finally {
             if (manual) {
@@ -928,10 +1306,12 @@ export function AiReviewStrategyRunner({
 
     async function runStrategy() {
         if (!effectiveSelectedStrategyId) {
-            notification.warning({
-                message: "请选择策略",
-                description: "请先选择一条可执行的 AI 审核策略。",
-                placement: "topRight",
+            toast.warning({
+                title: "请选择策略",
+                description:
+                    mode === "cleaning"
+                        ? "请先选择一条可执行的数据清洗策略。"
+                        : "请先选择一条可执行的 AI 审核策略。",
             });
             return;
         }
@@ -943,10 +1323,9 @@ export function AiReviewStrategyRunner({
         setIsRunning(true);
         try {
             setPollingEnabled(true);
-            notification.info({
-                message: "AI 审核已启动",
-                description: "正在持续刷新执行进度，结果会逐步展示。",
-                placement: "topRight",
+            toast.info({
+                title: labels.startInfoTitle,
+                description: labels.startInfoDescription,
             });
             const result = await runAiReviewStrategyAction({
                 strategyId: effectiveSelectedStrategyId,
@@ -954,24 +1333,23 @@ export function AiReviewStrategyRunner({
                 enableBuiltInTools:
                     (selectedStrategy?.builtInTools.length ?? 0) > 0 &&
                     enableBuiltInTools,
+                purpose: mode === "cleaning" ? "CLEANING" : "REVIEW",
             });
 
             await refreshRuns();
 
             if (result.error) {
-                notification.error({
-                    message: "AI 审核执行失败",
+                toast.error({
+                    title: labels.errorTitle,
                     description: result.error,
-                    placement: "topRight",
                 });
                 router.refresh();
                 return;
             }
 
-            notification.success({
-                message: "AI 审核已完成",
+            toast.success({
+                title: labels.successTitle,
                 description: result.success,
-                placement: "topRight",
             });
             router.refresh();
         } finally {
@@ -1019,10 +1397,9 @@ export function AiReviewStrategyRunner({
                     setLiveRetryStates((current) =>
                         current.filter((item) => item.key !== retryKey),
                     );
-                    notification.error({
-                        message: "重试失败",
+                    toast.error({
+                        title: "重试失败",
                         description: result.error,
-                        placement: "topRight",
                     });
                     return;
                 }
@@ -1033,10 +1410,9 @@ export function AiReviewStrategyRunner({
                     await refreshRuns();
                 }
 
-                notification.success({
-                    message: "已提交后台重试",
+                toast.success({
+                    title: "已提交后台重试",
                     description: result.success ?? "后台任务已创建。",
-                    placement: "topRight",
                 });
                 await refreshRuns();
             } finally {
@@ -1070,10 +1446,9 @@ export function AiReviewStrategyRunner({
                 });
 
                 if (result.error) {
-                    notification.error({
-                        message: "AI 解题执行失败",
+                    toast.error({
+                        title: "AI 解题执行失败",
                         description: result.error,
-                        placement: "topRight",
                     });
                     await refreshRuns();
                     return;
@@ -1085,11 +1460,10 @@ export function AiReviewStrategyRunner({
                     await refreshRuns();
                 }
 
-                notification.success({
-                    message: "AI 解题已完成",
+                toast.success({
+                    title: "AI 解题已完成",
                     description:
                         result.success ?? "已更新当前 AI 审核运行记录。",
-                    placement: "topRight",
                 });
                 router.refresh();
             } finally {
@@ -1110,14 +1484,14 @@ export function AiReviewStrategyRunner({
                         <h3
                             style={{ margin: 0, fontSize: 20, lineHeight: 1.1 }}
                         >
-                            AI 审核辅助
+                            {labels.title}
                         </h3>
                     </div>
                 </div>
             )}
 
             {!strategies.length ? (
-                <Empty description="当前项目没有可用的 AI 审核策略，请联系管理员先创建并绑定策略。" />
+                <Empty description={labels.emptyStrategies} />
             ) : (
                 <div style={{ display: "grid", gap: 16 }}>
                     <div className="review-toolbar">
@@ -1125,7 +1499,9 @@ export function AiReviewStrategyRunner({
                             className="review-toolbar-field"
                             style={{ minWidth: 0, flex: 1 }}
                         >
-                            <div className="review-toolbar-label">选择策略</div>
+                            <div className="review-toolbar-label">
+                                {labels.selectLabel}
+                            </div>
                             <Select
                                 value={effectiveSelectedStrategyId}
                                 onChange={(value) =>
@@ -1170,7 +1546,7 @@ export function AiReviewStrategyRunner({
                                 loading={isRunning}
                                 onClick={runStrategy}
                             >
-                                启动运行
+                                {labels.runButton}
                             </Button>
                         </div>
                     </div>
@@ -1409,8 +1785,16 @@ export function AiReviewStrategyRunner({
                                                                                                       step.stepType,
                                                                                                       item.output,
                                                                                                   );
+                                                                                              const showStructuredOutput =
+                                                                                                  !(
+                                                                                                      mode ===
+                                                                                                          "cleaning" &&
+                                                                                                      step.stepType ===
+                                                                                                          "FIELD_CLEANING"
+                                                                                                  );
                                                                                               const hasDetail =
-                                                                                                  !!item.output ||
+                                                                                                  (showStructuredOutput &&
+                                                                                                      !!item.output) ||
                                                                                                   !!item.error;
 
                                                                                               return (
@@ -1559,7 +1943,8 @@ export function AiReviewStrategyRunner({
                                                                                                       </summary>
                                                                                                       {hasDetail ? (
                                                                                                           <div className="strategy-step-item-body-inner">
-                                                                                                              {item.output
+                                                                                                              {showStructuredOutput &&
+                                                                                                              item.output
                                                                                                                   ? renderStepItemOutput(
                                                                                                                         step.stepType,
                                                                                                                         item.output,
@@ -1730,8 +2115,16 @@ export function AiReviewStrategyRunner({
                                                                                                               step.stepType,
                                                                                                               item.output,
                                                                                                           );
+                                                                                                      const showStructuredOutput =
+                                                                                                          !(
+                                                                                                              mode ===
+                                                                                                                  "cleaning" &&
+                                                                                                              step.stepType ===
+                                                                                                                  "FIELD_CLEANING"
+                                                                                                          );
                                                                                                       const hasDetail =
-                                                                                                          !!item.output ||
+                                                                                                          (showStructuredOutput &&
+                                                                                                              !!item.output) ||
                                                                                                           !!item.error;
 
                                                                                                       return (
@@ -1880,7 +2273,8 @@ export function AiReviewStrategyRunner({
                                                                                                               </summary>
                                                                                                               {hasDetail ? (
                                                                                                                   <div className="strategy-step-item-body-inner">
-                                                                                                                      {item.output
+                                                                                                                      {showStructuredOutput &&
+                                                                                                                      item.output
                                                                                                                           ? renderStepItemOutput(
                                                                                                                                 step.stepType,
                                                                                                                                 item.output,
@@ -2003,7 +2397,8 @@ export function AiReviewStrategyRunner({
                                         ) : null}
 
                                         {/* 审核回填：简洁一行 */}
-                                        {run.parsedResult?.reviewPersistence ? (
+                                        {mode === "review" &&
+                                        run.parsedResult?.reviewPersistence ? (
                                             <div
                                                 style={{
                                                     marginTop: 8,
@@ -2106,7 +2501,7 @@ export function AiReviewStrategyRunner({
                             })}
                         </div>
                     ) : (
-                        <Empty description="当前题目还没有执行过 AI 审核策略。" />
+                        <Empty description={labels.emptyRuns} />
                     )}
                 </div>
             )}

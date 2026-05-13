@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import Link from "next/link";
-import { Tag } from "antd";
+import { Tag } from "@/components/ui/legacy-ui-adapters";
 import { auth } from "@/auth";
 import { PersistedReviewListLink } from "@/components/reviews/persisted-review-list-link";
 import {
@@ -415,7 +415,7 @@ export default async function DashboardPage({
                                 },
                                 {
                                     href: "/admin/ai-strategies",
-                                    label: "审核策略",
+                                    label: "AI 策略",
                                     icon: BrainCircuit,
                                 },
                                 {

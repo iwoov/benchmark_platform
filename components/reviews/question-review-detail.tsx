@@ -1,8 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
-import { App, Button, Checkbox, Collapse, Input, Select, Space, Tag } from "antd";
+import {
+    useEffect,
+    useRef,
+    useState,
+    useTransition,
+    type CSSProperties,
+    type ReactNode,
+} from "react";
 import {
     ArrowLeft,
     ChevronLeft,
@@ -13,6 +19,14 @@ import {
 import { submitReviewAction } from "@/app/actions/reviews";
 import { AiReviewStrategyRunner } from "@/components/reviews/ai-review-strategy-runner";
 import { AiChatSidebar } from "@/components/reviews/ai-chat-sidebar";
+import { Badge } from "@/components/ui/badge";
+import { Button as UiButton, type ButtonProps } from "@/components/ui/button";
+import {
+    Input as UiInput,
+    Select as UiSelect,
+    Textarea,
+} from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import type { AiChatConfigView } from "@/lib/ai/chat-config";
 import type { AiBuiltInToolType } from "@/lib/ai/provider-catalog";
 import type { AiReviewStrategyRetryStateView } from "@/lib/ai/review-strategy-batches";
@@ -21,6 +35,189 @@ import type {
     ReviewQuestionDetail,
     ReviewQuestionNavigation,
 } from "@/lib/reviews/question-list-data";
+import { REVIEW_COMMENT_MAX_LENGTH } from "@/lib/reviews/review-constraints";
+
+type SelectOption = {
+    value: string;
+    label: ReactNode;
+};
+
+function Select({
+    id,
+    value,
+    onChange,
+    options,
+}: {
+    id?: string;
+    value?: string;
+    onChange?: (value: any) => void;
+    options?: SelectOption[];
+    size?: "small" | "middle" | "large";
+}) {
+    return (
+        <UiSelect
+            id={id}
+            value={value ?? ""}
+            onChange={(event) => onChange?.(event.target.value)}
+        >
+            {(options ?? []).map((option) => (
+                <option key={option.value} value={option.value}>
+                    {option.label}
+                </option>
+            ))}
+        </UiSelect>
+    );
+}
+
+type LocalButtonProps = Omit<ButtonProps, "type" | "leftIcon" | "variant" | "size"> & {
+    type?: "primary" | "default" | "text";
+    icon?: ReactNode;
+    size?: "small" | "middle" | "large";
+};
+
+function Button({
+    type,
+    icon,
+    size,
+    children,
+    ...props
+}: LocalButtonProps) {
+    return (
+        <UiButton
+            {...props}
+            variant={
+                type === "primary"
+                    ? "default"
+                    : type === "text"
+                      ? "ghost"
+                      : "secondary"
+            }
+            size={size === "small" ? "sm" : size === "large" ? "lg" : "default"}
+            leftIcon={icon}
+        >
+            {children}
+        </UiButton>
+    );
+}
+
+function Checkbox({
+    checked,
+    onChange,
+    children,
+}: {
+    checked?: boolean;
+    onChange?: (event: { target: { checked: boolean } }) => void;
+    children: ReactNode;
+}) {
+    return (
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+                type="checkbox"
+                checked={!!checked}
+                onChange={(event) =>
+                    onChange?.({ target: { checked: event.target.checked } })
+                }
+                className="h-4 w-4 rounded border-input accent-primary"
+            />
+            <span>{children}</span>
+        </label>
+    );
+}
+
+function Space({
+    children,
+    size = 8,
+    wrap,
+}: {
+    children: ReactNode;
+    size?: number;
+    wrap?: boolean;
+}) {
+    return (
+        <div
+            style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: size,
+                flexWrap: wrap ? "wrap" : "nowrap",
+            }}
+        >
+            {children}
+        </div>
+    );
+}
+
+function Tag({
+    children,
+    color,
+    style,
+}: {
+    children: ReactNode;
+    color?: string;
+    style?: CSSProperties;
+}) {
+    const variant =
+        color === "success" || color === "green"
+            ? "success"
+            : color === "error"
+              ? "destructive"
+              : color === "gold" || color === "warning"
+                ? "warning"
+                : color === "blue" || color === "processing"
+                  ? "info"
+                  : "outline";
+
+    return (
+        <Badge variant={variant} size="sm" style={style}>
+            {children}
+        </Badge>
+    );
+}
+
+function TextAreaAdapter({
+    size: _size,
+    showCount: _showCount,
+    ...props
+}: Omit<React.ComponentProps<typeof Textarea>, "size"> & {
+    size?: "small" | "middle" | "large";
+    showCount?: boolean;
+}) {
+    return <Textarea {...props} />;
+}
+
+const Input = Object.assign(UiInput, {
+    TextArea: TextAreaAdapter,
+});
+
+function Collapse({
+    items,
+}: {
+    className?: string;
+    bordered?: boolean;
+    items: Array<{
+        key: string;
+        label: ReactNode;
+        children: ReactNode;
+    }>;
+}) {
+    return (
+        <div className="space-y-2">
+            {items.map((item) => (
+                <details
+                    key={item.key}
+                    className="rounded-md border border-border bg-card"
+                >
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                        {item.label}
+                    </summary>
+                    <div className="border-t border-border px-3 py-3">
+                        {item.children}
+                    </div>
+                </details>
+            ))}
+        </div>
+    );
+}
 
 const questionStatusMeta = {
     DRAFT: { label: "草稿", color: "default" },
@@ -322,11 +519,85 @@ function getTranslatableFieldValue(value: unknown) {
     return String(value);
 }
 
+type CleaningFieldResultView = {
+    fieldKey: string;
+    originalValue: string | null;
+    cleanedValue: string | null;
+    changed: boolean;
+    changeType: string;
+    reason: string;
+    confidence: number | undefined;
+    issues: string[];
+};
+
+function readCleaningFieldResults(output: unknown) {
+    if (!output || typeof output !== "object" || Array.isArray(output)) {
+        return [] as CleaningFieldResultView[];
+    }
+
+    const fieldResults = (output as Record<string, unknown>).fieldResults;
+    if (!Array.isArray(fieldResults)) {
+        return [] as CleaningFieldResultView[];
+    }
+
+    return fieldResults
+        .map((item) => {
+            if (!item || typeof item !== "object" || Array.isArray(item)) {
+                return null;
+            }
+
+            const record = item as Record<string, unknown>;
+            if (typeof record.fieldKey !== "string" || !record.fieldKey) {
+                return null;
+            }
+
+            return {
+                fieldKey: record.fieldKey,
+                originalValue:
+                    typeof record.originalValue === "string"
+                        ? record.originalValue
+                        : record.originalValue == null
+                          ? null
+                          : String(record.originalValue),
+                cleanedValue:
+                    typeof record.cleanedValue === "string"
+                        ? record.cleanedValue
+                        : record.cleanedValue == null
+                          ? null
+                          : String(record.cleanedValue),
+                changed: record.changed === true,
+                changeType:
+                    typeof record.changeType === "string"
+                        ? record.changeType
+                        : "OTHER",
+                reason:
+                    typeof record.reason === "string"
+                        ? record.reason
+                        : "已完成字段清洗。",
+                confidence:
+                    typeof record.confidence === "number"
+                        ? record.confidence
+                        : undefined,
+                issues: Array.isArray(record.issues)
+                    ? record.issues
+                          .map((issue) =>
+                              typeof issue === "string" ? issue : String(issue),
+                          )
+                          .filter(Boolean)
+                    : [],
+            };
+        })
+        .filter(
+            (item): item is CleaningFieldResultView => Boolean(item),
+        );
+}
+
 export function QuestionReviewDetail({
     question,
     canReview,
     listPath,
     navigation,
+    initialRightTab = "quality",
     fieldPreference,
     reviewStrategies,
     strategyRuns,
@@ -337,6 +608,7 @@ export function QuestionReviewDetail({
     canReview: boolean;
     listPath: string;
     navigation: ReviewQuestionNavigation;
+    initialRightTab?: "quality" | "cleaning";
     fieldPreference: ResolvedReviewFieldPreference;
     chatConfigs?: AiChatConfigView[];
     reviewStrategies: Array<{
@@ -347,6 +619,9 @@ export function QuestionReviewDetail({
         stepCount: number;
         datasourceIds: string[];
         builtInTools: AiBuiltInToolType[];
+        toolTypes: string[];
+        hasCleaningStep: boolean;
+        hasReviewStep: boolean;
     }>;
     retryStates: AiReviewStrategyRetryStateView[];
     strategyRuns: Array<{
@@ -424,7 +699,7 @@ export function QuestionReviewDetail({
     }>;
 }) {
     const router = useRouter();
-    const { notification } = App.useApp();
+    const toast = useToast();
     const manualReview = question.manualReview;
     const latestAiComment = (() => {
         for (const run of strategyRuns) {
@@ -499,6 +774,73 @@ export function QuestionReviewDetail({
 
     const imageFieldSet = new Set(question.imageFields ?? []);
     const imageMap = question.imageMap ?? {};
+    const cleaningStrategies = reviewStrategies.filter(
+        (strategy) => strategy.hasCleaningStep,
+    );
+    const reviewOnlyStrategies = reviewStrategies.filter(
+        (strategy) => strategy.hasReviewStep,
+    );
+    const cleaningStrategyIdSet = new Set(
+        cleaningStrategies.map((strategy) => strategy.id),
+    );
+    const reviewOnlyStrategyIdSet = new Set(
+        reviewOnlyStrategies.map((strategy) => strategy.id),
+    );
+    const cleaningRuns = strategyRuns.filter((run) =>
+        cleaningStrategyIdSet.has(run.strategy.id),
+    );
+    const reviewOnlyRuns = strategyRuns.filter((run) =>
+        reviewOnlyStrategyIdSet.has(run.strategy.id),
+    );
+    const latestCleaningByField = (() => {
+        const results = new Map<string, CleaningFieldResultView>();
+
+        for (const run of cleaningRuns) {
+            for (const step of run.parsedResult?.stepResults ?? []) {
+                if (
+                    step.stepKind !== "AI_TOOL" ||
+                    step.stepType !== "FIELD_CLEANING" ||
+                    step.status !== "SUCCESS"
+                ) {
+                    continue;
+                }
+
+                for (const item of step.items) {
+                    if (item.status !== "SUCCESS") {
+                        continue;
+                    }
+
+                    for (const fieldResult of readCleaningFieldResults(
+                        item.output,
+                    )) {
+                        if (!results.has(fieldResult.fieldKey)) {
+                            results.set(fieldResult.fieldKey, fieldResult);
+                        }
+                    }
+                }
+            }
+        }
+
+        return results;
+    })();
+    const latestCleaningEntries = (() => {
+        const visibleFieldKeys = new Set(fieldPreference.detailVisibleFieldKeys);
+        const ordered = fieldPreference.detailVisibleFieldKeys
+            .map((key) => latestCleaningByField.get(key))
+            .filter(
+                (item): item is CleaningFieldResultView => Boolean(item),
+            );
+        const remaining = [...latestCleaningByField.values()].filter(
+            (item) => !visibleFieldKeys.has(item.fieldKey),
+        );
+
+        return [...ordered, ...remaining];
+    })();
+    const showChatPanel =
+        initialRightTab === "quality" &&
+        chatOpen &&
+        Boolean(chatConfigs?.length);
+    const isCleaningDetail = initialRightTab === "cleaning";
 
     useEffect(() => {
         const controllers = abortControllersRef.current;
@@ -519,28 +861,54 @@ export function QuestionReviewDetail({
     function submitReview() {
         const effectiveComment =
             useReuseAiComment && latestAiComment ? latestAiComment : comment;
+        const normalizedComment = effectiveComment.trim();
+
+        if (normalizedComment.length < 2) {
+            toast.error({
+                title: "审核提交失败",
+                description: "审核意见至少 2 个字符。",
+            });
+            return;
+        }
+
+        if (normalizedComment.length > REVIEW_COMMENT_MAX_LENGTH) {
+            toast.error({
+                title: "审核提交失败",
+                description: `审核意见不能超过 ${REVIEW_COMMENT_MAX_LENGTH} 个字符。`,
+            });
+            return;
+        }
+
         startSubmitting(async () => {
-            const result = await submitReviewAction({
-                questionId: question.id,
-                decision,
-                comment: effectiveComment,
-            });
-
-            if (result.error) {
-                notification.error({
-                    message: "审核提交失败",
-                    description: result.error,
-                    placement: "topRight",
+            try {
+                const result = await submitReviewAction({
+                    questionId: question.id,
+                    decision,
+                    comment: normalizedComment,
                 });
-                return;
-            }
 
-            notification.success({
-                message: "审核已提交",
-                description: result.success,
-                placement: "topRight",
-            });
-            router.refresh();
+                if (result.error) {
+                    toast.error({
+                        title: "审核提交失败",
+                        description: result.error,
+                    });
+                    return;
+                }
+
+                toast.success({
+                    title: "审核已提交",
+                    description: result.success,
+                });
+                router.refresh();
+            } catch (error) {
+                toast.error({
+                    title: "审核提交失败",
+                    description:
+                        error instanceof Error
+                            ? error.message
+                            : "保存审核意见时发生未知错误。",
+                });
+            }
         });
     }
 
@@ -562,10 +930,9 @@ export function QuestionReviewDetail({
         const rawValue = getTranslatableFieldValue(value);
 
         if (!rawValue) {
-            notification.warning({
-                message: "没有可翻译内容",
+            toast.warning({
+                title: "没有可翻译内容",
                 description: `字段 ${fieldKey} 当前为空，无法翻译。`,
-                placement: "topRight",
             });
             return;
         }
@@ -681,11 +1048,10 @@ export function QuestionReviewDetail({
                 return;
             }
 
-            notification.error({
-                message: "翻译失败",
+            toast.error({
+                title: "翻译失败",
                 description:
                     error instanceof Error ? error.message : "未知错误",
-                placement: "topRight",
             });
             setFieldTranslations((current) => ({
                 ...current,
@@ -1090,16 +1456,119 @@ export function QuestionReviewDetail({
                         >
                             <div>
                                 <h3 className="review-section-title">
-                                    原始字段
+                                    {isCleaningDetail
+                                        ? "清洗字段对比"
+                                        : "原始字段"}
                                 </h3>
                                 <p className="muted review-page-copy">
-                                    按字段设置中的顺序竖向展示，便于和原始 JSON
-                                    / Excel 对照。
+                                    {isCleaningDetail
+                                        ? "按字段展示清洗前与清洗后的内容，便于直接核对变化。"
+                                        : "按字段设置中的顺序竖向展示，便于和原始 JSON / Excel 对照。"}
                                 </p>
                             </div>
                         </div>
 
-                        {orderedRawEntries.length ? (
+                        {isCleaningDetail ? (
+                            latestCleaningEntries.length ? (
+                                <div className="detail-card-grid">
+                                    {latestCleaningEntries.map((entry) => (
+                                        <div
+                                            key={entry.fieldKey}
+                                            className="detail-field-card"
+                                        >
+                                            <div className="detail-field-head">
+                                                <div className="detail-field-label">
+                                                    {rawFieldLabelMap[
+                                                        entry.fieldKey
+                                                    ] ?? entry.fieldKey}
+                                                    {rawFieldLabelMap[
+                                                        entry.fieldKey
+                                                    ] &&
+                                                    rawFieldLabelMap[
+                                                        entry.fieldKey
+                                                    ] !== entry.fieldKey ? (
+                                                        <span
+                                                            className="muted"
+                                                            style={{
+                                                                fontWeight: 400,
+                                                                fontSize: 11,
+                                                                marginLeft: 6,
+                                                            }}
+                                                        >
+                                                            {entry.fieldKey}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <Tag
+                                                    color={
+                                                        entry.changed
+                                                            ? "gold"
+                                                            : "success"
+                                                    }
+                                                >
+                                                    {entry.changed
+                                                        ? "已修改"
+                                                        : "未修改"}
+                                                </Tag>
+                                            </div>
+
+                                            <div
+                                                className="revision-diff-values"
+                                                style={{ marginTop: 12 }}
+                                            >
+                                                <div>
+                                                    <div className="revision-diff-label detail-field-label">
+                                                        清洗前
+                                                    </div>
+                                                    <div className="detail-field-content">
+                                                        {renderRawFieldValue(
+                                                            entry.originalValue,
+                                                            entry.fieldKey,
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="revision-diff-label detail-field-label">
+                                                        清洗后
+                                                    </div>
+                                                    <div className="detail-field-content">
+                                                        {renderRawFieldValue(
+                                                            entry.cleanedValue,
+                                                            entry.fieldKey,
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {entry.reason ||
+                                            typeof entry.confidence ===
+                                                "number" ? (
+                                                <div
+                                                    className="muted"
+                                                    style={{
+                                                        marginTop: 10,
+                                                        fontSize: 12,
+                                                    }}
+                                                >
+                                                    {entry.reason}
+                                                    {typeof entry.confidence ===
+                                                    "number"
+                                                        ? `${entry.reason ? " · " : ""}置信度 ${(
+                                                              entry.confidence *
+                                                              100
+                                                          ).toFixed(0)}%`
+                                                        : ""}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="muted">
+                                    当前题目还没有清洗字段结果。运行数据清洗策略后，这里会展示清洗前和清洗后的字段对比。
+                                </div>
+                            )
+                        ) : orderedRawEntries.length ? (
                             <div className="detail-card-grid">
                                 {orderedRawEntries.map(([key, value]) => {
                                     const translationState =
@@ -1107,7 +1576,6 @@ export function QuestionReviewDetail({
                                     const translatableValue =
                                         getTranslatableFieldValue(value);
                                     const isImageField = imageFieldSet.has(key);
-
                                     return (
                                         <div
                                             key={key}
@@ -1212,231 +1680,303 @@ export function QuestionReviewDetail({
                 </div>
 
                 <div
-                    className={`review-detail-right${chatOpen ? " review-detail-right-with-chat" : ""}`}
+                    className={`review-detail-right${showChatPanel ? " review-detail-right-with-chat" : ""}`}
                 >
                     <div className="review-detail-right-main">
                         {canReview ? (
-                            <>
-                                <section className="content-surface">
-                                    <div
-                                        className="section-head"
-                                        style={{ marginBottom: 16 }}
-                                    >
-                                        <div style={{ flex: 1 }}>
-                                            <h3
-                                                style={{
-                                                    margin: 0,
-                                                    fontSize: 20,
-                                                    lineHeight: 1.1,
-                                                }}
-                                            >
-                                                AI 审核辅助
-                                            </h3>
-                                        </div>
-                                        {chatConfigs?.length ? (
+                            initialRightTab === "quality" ? (
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gap: 16,
+                                    }}
+                                >
+                                    {chatConfigs?.length ? (
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                justifyContent: "flex-end",
+                                            }}
+                                        >
                                             <Button
                                                 type={
                                                     chatOpen
                                                         ? "primary"
                                                         : "default"
                                                 }
-                                                icon={
-                                                    <MessageSquare size={16} />
-                                                }
+                                                icon={<MessageSquare size={16} />}
                                                 onClick={() =>
                                                     setChatOpen(!chatOpen)
                                                 }
                                             >
                                                 AI 对话
                                             </Button>
-                                        ) : null}
-                                    </div>
-                                </section>
-                                <AiReviewStrategyRunner
-                                    questionId={question.id}
-                                    strategies={reviewStrategies}
-                                    runs={strategyRuns}
-                                    retryStates={retryStates}
-                                    hideHeader
-                                />
-                            </>
-                        ) : null}
-
-                        {canReview ? (
-                            <section className="content-surface review-content-surface">
-                                <div
-                                    className="section-head"
-                                    style={{ marginBottom: 16 }}
-                                >
-                                    <div>
-                                        <h3 className="review-section-title">
-                                            提交审核
-                                        </h3>
-                                    </div>
-                                </div>
-
-                                <div style={{ display: "grid", gap: 16 }}>
-                                    <div
-                                        style={{
-                                            display: "grid",
-                                            gap: 8,
-                                            padding: "12px 14px",
-                                            border: "1px solid var(--color-border)",
-                                            borderRadius: 8,
-                                            background:
-                                                "var(--color-surface-2, #f8fafc)",
-                                        }}
-                                    >
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                                flexWrap: "wrap",
-                                            }}
-                                        >
-                                            <span className="field-label">
-                                                当前人工审核
-                                            </span>
-                                            <Tag
-                                                color={
-                                                    reviewStatusMeta[
-                                                        question.manualReview
-                                                            ?.decision ?? "NONE"
-                                                    ].color
-                                                }
-                                            >
-                                                {
-                                                    reviewStatusMeta[
-                                                        question.manualReview
-                                                            ?.decision ?? "NONE"
-                                                    ].label
-                                                }
-                                            </Tag>
                                         </div>
-                                        {question.manualReview ? (
-                                            <div className="muted">
-                                                {question.manualReview.reviewerName
-                                                    ? `${question.manualReview.reviewerName} · `
-                                                    : ""}
-                                                {new Date(
-                                                    question.manualReview.updatedAt,
-                                                ).toLocaleString("zh-CN")}
-                                            </div>
-                                        ) : (
-                                            <div className="muted">
-                                                当前暂无人工审核结果。
-                                            </div>
-                                        )}
-                                    </div>
+                                    ) : null}
 
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 8,
-                                        }}
-                                    >
-                                        <label
-                                            className="field-label"
-                                            htmlFor="review-decision"
-                                            style={{ marginBottom: 0, flexShrink: 0 }}
-                                        >
-                                            审核结论
-                                        </label>
-                                        <Select
-                                            id="review-decision"
-                                            value={decision}
-                                            onChange={(value) =>
-                                                setDecision(value)
-                                            }
-                                            options={[
-                                                {
-                                                    value: "PASS",
-                                                    label: "通过",
-                                                },
-                                                {
-                                                    value: "REJECT",
-                                                    label: "驳回",
-                                                },
-                                            ]}
-                                            size="middle"
+                                    {reviewOnlyStrategies.length ||
+                                    reviewOnlyRuns.length ? (
+                                        <AiReviewStrategyRunner
+                                            questionId={question.id}
+                                            strategies={reviewOnlyStrategies}
+                                            runs={reviewOnlyRuns}
+                                            retryStates={retryStates}
+                                            hideHeader
                                         />
-                                    </div>
+                                    ) : null}
 
-                                    <div>
+                                    <section className="content-surface review-content-surface">
                                         <div
+                                            className="section-head"
                                             style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: 8,
-                                                marginBottom: 6,
+                                                marginBottom: 16,
                                             }}
                                         >
-                                            <label
-                                                className="field-label"
-                                                htmlFor="review-comment"
-                                                style={{ marginBottom: 0 }}
+                                            <div>
+                                                <h3 className="review-section-title">
+                                                    提交审核
+                                                </h3>
+                                            </div>
+                                        </div>
+
+                                        <div
+                                            style={{
+                                                display: "grid",
+                                                gap: 16,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: "grid",
+                                                    gap: 8,
+                                                    padding:
+                                                        "12px 14px",
+                                                    border: "1px solid var(--color-border)",
+                                                    borderRadius: 8,
+                                                    background:
+                                                        "var(--color-surface-2, #f8fafc)",
+                                                }}
                                             >
-                                                审核意见
-                                            </label>
-                                            {latestAiComment ? (
-                                                <Checkbox
-                                                    checked={useReuseAiComment}
-                                                    onChange={(e) =>
-                                                        setUseReuseAiComment(
-                                                            e.target.checked,
+                                                <div
+                                                    style={{
+                                                        display:
+                                                            "flex",
+                                                        alignItems:
+                                                            "center",
+                                                        gap: 8,
+                                                        flexWrap:
+                                                            "wrap",
+                                                    }}
+                                                >
+                                                    <span className="field-label">
+                                                        当前人工审核
+                                                    </span>
+                                                    <Tag
+                                                        color={
+                                                            reviewStatusMeta[
+                                                                question
+                                                                    .manualReview
+                                                                    ?.decision ??
+                                                                    "NONE"
+                                                            ].color
+                                                        }
+                                                    >
+                                                        {
+                                                            reviewStatusMeta[
+                                                                question
+                                                                    .manualReview
+                                                                    ?.decision ??
+                                                                    "NONE"
+                                                            ].label
+                                                        }
+                                                    </Tag>
+                                                </div>
+                                                {question.manualReview ? (
+                                                    <div className="muted">
+                                                        {question
+                                                            .manualReview
+                                                            .reviewerName
+                                                            ? `${question.manualReview.reviewerName} · `
+                                                            : ""}
+                                                        {new Date(
+                                                            question.manualReview.updatedAt,
+                                                        ).toLocaleString(
+                                                            "zh-CN",
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="muted">
+                                                        当前暂无人工审核结果。
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    alignItems:
+                                                        "center",
+                                                    gap: 8,
+                                                }}
+                                            >
+                                                <label
+                                                    className="field-label"
+                                                    htmlFor="review-decision"
+                                                    style={{
+                                                        marginBottom: 0,
+                                                        flexShrink: 0,
+                                                    }}
+                                                >
+                                                    审核结论
+                                                </label>
+                                                <Select
+                                                    id="review-decision"
+                                                    value={decision}
+                                                    onChange={(
+                                                        value,
+                                                    ) =>
+                                                        setDecision(
+                                                            value,
                                                         )
                                                     }
-                                                >
-                                                    复用AI审核意见
-                                                </Checkbox>
-                                            ) : null}
-                                        </div>
-                                        <Input.TextArea
-                                            id="review-comment"
-                                            value={
-                                                useReuseAiComment && latestAiComment
-                                                    ? latestAiComment
-                                                    : comment
-                                            }
-                                            onChange={(event) =>
-                                                setComment(event.target.value)
-                                            }
-                                            disabled={
-                                                useReuseAiComment &&
-                                                !!latestAiComment
-                                            }
-                                            rows={6}
-                                            placeholder="请输入审核意见、修改建议或驳回原因"
-                                            size="middle"
-                                        />
-                                    </div>
+                                                    options={[
+                                                        {
+                                                            value: "PASS",
+                                                            label: "通过",
+                                                        },
+                                                        {
+                                                            value: "REJECT",
+                                                            label: "驳回",
+                                                        },
+                                                    ]}
+                                                    size="middle"
+                                                />
+                                            </div>
 
-                                    <div
-                                        style={{
-                                            display: "flex",
-                                            justifyContent: "flex-end",
-                                        }}
-                                    >
-                                        <Button
-                                            type="primary"
-                                            size="middle"
-                                            onClick={submitReview}
-                                            loading={isSubmitting}
-                                        >
-                                            提交审核
-                                        </Button>
-                                    </div>
+                                            <div>
+                                                <div
+                                                    style={{
+                                                        display:
+                                                            "flex",
+                                                        alignItems:
+                                                            "center",
+                                                        gap: 8,
+                                                        marginBottom: 6,
+                                                    }}
+                                                >
+                                                    <label
+                                                        className="field-label"
+                                                        htmlFor="review-comment"
+                                                        style={{
+                                                            marginBottom: 0,
+                                                        }}
+                                                    >
+                                                        审核意见
+                                                    </label>
+                                                    {latestAiComment ? (
+                                                        <Checkbox
+                                                            checked={
+                                                                useReuseAiComment
+                                                            }
+                                                            onChange={(
+                                                                e,
+                                                            ) =>
+                                                                setUseReuseAiComment(
+                                                                    e
+                                                                        .target
+                                                                        .checked,
+                                                                )
+                                                            }
+                                                        >
+                                                            复用AI审核意见
+                                                        </Checkbox>
+                                                    ) : null}
+                                                </div>
+                                                <Input.TextArea
+                                                    id="review-comment"
+                                                    value={
+                                                        useReuseAiComment &&
+                                                        latestAiComment
+                                                            ? latestAiComment
+                                                            : comment
+                                                    }
+                                                    onChange={(
+                                                        event,
+                                                    ) =>
+                                                        setComment(
+                                                            event
+                                                                .target
+                                                                .value,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        useReuseAiComment &&
+                                                        !!latestAiComment
+                                                    }
+                                                    rows={6}
+                                                    maxLength={
+                                                        REVIEW_COMMENT_MAX_LENGTH
+                                                    }
+                                                    showCount
+                                                    placeholder="请输入审核意见、修改建议或驳回原因"
+                                                    size="middle"
+                                                />
+                                            </div>
+
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    justifyContent:
+                                                        "flex-end",
+                                                }}
+                                            >
+                                                <Button
+                                                    type="primary"
+                                                    size="middle"
+                                                    onClick={
+                                                        submitReview
+                                                    }
+                                                    loading={
+                                                        isSubmitting
+                                                    }
+                                                >
+                                                    提交审核
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </section>
                                 </div>
-                            </section>
+                            ) : (
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gap: 16,
+                                    }}
+                                >
+                                    {cleaningStrategies.length ||
+                                    cleaningRuns.length ? (
+                                        <AiReviewStrategyRunner
+                                            questionId={question.id}
+                                            strategies={
+                                                cleaningStrategies
+                                            }
+                                            runs={cleaningRuns}
+                                            retryStates={
+                                                retryStates
+                                            }
+                                            mode="cleaning"
+                                            hideHeader
+                                        />
+                                    ) : null}
+                                </div>
+                            )
                         ) : null}
                     </div>
 
-                    {chatOpen && chatConfigs?.length ? (
+                    {showChatPanel ? (
                         <div className="review-detail-chat-panel">
                             <AiChatSidebar
-                                chatConfigs={chatConfigs}
+                                chatConfigs={chatConfigs ?? []}
                                 rawRecord={question.rawRecord}
                                 questionMeta={{
                                     title: question.title,

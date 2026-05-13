@@ -27,8 +27,12 @@ function parsePositiveInt(
 
 export default async function ReviewTasksPage({
     searchParams,
+    mode = "quality",
+    listPath = "/admin/review-tasks",
 }: {
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
+    mode?: "quality" | "cleaning";
+    listPath?: string;
 }) {
     const session = await auth();
     const projects = process.env.DATABASE_URL
@@ -64,6 +68,12 @@ export default async function ReviewTasksPage({
             ? resolvedSearchParams.filters[0]
             : resolvedSearchParams.filters,
     );
+    const effectiveFilters =
+        mode === "cleaning"
+            ? filters.filter(
+                  (condition) => condition.fieldKey !== "manualReviewStatus",
+              )
+            : filters;
 
     const [questionPage, reviewStrategies, filterMeta, fieldPreference] =
         selectedProjectId
@@ -72,11 +82,13 @@ export default async function ReviewTasksPage({
                       projectId: selectedProjectId,
                       page: requestedPage,
                       pageSize: requestedPageSize,
-                      conditions: filters,
+                      conditions: effectiveFilters,
                       viewer: {
                           userId: session?.user?.id ?? "",
                           platformRole: session?.user?.platformRole ?? "USER",
                       },
+                      requiredManualReviewStatus:
+                          mode === "cleaning" ? "PASS" : undefined,
                   }),
                   getReviewQuestionListAiStrategies([selectedProjectId], {
                       userId: session?.user?.id ?? "",
@@ -113,14 +125,15 @@ export default async function ReviewTasksPage({
         <ReviewQuestionList
             canReview
             scopeLabel="全部项目"
-            listPath="/admin/review-tasks"
+            listPath={listPath}
+            mode={mode}
             projects={projects}
             questions={questionPage.items}
             selectedProjectId={selectedProjectId}
             currentPage={questionPage.page}
             pageSize={questionPage.pageSize}
             totalQuestions={questionPage.total}
-            activeConditions={filters}
+            activeConditions={effectiveFilters}
             datasourceOptions={filterMeta.datasourceOptions}
             rawFieldOptions={filterMeta.rawFieldOptions}
             fieldPreference={fieldPreference}

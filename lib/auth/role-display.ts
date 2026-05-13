@@ -1,4 +1,5 @@
 import type { PlatformRoleValue, ProjectRoleValue } from "@/lib/auth/roles";
+import type { BadgeVariant } from "@/components/ui/badge";
 
 export function getPlatformRoleLabel(role: PlatformRoleValue) {
     if (role === "SUPER_ADMIN") return "超级管理员";
@@ -12,6 +13,12 @@ export function getPlatformRoleColor(role: PlatformRoleValue) {
     return "default";
 }
 
+export function getPlatformRoleVariant(role: PlatformRoleValue): BadgeVariant {
+    if (role === "SUPER_ADMIN") return "destructive";
+    if (role === "PLATFORM_ADMIN") return "primary";
+    return "default";
+}
+
 export function getProjectRoleLabel(role: ProjectRoleValue) {
     if (role === "AUTHOR") return "出题用户";
     return "审核用户";
@@ -20,4 +27,9 @@ export function getProjectRoleLabel(role: ProjectRoleValue) {
 export function getProjectRoleColor(role: ProjectRoleValue) {
     if (role === "AUTHOR") return "blue";
     return "gold";
+}
+
+export function getProjectRoleVariant(role: ProjectRoleValue): BadgeVariant {
+    if (role === "AUTHOR") return "primary";
+    return "warning";
 }

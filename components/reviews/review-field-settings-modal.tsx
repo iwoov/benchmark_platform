@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { App, Button, Checkbox, Empty, Input, Modal, Tag } from "antd";
+import { Button, Checkbox, Empty, Input, Modal, Tag } from "@/components/ui/legacy-ui-adapters";
 import {
     ArrowDown,
     ArrowUp,
@@ -13,6 +13,7 @@ import {
     resetUserProjectReviewFieldPreferenceAction,
     saveUserProjectReviewFieldPreferenceAction,
 } from "@/app/actions/review-field-preferences";
+import { useToast } from "@/components/ui/toast";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
 import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
 
@@ -78,7 +79,7 @@ export function ReviewFieldSettingsModal({
     onClose: () => void;
     onSaved: () => void;
 }) {
-    const { notification } = App.useApp();
+    const toast = useToast();
     const [searchValue, setSearchValue] = useState("");
     const [draft, setDraft] = useState<FieldVisibilityDraft>(() =>
         createDraft(fieldPreference),
@@ -168,18 +169,16 @@ export function ReviewFieldSettingsModal({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "保存字段配置失败",
+                toast.error({
+                    title: "保存字段配置失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "字段配置已保存",
+            toast.success({
+                title: "字段配置已保存",
                 description: result.success,
-                placement: "topRight",
             });
             onSaved();
             onClose();
@@ -197,18 +196,16 @@ export function ReviewFieldSettingsModal({
             });
 
             if (result.error) {
-                notification.error({
-                    message: "恢复默认失败",
+                toast.error({
+                    title: "恢复默认失败",
                     description: result.error,
-                    placement: "topRight",
                 });
                 return;
             }
 
-            notification.success({
-                message: "已恢复默认配置",
+            toast.success({
+                title: "已恢复默认配置",
                 description: result.success,
-                placement: "topRight",
             });
             onSaved();
             onClose();
