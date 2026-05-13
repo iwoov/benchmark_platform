@@ -3002,7 +3002,6 @@
 }
 
 .strategy-step-item-card {
-    border-bottom: 1px solid var(--line);
     overflow: hidden;
 }
 
@@ -3022,7 +3021,7 @@
 }
 
 .strategy-step-item-collapsible[open] > .strategy-step-item-toggle {
-    border-bottom: 1px solid var(--line);
+    border-bottom: none;
 }
 
 .strategy-step-item-chevron {
@@ -3098,6 +3097,11 @@
     padding: 8px 0;
     border-bottom: 1px solid var(--line);
     margin-bottom: 6px;
+}
+
+.step-output-issue:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .step-output-issue-head {

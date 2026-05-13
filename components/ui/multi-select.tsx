@@ -1,7 +1,13 @@
 "use client";
 
 import { Check, ChevronDown, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { cn } from "@/lib/utils/cn";
 
 export type MultiSelectOption = {
@@ -52,18 +58,47 @@ export function MultiSelect({
     }
   };
 
-  const remove = (v: string, e: React.MouseEvent) => {
+  const remove = (v: string, e: ReactMouseEvent) => {
     e.stopPropagation();
     onChange(value.filter((x) => x !== v));
   };
 
+  const toggleOpen = () => {
+    if (disabled) return;
+    setOpen((o) => !o);
+  };
+
+  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return;
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen((o) => !o);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setOpen(true);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+    }
+  };
+
   return (
     <div ref={containerRef} className={cn("relative w-full", className)}>
-      <button
+      <div
         id={id}
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        aria-expanded={open}
+        onClick={toggleOpen}
+        onKeyDown={handleTriggerKeyDown}
         className={cn(
           "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-card px-2 py-1.5 text-left text-sm shadow-xs transition-[border-color,box-shadow] cursor-pointer",
           "focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
@@ -98,7 +133,7 @@ export function MultiSelect({
             open && "rotate-180",
           )}
         />
-      </button>
+      </div>
 
       {open && (
         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-lg">
