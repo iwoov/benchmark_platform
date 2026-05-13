@@ -48,7 +48,19 @@ export function MultiSelect({
     return () => window.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const selected = options.filter((o) => value.includes(o.value));
+  const uniqueOptions = Array.from(
+    options
+      .reduce((map, option) => {
+        if (!map.has(option.value)) {
+          map.set(option.value, option);
+        }
+        return map;
+      }, new Map<string, MultiSelectOption>())
+      .values(),
+  );
+  const selected = value
+    .map((selectedValue) => uniqueOptions.find((o) => o.value === selectedValue))
+    .filter((option): option is MultiSelectOption => Boolean(option));
 
   const toggle = (v: string) => {
     if (value.includes(v)) {
@@ -137,10 +149,10 @@ export function MultiSelect({
 
       {open && (
         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-lg">
-          {options.length === 0 ? (
+          {uniqueOptions.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">无可选项</div>
           ) : (
-            options.map((opt) => {
+            uniqueOptions.map((opt) => {
               const checked = value.includes(opt.value);
               return (
                 <button

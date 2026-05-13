@@ -2775,6 +2775,10 @@
     border-bottom: 1px solid var(--line-soft);
 }
 
+.strategy-step-stack > .strategy-step-preview:last-child {
+    border-bottom: none;
+}
+
 .strategy-step-index,
 .strategy-step-order-chip {
     width: 32px;

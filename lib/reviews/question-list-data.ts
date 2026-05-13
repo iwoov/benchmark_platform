@@ -1237,6 +1237,8 @@ export async function getReviewQuestionNavigation({
             id: true,
             projectId: true,
             datasourceId: true,
+            metadata: true,
+            externalRecordId: true,
             businessQuestionKey: true,
             isLatestRevision: true,
         },
@@ -1318,13 +1320,28 @@ export async function getReviewQuestionNavigation({
             externalRecordId: question.externalRecordId,
         })),
     );
-    const filteredOrderedQuestions = orderedQuestions
+    const orderedAccessibleQuestions = orderedQuestions
         .filter((question) =>
             questionMatchesPrimaryValueScope(
                 question.metadata,
                 allowedPrimaryValues,
             ),
         )
+        .sort((left, right) => {
+            return compareQuestionsByDatasource(
+                {
+                    datasourceId: left.datasourceId,
+                    sourceRowNumber: extractSourceRowNumber(left.metadata),
+                    externalRecordId: left.externalRecordId,
+                },
+                {
+                    datasourceId: right.datasourceId,
+                    sourceRowNumber: extractSourceRowNumber(right.metadata),
+                    externalRecordId: right.externalRecordId,
+                },
+            );
+        });
+    const filteredOrderedQuestions = orderedAccessibleQuestions
         .filter((question) =>
             conditions.every((condition) =>
                 matchesQuestionCondition(
@@ -1370,22 +1387,9 @@ export async function getReviewQuestionNavigation({
                 toReviewStatusValue(reviewSummary?.manualReview ?? null) ===
                 requiredManualReviewStatus
             );
-        })
-        .sort((left, right) => {
-            return compareQuestionsByDatasource(
-                {
-                    datasourceId: left.datasourceId,
-                    sourceRowNumber: extractSourceRowNumber(left.metadata),
-                    externalRecordId: left.externalRecordId,
-                },
-                {
-                    datasourceId: right.datasourceId,
-                    sourceRowNumber: extractSourceRowNumber(right.metadata),
-                    externalRecordId: right.externalRecordId,
-                },
-            );
         });
     let resolvedNavigationQuestionId = questionId;
+    let navigationAnchor = currentQuestion;
 
     if (
         !shouldIncludeHistoricalRevisions &&
@@ -1400,10 +1404,19 @@ export async function getReviewQuestionNavigation({
             },
             select: {
                 id: true,
+                projectId: true,
+                datasourceId: true,
+                metadata: true,
+                externalRecordId: true,
+                businessQuestionKey: true,
+                isLatestRevision: true,
             },
         });
 
-        resolvedNavigationQuestionId = latestRevision?.id ?? questionId;
+        if (latestRevision) {
+            navigationAnchor = latestRevision;
+            resolvedNavigationQuestionId = latestRevision.id;
+        }
     }
 
     const currentIndex = filteredOrderedQuestions.findIndex(
@@ -1411,9 +1424,38 @@ export async function getReviewQuestionNavigation({
     );
 
     if (currentIndex < 0) {
+        const anchorOrder = {
+            datasourceId: navigationAnchor.datasourceId,
+            sourceRowNumber: extractSourceRowNumber(navigationAnchor.metadata),
+            externalRecordId: navigationAnchor.externalRecordId,
+        };
+        let previousQuestionId: string | null = null;
+        let nextQuestionId: string | null = null;
+
+        for (const question of filteredOrderedQuestions) {
+            const comparison = compareQuestionsByDatasource(
+                {
+                    datasourceId: question.datasourceId,
+                    sourceRowNumber: extractSourceRowNumber(question.metadata),
+                    externalRecordId: question.externalRecordId,
+                },
+                anchorOrder,
+            );
+
+            if (comparison < 0) {
+                previousQuestionId = question.id;
+                continue;
+            }
+
+            if (comparison > 0) {
+                nextQuestionId = question.id;
+                break;
+            }
+        }
+
         return {
-            previousQuestionId: null,
-            nextQuestionId: null,
+            previousQuestionId,
+            nextQuestionId,
         } satisfies ReviewQuestionNavigation;
     }
 
