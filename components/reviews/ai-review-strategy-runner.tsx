@@ -284,6 +284,24 @@ function areRunsEqual(left: unknown, right: unknown) {
     }
 }
 
+function runMatchesMode(run: RunnerRun, mode: "review" | "cleaning") {
+    const stepResults = run.parsedResult?.stepResults ?? [];
+    const hasCleaningStep = stepResults.some(
+        (step) =>
+            step.stepKind === "AI_TOOL" && step.stepType === "FIELD_CLEANING",
+    );
+
+    if (mode === "cleaning") {
+        return hasCleaningStep;
+    }
+
+    return stepResults.some(
+        (step) =>
+            step.stepType !== "FIELD_CLEANING" &&
+            (step.stepKind === "AI_TOOL" || step.stepKind === "RULE"),
+    );
+}
+
 type RawDataModalState = {
     title: string;
     promptInput: unknown;
@@ -1033,19 +1051,15 @@ export function AiReviewStrategyRunner({
                   },
         [mode],
     );
-    const strategyIdSet = useMemo(
-        () => new Set(strategies.map((strategy) => strategy.id)),
-        [strategies],
-    );
-    const filterRunsByStrategies = useCallback(
+    const filterRunsByMode = useCallback(
         (nextRuns: RunnerRun[]) =>
-            nextRuns.filter((run) => strategyIdSet.has(run.strategy.id)),
-        [strategyIdSet],
+            nextRuns.filter((run) => runMatchesMode(run, mode)),
+        [mode],
     );
     const [selectedStrategyId, setSelectedStrategyId] = useState(
         strategies[0]?.id ?? "",
     );
-    const [liveRuns, setLiveRuns] = useState(filterRunsByStrategies(runs));
+    const [liveRuns, setLiveRuns] = useState(filterRunsByMode(runs));
     const [liveRetryStates, setLiveRetryStates] = useState(retryStates);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [pollingEnabled, setPollingEnabled] = useState(false);
@@ -1080,11 +1094,11 @@ export function AiReviewStrategyRunner({
 
     useEffect(() => {
         setLiveRuns((current) =>
-            areRunsEqual(current, filterRunsByStrategies(runs))
+            areRunsEqual(current, filterRunsByMode(runs))
                 ? current
-                : filterRunsByStrategies(runs),
+                : filterRunsByMode(runs),
         );
-    }, [filterRunsByStrategies, runs]);
+    }, [filterRunsByMode, runs]);
 
     useEffect(() => {
         setSelectedStrategyId((current) =>
@@ -1137,7 +1151,7 @@ export function AiReviewStrategyRunner({
                 }
 
                 if (!disposed && payload?.runs) {
-                    setLiveRuns(filterRunsByStrategies(payload.runs));
+                    setLiveRuns(filterRunsByMode(payload.runs));
                 }
 
                 if (!disposed) {
@@ -1169,7 +1183,7 @@ export function AiReviewStrategyRunner({
             }
         };
     }, [
-        filterRunsByStrategies,
+        filterRunsByMode,
         hasActiveRetry,
         hasActiveRun,
         labels.refreshError,
@@ -1199,7 +1213,7 @@ export function AiReviewStrategyRunner({
                 throw new Error(payload?.error ?? labels.refreshError);
             }
 
-            const scopedRuns = filterRunsByStrategies(payload?.runs ?? []);
+            const scopedRuns = filterRunsByMode(payload?.runs ?? []);
             setLiveRuns((current) =>
                 areRunsEqual(current, scopedRuns)
                     ? current

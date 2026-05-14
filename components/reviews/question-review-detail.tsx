@@ -608,6 +608,40 @@ function buildLocalCleaningFieldResults(rawRecord: Record<string, string>) {
     ] satisfies CleaningFieldResultView[];
 }
 
+function runHasCleaningStep(run: {
+    parsedResult: {
+        stepResults: Array<{
+            stepKind: "AI_TOOL" | "RULE";
+            stepType: string;
+        }>;
+    } | null;
+}) {
+    return (
+        run.parsedResult?.stepResults.some(
+            (step) =>
+                step.stepKind === "AI_TOOL" &&
+                step.stepType === "FIELD_CLEANING",
+        ) ?? false
+    );
+}
+
+function runHasReviewStep(run: {
+    parsedResult: {
+        stepResults: Array<{
+            stepKind: "AI_TOOL" | "RULE";
+            stepType: string;
+        }>;
+    } | null;
+}) {
+    return (
+        run.parsedResult?.stepResults.some(
+            (step) =>
+                step.stepType !== "FIELD_CLEANING" &&
+                (step.stepKind === "AI_TOOL" || step.stepKind === "RULE"),
+        ) ?? false
+    );
+}
+
 function readCleaningFieldResults(output: unknown) {
     if (!output || typeof output !== "object" || Array.isArray(output)) {
         return [] as CleaningFieldResultView[];
@@ -864,18 +898,8 @@ export function QuestionReviewDetail({
     const reviewOnlyStrategies = reviewStrategies.filter(
         (strategy) => strategy.hasReviewStep,
     );
-    const cleaningStrategyIdSet = new Set(
-        cleaningStrategies.map((strategy) => strategy.id),
-    );
-    const reviewOnlyStrategyIdSet = new Set(
-        reviewOnlyStrategies.map((strategy) => strategy.id),
-    );
-    const cleaningRuns = strategyRuns.filter((run) =>
-        cleaningStrategyIdSet.has(run.strategy.id),
-    );
-    const reviewOnlyRuns = strategyRuns.filter((run) =>
-        reviewOnlyStrategyIdSet.has(run.strategy.id),
-    );
+    const cleaningRuns = strategyRuns.filter((run) => runHasCleaningStep(run));
+    const reviewOnlyRuns = strategyRuns.filter((run) => runHasReviewStep(run));
     const latestCleaningByField = (() => {
         const results = new Map<string, CleaningFieldResultView>();
 

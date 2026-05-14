@@ -555,6 +555,19 @@ export function ReviewQuestionList({
         return `${listPath}/${questionId}?${search.toString()}`;
     }
 
+    function clearTextSelection() {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        window.getSelection()?.removeAllRanges();
+    }
+
+    function openQuestionDetail(questionId: string) {
+        clearTextSelection();
+        router.push(buildQuestionDetailPath(questionId));
+    }
+
     function pushListState(next: {
         projectId?: string;
         page?: number;
@@ -1242,10 +1255,8 @@ export function ReviewQuestionList({
                                                     cursor: "pointer",
                                                 }}
                                                 onClick={() =>
-                                                    router.push(
-                                                        buildQuestionDetailPath(
-                                                            question.id,
-                                                        ),
+                                                    openQuestionDetail(
+                                                        question.id,
                                                     )
                                                 }
                                                 onKeyDown={(event) => {
@@ -1254,10 +1265,8 @@ export function ReviewQuestionList({
                                                         event.key === " "
                                                     ) {
                                                         event.preventDefault();
-                                                        router.push(
-                                                            buildQuestionDetailPath(
-                                                                question.id,
-                                                            ),
+                                                        openQuestionDetail(
+                                                            question.id,
                                                         );
                                                     }
                                                 }}
