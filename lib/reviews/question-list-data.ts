@@ -321,6 +321,7 @@ export type ReviewQuestionListItem = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    cleaningFieldStatus: Record<string, boolean>;
 };
 
 export type ReviewQuestionRevisionLink = {
@@ -409,6 +410,130 @@ function toReviewAwareQuestionRecord(input: {
         aiReview: input.aiReview,
         manualReview: input.manualReview,
     } satisfies ReviewAwareQuestionRecord;
+}
+
+const localCleanedQuestionIdFieldKey = "cleaned_question_id";
+
+function extractCleaningFieldKeysFromParsedResult(parsedResult: unknown) {
+    const fieldKeys = new Set<string>();
+
+    if (
+        !parsedResult ||
+        typeof parsedResult !== "object" ||
+        Array.isArray(parsedResult)
+    ) {
+        return fieldKeys;
+    }
+
+    const stepResults = (parsedResult as Record<string, unknown>).stepResults;
+    if (!Array.isArray(stepResults)) {
+        return fieldKeys;
+    }
+
+    for (const step of stepResults) {
+        if (!step || typeof step !== "object" || Array.isArray(step)) {
+            continue;
+        }
+
+        const stepRecord = step as Record<string, unknown>;
+        if (
+            stepRecord.stepKind !== "AI_TOOL" ||
+            stepRecord.stepType !== "FIELD_CLEANING" ||
+            stepRecord.status !== "SUCCESS"
+        ) {
+            continue;
+        }
+
+        const items = stepRecord.items;
+        if (!Array.isArray(items)) {
+            continue;
+        }
+
+        for (const item of items) {
+            if (!item || typeof item !== "object" || Array.isArray(item)) {
+                continue;
+            }
+
+            const itemRecord = item as Record<string, unknown>;
+            if (itemRecord.status !== "SUCCESS") {
+                continue;
+            }
+
+            const output = itemRecord.output;
+            if (!output || typeof output !== "object" || Array.isArray(output)) {
+                continue;
+            }
+
+            const fieldResults = (output as Record<string, unknown>).fieldResults;
+            if (!Array.isArray(fieldResults)) {
+                continue;
+            }
+
+            for (const fieldResult of fieldResults) {
+                if (
+                    !fieldResult ||
+                    typeof fieldResult !== "object" ||
+                    Array.isArray(fieldResult)
+                ) {
+                    continue;
+                }
+
+                const fieldKey = (fieldResult as Record<string, unknown>).fieldKey;
+                if (typeof fieldKey === "string" && fieldKey.trim()) {
+                    fieldKeys.add(fieldKey.trim());
+                }
+            }
+        }
+    }
+
+    return fieldKeys;
+}
+
+async function getCleaningFieldStatusMap(
+    questions: Array<{ id: string; rawRecord: Record<string, string> }>,
+) {
+    const statusMap = new Map<string, Record<string, boolean>>();
+
+    for (const question of questions) {
+        statusMap.set(question.id, {
+            [localCleanedQuestionIdFieldKey]: Boolean(
+                question.rawRecord[localCleanedQuestionIdFieldKey]?.trim(),
+            ),
+        });
+    }
+
+    if (!questions.length) {
+        return statusMap;
+    }
+
+    const runs = await prisma.aiReviewStrategyRun.findMany({
+        where: {
+            questionId: {
+                in: questions.map((question) => question.id),
+            },
+            status: "SUCCESS",
+        },
+        orderBy: [{ questionId: "asc" }, { createdAt: "desc" }],
+        select: {
+            questionId: true,
+            parsedResult: true,
+        },
+    });
+
+    for (const run of runs) {
+        const questionStatus = statusMap.get(run.questionId) ?? {};
+        for (const fieldKey of extractCleaningFieldKeysFromParsedResult(
+            run.parsedResult,
+        )) {
+            if (questionStatus[fieldKey]) {
+                continue;
+            }
+            questionStatus[fieldKey] = true;
+        }
+        statusMap.set(run.questionId, questionStatus);
+    }
+
+    return statusMap;
 }
 
 function isValidReviewStatusValue(value: string): value is ReviewStatusValue {
@@ -676,6 +801,7 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                 rawFieldOrder: extractRawFieldOrder(
                     question.datasource.syncConfig,
                 ),
+                cleaningFieldStatus: {},
             };
         });
 }
@@ -847,6 +973,7 @@ export async function getReviewQuestionListPageData({
                 rawFieldOrder: extractRawFieldOrder(
                     question.datasource.syncConfig,
                 ),
+                cleaningFieldStatus: {},
             };
         })
         .filter((question) => {
@@ -918,8 +1045,23 @@ export async function getReviewQuestionListPageData({
         };
     }
 
+    const cleaningFieldStatusMap =
+        requiredManualReviewStatus === "PASS"
+            ? await getCleaningFieldStatusMap(
+                  pageItems.map((question) => ({
+                      id: question.id,
+                      rawRecord: question.rawRecord,
+                  })),
+              )
+            : new Map<string, Record<string, boolean>>();
+
     return {
-        items: pageItems,
+        items: pageItems.map((question) => ({
+            ...question,
+            cleaningFieldStatus:
+                cleaningFieldStatusMap.get(question.id) ??
+                question.cleaningFieldStatus,
+        })),
         total,
         page: normalizedPage,
         pageSize: normalizedPageSize,

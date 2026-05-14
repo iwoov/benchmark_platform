@@ -93,6 +93,7 @@ type ReviewQuestionItem = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    cleaningFieldStatus: Record<string, boolean>;
 };
 
 type ReviewStatus = "PASS" | "REJECT" | "NONE";
@@ -112,6 +113,24 @@ type ExportFieldOption = {
     value: string;
     label: string;
 };
+
+const cleaningListColumns = [
+    {
+        key: "cleaned_question_id",
+        label: "uuid",
+        width: 96,
+    },
+    {
+        key: "primary",
+        label: "primary",
+        width: 96,
+    },
+    {
+        key: "secondary",
+        label: "secondary",
+        width: 112,
+    },
+];
 
 const questionStatusMeta = {
     DRAFT: { label: "草稿", color: "default" },
@@ -283,6 +302,10 @@ export function ReviewQuestionList({
 
     const listColumns = useMemo(
         () => {
+            if (mode === "cleaning") {
+                return cleaningListColumns;
+            }
+
             const visibleFieldKeySet = new Set(
                 fieldPreference.listVisibleFieldKeys,
             );
@@ -298,7 +321,7 @@ export function ReviewQuestionList({
                 width: 220,
             }));
         },
-        [fieldPreference],
+        [fieldPreference, mode],
     );
 
     const fieldDefinitions = useMemo(() => {
@@ -451,10 +474,17 @@ export function ReviewQuestionList({
         "140px",
         "140px",
         "180px",
-        ...listColumns.map(() => "220px"),
+        ...listColumns.map((column) => `${column.width}px`),
     ].join(" ");
     const tableWidth =
-        52 + 180 + 120 + 160 + 140 + 140 + 180 + listColumns.length * 220;
+        52 +
+        180 +
+        120 +
+        160 +
+        140 +
+        140 +
+        180 +
+        listColumns.reduce((total, column) => total + column.width, 0);
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -975,13 +1005,15 @@ export function ReviewQuestionList({
                             >
                                 筛选条件
                             </Button>
-                            <Button
-                                icon={<Eye size={16} />}
-                                onClick={() => setFieldSettingsOpen(true)}
-                                disabled={!selectedProjectId}
-                            >
-                                字段设置
-                            </Button>
+                            {mode === "quality" ? (
+                                <Button
+                                    icon={<Eye size={16} />}
+                                    onClick={() => setFieldSettingsOpen(true)}
+                                    disabled={!selectedProjectId}
+                                >
+                                    字段设置
+                                </Button>
+                            ) : null}
                             {activeConditions.length ? (
                                 <Button
                                     onClick={() =>
@@ -1108,7 +1140,7 @@ export function ReviewQuestionList({
                         />
                     ) : (
                         <>
-                            {!listColumns.length ? (
+                            {mode === "quality" && !listColumns.length ? (
                                 <div
                                     className="workspace-tip"
                                     style={{ marginTop: 20 }}
@@ -1339,6 +1371,40 @@ export function ReviewQuestionList({
                                                     ).toLocaleString("zh-CN")}
                                                 </div>
                                                 {listColumns.map((column) => {
+                                                    if (mode === "cleaning") {
+                                                        const hasResult =
+                                                            question
+                                                                .cleaningFieldStatus[
+                                                                column.key
+                                                            ] === true;
+
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                style={
+                                                                    cellStyle
+                                                                }
+                                                                title={
+                                                                    hasResult
+                                                                        ? "已生成清洗结果"
+                                                                        : "暂无清洗结果"
+                                                                }
+                                                            >
+                                                                <Tag
+                                                                    color={
+                                                                        hasResult
+                                                                            ? "success"
+                                                                            : "default"
+                                                                    }
+                                                                >
+                                                                    {hasResult
+                                                                        ? "是"
+                                                                        : "否"}
+                                                                </Tag>
+                                                            </div>
+                                                        );
+                                                    }
+
                                                     const value =
                                                         column.key ===
                                                         manualReviewReviewerFieldKey

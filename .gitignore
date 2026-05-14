@@ -12,3 +12,4 @@ tsconfig.tsbuildinfo
 benchmark_platform.dump
 uploads/
 backup/
+exports/

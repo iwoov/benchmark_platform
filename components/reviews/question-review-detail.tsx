@@ -530,6 +530,84 @@ type CleaningFieldResultView = {
     issues: string[];
 };
 
+const cleanedQuestionIdFieldKey = "cleaned_question_id";
+const questionIdFieldKeys = [
+    "question_id",
+    "questionId",
+    "questionID",
+    "Question ID",
+    "Question_ID",
+    "题目ID",
+    "题目id",
+    "题目编号",
+    "试题编号",
+];
+
+function normalizeRawFieldKey(value: string) {
+    return value
+        .toLowerCase()
+        .replace(/[\s_\-()[\]{}<>./\\:：，,;；'"`~!@#$%^&*+=|?！？]/g, "");
+}
+
+function trimStringToNull(value: unknown) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    const stringValue = String(value).trim();
+    return stringValue ? stringValue : null;
+}
+
+function findRawQuestionId(rawRecord: Record<string, unknown>) {
+    for (const key of questionIdFieldKeys) {
+        const value = trimStringToNull(rawRecord[key]);
+        if (value) {
+            return value;
+        }
+    }
+
+    const normalizedQuestionIdKeys = new Set(
+        questionIdFieldKeys.map((key) => normalizeRawFieldKey(key)),
+    );
+
+    for (const [key, rawValue] of Object.entries(rawRecord)) {
+        if (!normalizedQuestionIdKeys.has(normalizeRawFieldKey(key))) {
+            continue;
+        }
+
+        const value = trimStringToNull(rawValue);
+        if (value) {
+            return value;
+        }
+    }
+
+    return null;
+}
+
+function buildLocalCleaningFieldResults(rawRecord: Record<string, string>) {
+    const cleanedQuestionId = trimStringToNull(
+        rawRecord[cleanedQuestionIdFieldKey],
+    );
+    const originalQuestionId = findRawQuestionId(rawRecord);
+
+    if (!cleanedQuestionId || !originalQuestionId) {
+        return [] as CleaningFieldResultView[];
+    }
+
+    return [
+        {
+            fieldKey: cleanedQuestionIdFieldKey,
+            originalValue: originalQuestionId,
+            cleanedValue: cleanedQuestionId,
+            changed: originalQuestionId !== cleanedQuestionId,
+            changeType: "NORMALIZATION",
+            reason: "本地规则生成 cleaned_question_id，未调用模型。",
+            confidence: 1,
+            issues: [],
+        },
+    ] satisfies CleaningFieldResultView[];
+}
+
 function readCleaningFieldResults(output: unknown) {
     if (!output || typeof output !== "object" || Array.isArray(output)) {
         return [] as CleaningFieldResultView[];
@@ -760,9 +838,15 @@ export function QuestionReviewDetail({
         (key) => [key, question.rawRecord[key]] as const,
     );
 
-    const rawFieldLabelMap = Object.fromEntries(
-        fieldPreference.fieldCatalog.map((field) => [field.key, field.label]),
-    );
+    const rawFieldLabelMap: Record<string, string> = {
+        ...Object.fromEntries(
+            fieldPreference.fieldCatalog.map((field) => [
+                field.key,
+                field.label,
+            ]),
+        ),
+        [cleanedQuestionIdFieldKey]: "清洗后 question_id",
+    };
     const revisionDiffEntries = question.diffFromPrevious.map((entry) => ({
         ...entry,
         resolvedLabel: getRevisionDiffLabel(
@@ -794,6 +878,12 @@ export function QuestionReviewDetail({
     );
     const latestCleaningByField = (() => {
         const results = new Map<string, CleaningFieldResultView>();
+
+        for (const fieldResult of buildLocalCleaningFieldResults(
+            question.rawRecord,
+        )) {
+            results.set(fieldResult.fieldKey, fieldResult);
+        }
 
         for (const run of cleaningRuns) {
             for (const step of run.parsedResult?.stepResults ?? []) {

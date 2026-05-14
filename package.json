@@ -22,7 +22,8 @@
         "prisma:studio": "prisma studio",
         "seed": "tsx prisma/seed.ts",
         "db:setup": "prisma migrate dev && pnpm seed",
-        "worker:ai-review-batch": "tsx scripts/ai-review-batch-worker.ts"
+        "worker:ai-review-batch": "tsx scripts/ai-review-batch-worker.ts",
+        "backfill:cleaned-question-id": "tsx scripts/backfill-cleaned-question-id.ts"
     },
     "dependencies": {
         "@prisma/client": "^6.7.0",
