@@ -161,7 +161,7 @@ const saveAiModelSchema = z.object({
                     .number()
                     .int("超时必须是整数")
                     .min(1000, "超时至少 1000ms")
-                    .max(120000, "超时不能超过 120000ms"),
+                    .max(600000, "超时不能超过 600000ms"),
             }),
         )
         .min(1, "请至少配置一条路由"),

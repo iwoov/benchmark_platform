@@ -1473,7 +1473,7 @@ export function AiSettingsConsole({
                               <div className="review-toolbar-label">超时</div>
                               <InputNumber
                                 min={1000}
-                                max={120000}
+                                max={600000}
                                 step={1000}
                                 value={route.timeoutMs}
                                 addonAfter="ms"

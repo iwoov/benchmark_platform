@@ -961,7 +961,7 @@ export async function invokeAiModel(
         ) {
             const request = buildRequest(route, input, config, stream);
             const routeStartAt = Date.now();
-            const requestTimeoutMs = Math.min(route.timeoutMs, 120000);
+            const requestTimeoutMs = Math.min(route.timeoutMs, 600000);
 
             logInfo("ai.invoke.attempt_started", {
                 modelCode: input.modelCode,
