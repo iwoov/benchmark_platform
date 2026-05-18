@@ -82,11 +82,11 @@ const saveAiModelSchema = z.object({
     code: z
         .string()
         .trim()
-        .min(2, "模型名至少 2 个字符")
-        .max(100, "模型名不能超过 100 个字符")
+        .min(2, "模型路由名至少 2 个字符")
+        .max(100, "模型路由名不能超过 100 个字符")
         .regex(
             /^[a-zA-Z0-9._:-]+$/,
-            "模型名仅支持字母、数字、点、下划线、冒号和短横线",
+            "模型路由名仅支持字母、数字、点、下划线、冒号和短横线",
         ),
     protocol: z.enum([
         "OPENAI_COMPATIBLE",
@@ -151,6 +151,11 @@ const saveAiModelSchema = z.object({
         .array(
             z.object({
                 endpointId: z.string().min(1, "缺少接口 ID"),
+                providerModelName: z
+                    .string()
+                    .trim()
+                    .min(1, "请选择供应商支持的模型")
+                    .max(100, "供应商模型名称不能超过 100 个字符"),
                 enabled: z.boolean(),
                 timeoutMs: z
                     .number()
@@ -375,6 +380,17 @@ export async function saveAiModelAction(
         select: {
             id: true,
             protocol: true,
+            provider: {
+                select: {
+                    name: true,
+                    supportedModels: {
+                        select: {
+                            name: true,
+                            protocol: true,
+                        },
+                    },
+                },
+            },
         },
     });
 
@@ -390,6 +406,26 @@ export async function saveAiModelAction(
         return {
             error: "同一个模型的路由链只能绑定同一协议的接口。",
         };
+    }
+
+    const endpointMap = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint]));
+
+    for (const route of parsed.data.routes) {
+        const endpoint = endpointMap.get(route.endpointId);
+        const supportedModelNames = endpoint?.provider.supportedModels
+            .filter((model) => model.protocol === parsed.data.protocol)
+            .map((model) => model.name.trim().toLowerCase()) ?? [];
+
+        if (
+            !endpoint ||
+            !supportedModelNames.includes(
+                route.providerModelName.trim().toLowerCase(),
+            )
+        ) {
+            return {
+                error: `${endpoint?.provider.name ?? "当前供应商"} 未维护模型 ${route.providerModelName}，请先在供应商配置中添加支持模型。`,
+            };
+        }
     }
 
     const existingByCode = await prisma.aiModel.findFirst({
@@ -410,7 +446,7 @@ export async function saveAiModelAction(
 
     if (existingByCode) {
         return {
-            error: "该模型名已存在，请更换后再保存。",
+            error: "该模型路由名已存在，请更换后再保存。",
         };
     }
 
@@ -461,6 +497,7 @@ export async function saveAiModelAction(
             await tx.aiProviderEndpointModel.createMany({
                 data: parsed.data.routes.map((route, index) => ({
                     endpointId: route.endpointId,
+                    providerModelName: route.providerModelName,
                     modelId: model.id,
                     priority: index + 1,
                     enabled: route.enabled,
@@ -501,6 +538,7 @@ export async function saveAiModelAction(
         await tx.aiProviderEndpointModel.createMany({
             data: parsed.data.routes.map((route, index) => ({
                 endpointId: route.endpointId,
+                providerModelName: route.providerModelName,
                 modelId: model.id,
                 priority: index + 1,
                 enabled: route.enabled,

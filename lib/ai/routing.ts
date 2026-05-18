@@ -9,6 +9,7 @@ import type {
 export type AiResolvedRoute = {
     priority: number;
     timeoutMs: number;
+    providerModelName: string;
     endpointId: string;
     endpointCode: string;
     endpointLabel: string;
@@ -85,6 +86,7 @@ export async function getAiModelRoutingConfig(
         routes: model.endpoints.map((route) => ({
             priority: route.priority,
             timeoutMs: route.timeoutMs,
+            providerModelName: route.providerModelName,
             endpointId: route.endpoint.id,
             endpointCode: route.endpoint.code,
             endpointLabel: route.endpoint.label,

@@ -58,6 +58,7 @@ export async function POST(request: Request) {
   if (result.stream) {
     const headers = new Headers(result.response.headers);
     headers.set("x-ai-model-code", result.modelCode);
+    headers.set("x-ai-provider-model-name", result.route.providerModelName);
     headers.set("x-ai-provider-code", result.route.providerCode);
     headers.set("x-ai-endpoint-code", result.route.endpointCode);
 

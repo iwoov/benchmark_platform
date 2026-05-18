@@ -54,6 +54,7 @@ export type AiSettingsModel = {
   note: string | null;
   routes: Array<
     AiSettingsEndpointOption & {
+      providerModelName: string;
       priority: number;
       enabled: boolean;
       timeoutMs: number;

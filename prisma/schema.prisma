@@ -382,13 +382,14 @@ model AiProviderSupportedModel {
 }
 
 model AiProviderEndpointModel {
-  endpointId String
-  modelId    String
-  priority   Int                @default(1)
-  enabled    Boolean            @default(true)
-  timeoutMs  Int                @default(15000)
-  endpoint   AiProviderEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
-  model      AiModel            @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  endpointId        String
+  modelId           String
+  providerModelName String
+  priority          Int                @default(1)
+  enabled           Boolean            @default(true)
+  timeoutMs         Int                @default(15000)
+  endpoint          AiProviderEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  model             AiModel            @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
   @@id([endpointId, modelId])
   @@unique([modelId, priority])

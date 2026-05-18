@@ -1,7 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useTransition,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -56,6 +62,7 @@ import type {
 
 type ModelRouteFormState = {
   endpointId: string;
+  providerModelName: string;
   enabled: boolean;
   timeoutMs: number;
 };
@@ -117,6 +124,7 @@ function createModelFormState(model?: AiSettingsModel): ModelFormState {
     routes:
       model?.routes.map((route) => ({
         endpointId: route.id,
+        providerModelName: route.providerModelName,
         enabled: route.enabled,
         timeoutMs: route.timeoutMs,
       })) ?? [],
@@ -230,13 +238,42 @@ export function AiSettingsConsole({
     [endpointOptions, modelForm.protocol],
   );
 
+  const supportedModelsByProviderProtocol = useMemo(() => {
+    const entries = providers.flatMap((provider) =>
+      providerProtocolColumns.map((column) => [
+        `${provider.id}:${column.protocol}`,
+        provider.supportedModels
+          .filter((model) => model.protocol === column.protocol)
+          .map((model) => model.name)
+          .sort((left, right) => left.localeCompare(right)),
+      ] as const),
+    );
+
+    return Object.fromEntries(entries) as Record<string, string[]>;
+  }, [providers]);
+
+  const getSupportedProviderModels = useCallback((
+    endpoint: AiSettingsEndpointOption | undefined,
+  ) => {
+    if (!endpoint) {
+      return [];
+    }
+
+    return (
+      supportedModelsByProviderProtocol[
+        `${endpoint.providerId}:${endpoint.protocol}`
+      ] ?? []
+    );
+  }, [supportedModelsByProviderProtocol]);
+
   const availableRouteOptions = useMemo(
     () =>
       protocolEndpointOptions.filter(
         (endpoint) =>
-          !modelForm.routes.some((route) => route.endpointId === endpoint.id),
+          !modelForm.routes.some((route) => route.endpointId === endpoint.id) &&
+          getSupportedProviderModels(endpoint).length > 0,
       ),
-    [modelForm.routes, protocolEndpointOptions],
+    [getSupportedProviderModels, modelForm.routes, protocolEndpointOptions],
   );
 
   const visibleProviderCompanies = useMemo(() => {
@@ -317,12 +354,17 @@ export function AiSettingsConsole({
   }
 
   function addRoute(endpointId: string) {
+    const endpoint = endpointMap[endpointId];
+    const providerModelName =
+      getSupportedProviderModels(endpoint)[0] ?? modelForm.code;
+
     setModelForm((current) => ({
       ...current,
       routes: [
         ...current.routes,
         {
           endpointId,
+          providerModelName,
           enabled: true,
           timeoutMs: 15000,
         },
@@ -677,6 +719,9 @@ export function AiSettingsConsole({
                                   primaryRoute.label,
                                 )
                               : "未配置"}
+                            {primaryRoute?.providerModelName
+                              ? ` / ${primaryRoute.providerModelName}`
+                              : ""}
                           </span>
                         </span>
                         <span className="model-row-meta-divider" aria-hidden>
@@ -1005,7 +1050,7 @@ export function AiSettingsConsole({
           <div className="ai-modal-header-inline">
             <div>
               <div style={{ fontWeight: 700 }}>
-                {modelForm.modelId ? "编辑模型" : "新建模型"}
+                {modelForm.modelId ? "编辑模型路由" : "新建模型路由"}
               </div>
               <div className="muted" style={{ marginTop: 4 }}>
                 基础信息和路由链集中在一个弹窗内完成。
@@ -1017,7 +1062,7 @@ export function AiSettingsConsole({
           <div className="ai-model-form-grid ai-model-form-grid-compact">
             <div>
               <label className="field-label" htmlFor="ai-model-code">
-                模型名
+                模型路由名
               </label>
               <Input
                 id="ai-model-code"
@@ -1029,7 +1074,7 @@ export function AiSettingsConsole({
                     code: event.target.value,
                   }))
                 }
-                placeholder="例如 gpt-5.3"
+                placeholder="例如 gpt-5.3-main"
               />
             </div>
 
@@ -1371,6 +1416,9 @@ export function AiSettingsConsole({
                     return null;
                   }
 
+                  const supportedProviderModels =
+                    getSupportedProviderModels(endpoint);
+
                   return (
                     <div
                       key={`${route.endpointId}-${index}`}
@@ -1388,7 +1436,9 @@ export function AiSettingsConsole({
                                 )}
                               </div>
                               <div className="muted" style={{ marginTop: 4 }}>
-                                {routeStatusLabel(index)} · {endpoint.baseUrl}
+                                {routeStatusLabel(index)} ·{" "}
+                                {route.providerModelName || "未选择模型"} ·{" "}
+                                {endpoint.baseUrl}
                               </div>
                             </div>
                             <Space size={8} wrap>
@@ -1400,6 +1450,25 @@ export function AiSettingsConsole({
                           </div>
 
                           <div className="ai-route-card-controls ai-route-card-controls-compact">
+                            <div>
+                              <div className="review-toolbar-label">
+                                供应商模型
+                              </div>
+                              <Select
+                                value={route.providerModelName}
+                                options={supportedProviderModels.map((modelName) => ({
+                                  value: modelName,
+                                  label: modelName,
+                                }))}
+                                onChange={(value) =>
+                                  updateRoute(index, {
+                                    providerModelName: value,
+                                  })
+                                }
+                                disabled={!supportedProviderModels.length}
+                              />
+                            </div>
+
                             <div>
                               <div className="review-toolbar-label">超时</div>
                               <InputNumber

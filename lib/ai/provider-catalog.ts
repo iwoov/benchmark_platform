@@ -202,6 +202,28 @@ export const defaultAiProviders: DefaultAiProvider[] = [
       },
     ],
   },
+  {
+    id: "evamux",
+    name: "Evamux",
+    vendorType: "EVAMUX",
+    note: "Evamux 模型服务，提供 OpenAI Chat 与 OpenAI Responses 两类接口。",
+    endpoints: [
+      {
+        id: "evamux-openai",
+        label: "OpenAI Chat 接口",
+        protocol: "OPENAI_COMPATIBLE",
+        baseUrl: "https://evamux.alibaba-inc.com/",
+        sortOrder: 0,
+      },
+      {
+        id: "evamux-openai-responses",
+        label: "OpenAI Responses 接口",
+        protocol: "OPENAI_RESPONSES",
+        baseUrl: "https://evamux.alibaba-inc.com/",
+        sortOrder: 1,
+      },
+    ],
+  },
 ];
 
 export const aiProtocolLabels: Record<AiProtocol, string> = {

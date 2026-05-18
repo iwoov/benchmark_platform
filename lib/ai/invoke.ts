@@ -49,6 +49,7 @@ export type AiInvocationSuccess = {
         endpointId: string;
         endpointCode: string;
         endpointLabel: string;
+        providerModelName: string;
         providerCode: string;
         providerName: string;
         baseUrl: string;
@@ -68,6 +69,7 @@ export type AiStreamInvocationSuccess = {
         endpointId: string;
         endpointCode: string;
         endpointLabel: string;
+        providerModelName: string;
         providerCode: string;
         providerName: string;
         baseUrl: string;
@@ -183,6 +185,7 @@ function splitSystemMessages(messages: AiMessage[]) {
 function buildOpenAiChatPayload(
     input: AiInvocationRequest,
     config: AiModelRoutingConfig,
+    route: AiResolvedRoute,
     stream: boolean,
 ) {
     const reasoningEffort = getReasoningEffort(config.reasoningLevel);
@@ -191,7 +194,7 @@ function buildOpenAiChatPayload(
         input.temperature ?? config.temperatureDefault ?? undefined;
 
     return {
-        model: config.modelCode,
+        model: route.providerModelName,
         messages: input.messages.map((message) => ({
             role: message.role,
             content:
@@ -227,6 +230,7 @@ function buildOpenAiChatPayload(
 function buildOpenAiResponsesPayload(
     input: AiInvocationRequest,
     config: AiModelRoutingConfig,
+    route: AiResolvedRoute,
     stream: boolean,
 ) {
     const reasoningEffort = getReasoningEffort(config.reasoningLevel);
@@ -241,7 +245,7 @@ function buildOpenAiResponsesPayload(
         : [];
 
     return {
-        model: config.modelCode,
+        model: route.providerModelName,
         input: input.messages.map((message) => ({
             role: message.role,
             content:
@@ -309,6 +313,7 @@ function buildOpenAiResponsesPayload(
 function buildAnthropicPayload(
     input: AiInvocationRequest,
     config: AiModelRoutingConfig,
+    route: AiResolvedRoute,
     stream: boolean,
 ) {
     const { systemText, conversation } = splitSystemMessages(input.messages);
@@ -318,7 +323,7 @@ function buildAnthropicPayload(
     const maxTokens = Math.max(resolvedMaxTokens, (reasoningBudget ?? 0) + 256);
 
     return {
-        model: config.modelCode,
+        model: route.providerModelName,
         max_tokens: maxTokens,
         messages: conversation.map((message) => ({
             role: message.role,
@@ -435,24 +440,24 @@ function buildRequest(
         case "OPENAI_COMPATIBLE":
             return {
                 url: `${baseUrl}/chat/completions`,
-                body: buildOpenAiChatPayload(input, config, stream),
+                body: buildOpenAiChatPayload(input, config, route, stream),
             };
         case "OPENAI_RESPONSES":
             return {
                 url: `${baseUrl}/responses`,
-                body: buildOpenAiResponsesPayload(input, config, stream),
+                body: buildOpenAiResponsesPayload(input, config, route, stream),
             };
         case "GEMINI_COMPATIBLE":
             return {
                 url: stream
-                    ? `${baseUrl}/models/${encodeURIComponent(config.modelCode)}:streamGenerateContent?alt=sse`
-                    : `${baseUrl}/models/${encodeURIComponent(config.modelCode)}:generateContent`,
+                    ? `${baseUrl}/models/${encodeURIComponent(route.providerModelName)}:streamGenerateContent?alt=sse`
+                    : `${baseUrl}/models/${encodeURIComponent(route.providerModelName)}:generateContent`,
                 body: buildGeminiPayload(input, config),
             };
         case "ANTHROPIC_COMPATIBLE":
             return {
                 url: `${baseUrl}/messages`,
-                body: buildAnthropicPayload(input, config, stream),
+                body: buildAnthropicPayload(input, config, route, stream),
             };
     }
 }
@@ -1025,6 +1030,7 @@ export async function invokeAiModel(
                             endpointId: route.endpointId,
                             endpointCode: route.endpointCode,
                             endpointLabel: route.endpointLabel,
+                            providerModelName: route.providerModelName,
                             providerCode: route.providerCode,
                             providerName: route.providerName,
                             baseUrl: route.baseUrl,
@@ -1060,6 +1066,7 @@ export async function invokeAiModel(
                         endpointId: route.endpointId,
                         endpointCode: route.endpointCode,
                         endpointLabel: route.endpointLabel,
+                        providerModelName: route.providerModelName,
                         providerCode: route.providerCode,
                         providerName: route.providerName,
                         baseUrl: route.baseUrl,

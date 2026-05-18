@@ -167,6 +167,7 @@ export async function getAiSettingsData(): Promise<AiSettingsData> {
       providerId: item.endpoint.provider.id,
       providerCode: item.endpoint.provider.code,
       providerName: item.endpoint.provider.name,
+      providerModelName: item.providerModelName,
       priority: item.priority,
       enabled: item.enabled,
       timeoutMs: item.timeoutMs,
