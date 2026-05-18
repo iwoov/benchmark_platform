@@ -135,9 +135,12 @@ function GroupedBarChart({ data, height = 360 }: { data: GroupBar[]; height?: nu
             </div>
         );
     }
-    const max = Math.max(...data.map((d) => d.total));
+    const max = Math.max(...data.flatMap((d) => [d.reviewed, d.unreviewed]), 1);
+    const chartHeight = Math.max(220, height - 92);
+    const tickValues = [max, Math.round(max * 0.5), 0];
+
     return (
-        <div className="space-y-3" style={{ minHeight: height }}>
+        <div className="space-y-4" style={{ minHeight: height }}>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                     <span className="h-3 w-3 rounded-sm bg-chart-1" style={{ background: CHART_COLORS[0] }} />
@@ -147,39 +150,110 @@ function GroupedBarChart({ data, height = 360 }: { data: GroupBar[]; height?: nu
                     <span className="h-3 w-3 rounded-sm" style={{ background: CHART_COLORS[3] }} />
                     未审核
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-sm" style={{ background: CHART_COLORS[1] }} />
-                    总数
-                </span>
             </div>
-            <div className="space-y-3">
-                {data.map((row) => (
-                    <div key={row.subject} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                            <span className="font-medium text-foreground">{row.subject}</span>
-                            <span className="font-mono text-muted-foreground">
-                                {row.reviewed} / {row.unreviewed} / {row.total}
-                            </span>
+            <div className="overflow-x-auto">
+                <div
+                    className="grid"
+                    style={{
+                        gridTemplateColumns: "44px 1fr",
+                        minWidth: Math.max(500, data.length * 72 + 44),
+                    }}
+                >
+                    <div
+                        className="relative pr-2 text-right font-mono text-[11px] text-muted-foreground"
+                        style={{ height: chartHeight }}
+                    >
+                        {tickValues.map((value, index) => (
+                            <div
+                                key={`${value}-${index}`}
+                                className="absolute right-2"
+                                style={{
+                                    top: `${index * 50}%`,
+                                    transform:
+                                        index === tickValues.length - 1
+                                            ? "translateY(-100%)"
+                                            : index === 0
+                                              ? "translateY(0)"
+                                              : "translateY(-50%)",
+                                }}
+                            >
+                                {value.toLocaleString()}
+                            </div>
+                        ))}
+                    </div>
+                    <div
+                        className="relative"
+                        style={{ height: chartHeight }}
+                    >
+                        <div className="absolute inset-0 grid grid-rows-2 border-b border-l border-border/70">
+                            <div className="border-b border-dashed border-border/70" />
+                            <div />
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
-                            {[
-                                { value: row.reviewed, color: CHART_COLORS[0] },
-                                { value: row.unreviewed, color: CHART_COLORS[3] },
-                                { value: row.total, color: CHART_COLORS[1] },
-                            ].map((bar, idx) => (
-                                <div key={idx} className="h-3 overflow-hidden rounded-full bg-muted">
-                                    <div
-                                        className="h-full rounded-full transition-[width] duration-500"
-                                        style={{
-                                            width: `${max ? (bar.value / max) * 100 : 0}%`,
-                                            background: bar.color,
-                                        }}
-                                    />
+                        <div className="relative z-10 flex h-full items-end gap-3 px-3">
+                            {data.map((row) => (
+                                <div
+                                    key={row.subject}
+                                    className="flex h-full min-w-[56px] flex-1 items-end justify-center gap-1.5"
+                                >
+                                    {[
+                                        {
+                                            key: "reviewed",
+                                            label: "已审核",
+                                            value: row.reviewed,
+                                            color: CHART_COLORS[0],
+                                        },
+                                        {
+                                            key: "unreviewed",
+                                            label: "未审核",
+                                            value: row.unreviewed,
+                                            color: CHART_COLORS[3],
+                                        },
+                                    ].map((bar) => (
+                                        <div
+                                            key={bar.key}
+                                            className="flex h-full w-5 items-end"
+                                            title={`${row.subject} ${bar.label}: ${bar.value.toLocaleString()}`}
+                                        >
+                                            <div
+                                                className="w-full rounded-t-sm transition-[height] duration-500"
+                                                style={{
+                                                    height: `${Math.max(
+                                                        bar.value
+                                                            ? (bar.value / max) *
+                                                                  100
+                                                            : 0,
+                                                        bar.value ? 2 : 0,
+                                                    )}%`,
+                                                    background: bar.color,
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
                             ))}
                         </div>
                     </div>
-                ))}
+                    <div />
+                    <div className="flex gap-3 px-3 pt-2">
+                        {data.map((row) => (
+                            <div
+                                key={row.subject}
+                                className="min-w-[56px] flex-1 text-center"
+                            >
+                                <div
+                                    className="truncate text-xs font-medium text-foreground"
+                                    title={row.subject}
+                                >
+                                    {row.subject}
+                                </div>
+                                <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                                    {row.reviewed.toLocaleString()} /{" "}
+                                    {row.unreviewed.toLocaleString()}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
     );

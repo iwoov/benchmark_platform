@@ -304,6 +304,13 @@ function extractJson(text: string | null) {
         return safeParseJson(candidate);
     } catch {
         const start = candidate.indexOf("{");
+        const balancedCandidate =
+            start >= 0 ? extractFirstBalancedJsonObject(candidate, start) : null;
+
+        if (balancedCandidate) {
+            return safeParseJson(balancedCandidate);
+        }
+
         const end = candidate.lastIndexOf("}");
 
         if (start >= 0 && end > start) {
@@ -312,6 +319,58 @@ function extractJson(text: string | null) {
 
         throw new Error("模型返回内容不是合法 JSON");
     }
+}
+
+function extractFirstBalancedJsonObject(input: string, start: number) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < input.length; index += 1) {
+        const char = input[index];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (char === "\\") {
+                escaped = true;
+                continue;
+            }
+
+            if (char === "\"") {
+                inString = false;
+            }
+
+            continue;
+        }
+
+        if (char === "\"") {
+            inString = true;
+            continue;
+        }
+
+        if (char === "{") {
+            depth += 1;
+            continue;
+        }
+
+        if (char === "}") {
+            depth -= 1;
+
+            if (depth === 0) {
+                return input.slice(start, index + 1);
+            }
+
+            if (depth < 0) {
+                return null;
+            }
+        }
+    }
+
+    return null;
 }
 
 function repairInvalidJsonEscapes(input: string) {
