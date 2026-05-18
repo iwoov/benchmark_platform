@@ -209,7 +209,14 @@ export default async function DashboardPage({
         typeof projectIdParam === "string" && projectIdParam.length > 0
             ? projectIdParam
             : null;
-    const overview = await getAdminOverview(role, { projectId });
+    const projectFamilyParam = resolvedSearchParams.projectFamily;
+    const projectFamily =
+        !projectId &&
+        typeof projectFamilyParam === "string" &&
+        projectFamilyParam.length > 0
+            ? projectFamilyParam
+            : null;
+    const overview = await getAdminOverview(role, { projectId, projectFamily });
 
     if (overview.role === "SUPER_ADMIN") {
         return (
@@ -521,9 +528,11 @@ export default async function DashboardPage({
             </section>
 
             <SubjectStatsPanel
+                projectFamilies={overview.projectFamilies}
                 projects={overview.projects}
                 subjectStats={overview.subjectStats}
                 selectedProjectId={overview.selectedProjectId}
+                selectedProjectFamily={overview.selectedProjectFamily}
             />
 
             <section className="overview-two-column">

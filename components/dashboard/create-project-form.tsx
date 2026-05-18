@@ -89,6 +89,13 @@ export function CreateProjectForm() {
           </div>
 
           <div className="space-y-1.5">
+            <label htmlFor="project-family" className="text-sm font-medium text-foreground">
+              大项目归属
+            </label>
+            <Input id="project-family" name="projectFamily" placeholder="例如 HLE，可选" />
+          </div>
+
+          <div className="space-y-1.5">
             <label htmlFor="project-description" className="text-sm font-medium text-foreground">
               项目描述
             </label>
@@ -107,7 +114,7 @@ export function CreateProjectForm() {
               label="自动加入现有审核策略范围"
             />
             <p className="pl-6 text-xs text-muted-foreground">
-              勾选后，当前项目会自动加入已配置"适用项目"的审核策略，无需再到审核策略页手动添加。
+              勾选后，当前项目会自动加入已配置“适用项目”的审核策略，无需再到审核策略页手动添加。
             </p>
           </div>
         </form>

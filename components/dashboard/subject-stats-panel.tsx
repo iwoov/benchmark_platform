@@ -4,6 +4,7 @@ import { useMemo, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { HelpCircle } from "lucide-react";
 import type {
+    PlatformAdminProjectFamilyOption,
     PlatformAdminProjectOption,
     SubjectStat,
 } from "@/lib/dashboard/overview";
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/table";
 
 const ALL_PROJECTS_VALUE = "__all__";
+const PROJECT_FAMILY_PREFIX = "family:";
 
 const CHART_COLORS = [
     "var(--color-chart-1)",
@@ -49,8 +51,15 @@ function DonutChart({ slices, height = 280 }: { slices: Slice[]; height?: number
     const cx = 120;
     const cy = 120;
     const c = 2 * Math.PI * radius;
+    const segments = slices.reduce<
+        Array<{ slice: Slice; length: number; offset: number }>
+    >((acc, slice) => {
+        const offset = acc.reduce((sum, item) => sum + item.length, 0);
+        const length = (slice.value / total) * c;
 
-    let offset = 0;
+        return [...acc, { slice, length, offset }];
+    }, []);
+
     return (
         <div className="flex items-center justify-center gap-6" style={{ minHeight: height }}>
             <svg viewBox="0 0 240 240" width={240} height={240} aria-hidden>
@@ -62,11 +71,9 @@ function DonutChart({ slices, height = 280 }: { slices: Slice[]; height?: number
                     stroke="var(--color-muted)"
                     strokeWidth={strokeWidth}
                 />
-                {slices.map((slice, idx) => {
-                    const length = (slice.value / total) * c;
+                {segments.map(({ slice, length, offset }, idx) => {
                     const dasharray = `${length} ${c - length}`;
                     const dashoffset = -offset;
-                    offset += length;
                     return (
                         <circle
                             key={slice.subject}
@@ -260,13 +267,17 @@ function GroupedBarChart({ data, height = 360 }: { data: GroupBar[]; height?: nu
 }
 
 export function SubjectStatsPanel({
+    projectFamilies,
     projects,
     subjectStats,
     selectedProjectId,
+    selectedProjectFamily,
 }: {
+    projectFamilies: PlatformAdminProjectFamilyOption[];
     projects: PlatformAdminProjectOption[];
     subjectStats: SubjectStat[];
     selectedProjectId: string | null;
+    selectedProjectFamily: string | null;
 }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -320,7 +331,15 @@ export function SubjectStatsPanel({
         const params = new URLSearchParams(searchParams?.toString() ?? "");
         if (value === ALL_PROJECTS_VALUE) {
             params.delete("projectId");
+            params.delete("projectFamily");
+        } else if (value.startsWith(PROJECT_FAMILY_PREFIX)) {
+            params.delete("projectId");
+            params.set(
+                "projectFamily",
+                value.slice(PROJECT_FAMILY_PREFIX.length),
+            );
         } else {
+            params.delete("projectFamily");
             params.set("projectId", value);
         }
         const qs = params.toString();
@@ -330,9 +349,22 @@ export function SubjectStatsPanel({
         });
     };
 
-    const selectValue = selectedProjectId ?? ALL_PROJECTS_VALUE;
-    const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) : null;
-    const scopeLabel = selectedProject ? `${selectedProject.name} (${selectedProject.code})` : "全部项目";
+    const selectValue = selectedProjectId
+        ? selectedProjectId
+        : selectedProjectFamily
+          ? `${PROJECT_FAMILY_PREFIX}${selectedProjectFamily}`
+          : ALL_PROJECTS_VALUE;
+    const selectedProject = selectedProjectId
+        ? projects.find((p) => p.id === selectedProjectId)
+        : null;
+    const selectedProjectFamilyOption = selectedProjectFamily
+        ? projectFamilies.find((family) => family.value === selectedProjectFamily)
+        : null;
+    const scopeLabel = selectedProject
+        ? `${selectedProject.name} (${selectedProject.code})`
+        : selectedProjectFamilyOption
+          ? `${selectedProjectFamilyOption.label} 大项目（${selectedProjectFamilyOption.projectCount} 个项目）`
+          : "全部项目";
 
     return (
         <section className="space-y-6">
@@ -342,17 +374,31 @@ export function SubjectStatsPanel({
                         <div>
                             <h2 className="text-base font-semibold tracking-tight">学科审核概览</h2>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                选择项目查看该项目下各学科的审核分布；默认汇总所有项目。
+                                选择大项目或单个项目查看该范围下各学科的审核分布；默认汇总所有项目。
                             </p>
                         </div>
                         <div className="min-w-[260px]">
                             <Select value={selectValue} onChange={handleChange}>
                                 <option value={ALL_PROJECTS_VALUE}>全部项目</option>
+                                {projectFamilies.length ? (
+                                    <optgroup label="大项目">
+                                        {projectFamilies.map((family) => (
+                                            <option
+                                                key={family.value}
+                                                value={`${PROJECT_FAMILY_PREFIX}${family.value}`}
+                                            >
+                                                {family.label}（{family.projectCount} 个项目）
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                ) : null}
+                                <optgroup label="单个项目">
                                 {projects.map((p) => (
                                     <option key={p.id} value={p.id}>
                                         {p.name} ({p.code})
                                     </option>
                                 ))}
+                                </optgroup>
                             </Select>
                         </div>
                     </div>

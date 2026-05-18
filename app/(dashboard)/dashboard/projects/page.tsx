@@ -141,6 +141,7 @@ export default async function ProjectsPage() {
                         id: project.id,
                         name: project.name,
                         code: project.code,
+                        projectFamily: project.projectFamily,
                         status: project.status,
                         canManage:
                             canManageEveryProject ||

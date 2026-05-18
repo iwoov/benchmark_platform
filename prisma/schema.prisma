@@ -138,6 +138,7 @@ model Project {
   id                        String                             @id @default(cuid())
   name                      String
   code                      String                             @unique
+  projectFamily             String?
   description               String?
   fieldLabelMap             Json?
   status                    ProjectStatus                      @default(ACTIVE)

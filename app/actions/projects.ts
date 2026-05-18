@@ -22,6 +22,12 @@ const createProjectSchema = z.object({
             /^[a-zA-Z0-9._-]+$/,
             "项目标识仅支持字母、数字、点、下划线和短横线",
         ),
+    projectFamily: z
+        .string()
+        .trim()
+        .max(40, "大项目归属不能超过 40 个字符")
+        .optional()
+        .transform((value) => value || undefined),
     description: z
         .string()
         .trim()
@@ -126,6 +132,7 @@ export async function createProjectAction(
     const parsed = createProjectSchema.safeParse({
         name: formData.get("name"),
         code: formData.get("code"),
+        projectFamily: formData.get("projectFamily") || undefined,
         description: formData.get("description") || undefined,
     });
 
@@ -157,6 +164,7 @@ export async function createProjectAction(
             data: {
                 name: parsed.data.name,
                 code,
+                projectFamily: parsed.data.projectFamily,
                 description: parsed.data.description,
                 createdById: session.user.id,
                 status: "ACTIVE",

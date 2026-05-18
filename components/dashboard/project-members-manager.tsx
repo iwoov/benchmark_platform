@@ -49,6 +49,7 @@ type ProjectOption = {
     id: string;
     name: string;
     code: string;
+    projectFamily: string | null;
     status: string;
     canManage: boolean;
     datasourcesCount: number;
@@ -58,7 +59,7 @@ type ProjectOption = {
 };
 
 const initialState: ProjectMemberFormState = {};
-const COL_TEMPLATE = "1.1fr 0.8fr 0.8fr 1fr 0.9fr";
+const COL_TEMPLATE = "1.1fr 0.8fr 0.8fr 0.7fr 0.8fr 0.9fr";
 
 export function ProjectMembersManager({
     projects,
@@ -149,6 +150,7 @@ export function ProjectMembersManager({
                 >
                     <div>项目名称</div>
                     <div>项目标识</div>
+                    <div>大项目</div>
                     <div>成员数</div>
                     <div>数据源数</div>
                     <div>操作</div>
@@ -167,6 +169,9 @@ export function ProjectMembersManager({
                             </div>
                         </div>
                         <div className="text-foreground">{project.code}</div>
+                        <div className="text-foreground">
+                            {project.projectFamily ?? "—"}
+                        </div>
                         <div className="text-foreground">{project.members.length}</div>
                         <div className="text-foreground">{project.datasourcesCount}</div>
                         <div className="flex flex-wrap gap-2">
