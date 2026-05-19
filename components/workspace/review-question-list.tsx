@@ -33,7 +33,15 @@ import { writeStoredReviewListHref } from "@/lib/reviews/review-list-preference"
 import {
     type ResolvedReviewFieldPreference,
 } from "@/lib/reviews/field-preferences";
-import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
+import {
+    aiReviewStatusFieldKey,
+    datasourceFieldKey,
+    manualReviewReviewerFieldKey,
+    manualReviewStatusFieldKey,
+    manualReviewUpdatedAtFieldKey,
+    questionUpdatedAtFieldKey,
+    revisionFieldKey,
+} from "@/lib/reviews/system-fields";
 import {
     conditionNeedsValue,
     createReviewQuestionFilterCondition,
@@ -113,6 +121,45 @@ type ExportFieldOption = {
     value: string;
     label: string;
 };
+
+type ListColumn = {
+    key: string;
+    label: string;
+    width: number;
+};
+
+const defaultSystemListColumns: ListColumn[] = [
+    {
+        key: datasourceFieldKey,
+        label: "数据源",
+        width: 180,
+    },
+    {
+        key: revisionFieldKey,
+        label: "版本",
+        width: 120,
+    },
+    {
+        key: aiReviewStatusFieldKey,
+        label: "AI审核",
+        width: 160,
+    },
+    {
+        key: manualReviewStatusFieldKey,
+        label: "人工审核",
+        width: 140,
+    },
+    {
+        key: manualReviewUpdatedAtFieldKey,
+        label: "人工审核时间",
+        width: 180,
+    },
+    {
+        key: questionUpdatedAtFieldKey,
+        label: "更新时间",
+        width: 180,
+    },
+];
 
 const cleaningListColumns = [
     {
@@ -303,7 +350,7 @@ export function ReviewQuestionList({
     const listColumns = useMemo(
         () => {
             if (mode === "cleaning") {
-                return cleaningListColumns;
+                return [...defaultSystemListColumns, ...cleaningListColumns];
             }
 
             const visibleFieldKeySet = new Set(
@@ -313,13 +360,16 @@ export function ReviewQuestionList({
             return fieldPreference.fieldOrder
                 .filter((fieldKey) => visibleFieldKeySet.has(fieldKey))
                 .map((fieldKey) => ({
-                key: fieldKey,
-                label:
-                    fieldPreference.fieldCatalog.find(
-                        (field) => field.key === fieldKey,
-                    )?.label ?? fieldKey,
-                width: 220,
-            }));
+                    key: fieldKey,
+                    label:
+                        fieldPreference.fieldCatalog.find(
+                            (field) => field.key === fieldKey,
+                        )?.label ?? fieldKey,
+                    width:
+                        defaultSystemListColumns.find(
+                            (column) => column.key === fieldKey,
+                        )?.width ?? 220,
+                }));
         },
         [fieldPreference, mode],
     );
@@ -468,22 +518,10 @@ export function ReviewQuestionList({
     );
     const gridTemplateColumns = [
         "52px",
-        "180px",
-        "120px",
-        "160px",
-        "140px",
-        "140px",
-        "180px",
         ...listColumns.map((column) => `${column.width}px`),
     ].join(" ");
     const tableWidth =
         52 +
-        180 +
-        120 +
-        160 +
-        140 +
-        140 +
-        180 +
         listColumns.reduce((total, column) => total + column.width, 0);
 
     useEffect(() => {
@@ -1211,11 +1249,6 @@ export function ReviewQuestionList({
                                                 }
                                             />
                                         </div>
-                                        <div style={cellStyle}>数据源</div>
-                                        <div style={cellStyle}>版本</div>
-                                        <div style={cellStyle}>AI审核</div>
-                                        <div style={cellStyle}>人工审核</div>
-                                        <div style={cellStyle}>更新时间</div>
                                         {listColumns.map((column) => (
                                             <div
                                                 key={column.key}
@@ -1293,94 +1326,190 @@ export function ReviewQuestionList({
                                                         }
                                                     />
                                                 </div>
-                                                <div
-                                                    className="muted"
-                                                    style={{
-                                                        ...cellStyle,
-                                                    }}
-                                                    title={
-                                                        question.datasourceName
-                                                    }
-                                                >
-                                                    <span>
-                                                        {question.datasourceName}
-                                                    </span>
-                                                </div>
-                                                <div style={cellStyle}>
-                                                    <Tag
-                                                        color={
-                                                            question.isLatestRevision
-                                                                ? "blue"
-                                                                : "default"
-                                                        }
-                                                    >
-                                                        V{question.revisionNo} ·{" "}
-                                                        {question.isLatestRevision
-                                                            ? "最新版"
-                                                            : "历史版"}
-                                                    </Tag>
-                                                </div>
-                                                <div>
-                                                    <div
-                                                        title={formatReviewTooltip(
-                                                            question.aiReview,
-                                                        )}
-                                                    >
-                                                        <Tag
-                                                            color={
-                                                                reviewStatusMeta[
-                                                                    question
-                                                                        .aiReview
-                                                                        ?.decision ??
-                                                                        "NONE"
-                                                                ].color
-                                                            }
-                                                        >
-                                                            {
-                                                                reviewStatusMeta[
-                                                                    question
-                                                                        .aiReview
-                                                                        ?.decision ??
-                                                                        "NONE"
-                                                                ].label
-                                                            }
-                                                        </Tag>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div
-                                                        title={formatReviewTooltip(
-                                                            question.manualReview,
-                                                        )}
-                                                    >
-                                                        <Tag
-                                                            color={
-                                                                reviewStatusMeta[
-                                                                    question
-                                                                        .manualReview
-                                                                        ?.decision ??
-                                                                        "NONE"
-                                                                ].color
-                                                            }
-                                                        >
-                                                            {
-                                                                reviewStatusMeta[
-                                                                    question
-                                                                        .manualReview
-                                                                        ?.decision ??
-                                                                        "NONE"
-                                                                ].label
-                                                            }
-                                                        </Tag>
-                                                    </div>
-                                                </div>
-                                                <div className="muted">
-                                                    {new Date(
-                                                        question.updatedAt,
-                                                    ).toLocaleString("zh-CN")}
-                                                </div>
                                                 {listColumns.map((column) => {
-                                                    if (mode === "cleaning") {
+                                                    if (
+                                                        column.key ===
+                                                        datasourceFieldKey
+                                                    ) {
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                className="muted"
+                                                                style={
+                                                                    cellStyle
+                                                                }
+                                                                title={
+                                                                    question.datasourceName
+                                                                }
+                                                            >
+                                                                {
+                                                                    question.datasourceName
+                                                                }
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        column.key ===
+                                                        revisionFieldKey
+                                                    ) {
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                style={
+                                                                    cellStyle
+                                                                }
+                                                            >
+                                                                <Tag
+                                                                    color={
+                                                                        question.isLatestRevision
+                                                                            ? "blue"
+                                                                            : "default"
+                                                                    }
+                                                                >
+                                                                    V
+                                                                    {
+                                                                        question.revisionNo
+                                                                    }{" "}
+                                                                    ·{" "}
+                                                                    {question.isLatestRevision
+                                                                        ? "最新版"
+                                                                        : "历史版"}
+                                                                </Tag>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        column.key ===
+                                                        aiReviewStatusFieldKey
+                                                    ) {
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                title={formatReviewTooltip(
+                                                                    question.aiReview,
+                                                                )}
+                                                            >
+                                                                <Tag
+                                                                    color={
+                                                                        reviewStatusMeta[
+                                                                            question
+                                                                                .aiReview
+                                                                                ?.decision ??
+                                                                                "NONE"
+                                                                        ]
+                                                                            .color
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        reviewStatusMeta[
+                                                                            question
+                                                                                .aiReview
+                                                                                ?.decision ??
+                                                                                "NONE"
+                                                                        ]
+                                                                            .label
+                                                                    }
+                                                                </Tag>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        column.key ===
+                                                        manualReviewStatusFieldKey
+                                                    ) {
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                title={formatReviewTooltip(
+                                                                    question.manualReview,
+                                                                )}
+                                                            >
+                                                                <Tag
+                                                                    color={
+                                                                        reviewStatusMeta[
+                                                                            question
+                                                                                .manualReview
+                                                                                ?.decision ??
+                                                                                "NONE"
+                                                                        ]
+                                                                            .color
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        reviewStatusMeta[
+                                                                            question
+                                                                                .manualReview
+                                                                                ?.decision ??
+                                                                                "NONE"
+                                                                        ]
+                                                                            .label
+                                                                    }
+                                                                </Tag>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        column.key ===
+                                                        manualReviewUpdatedAtFieldKey
+                                                    ) {
+                                                        const value = question
+                                                            .manualReview
+                                                            ?.updatedAt
+                                                            ? new Date(
+                                                                  question.manualReview.updatedAt,
+                                                              ).toLocaleString(
+                                                                  "zh-CN",
+                                                              )
+                                                            : "—";
+
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                className="muted"
+                                                                style={
+                                                                    cellStyle
+                                                                }
+                                                                title={value}
+                                                            >
+                                                                {value}
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        column.key ===
+                                                        questionUpdatedAtFieldKey
+                                                    ) {
+                                                        const value = new Date(
+                                                            question.updatedAt,
+                                                        ).toLocaleString(
+                                                            "zh-CN",
+                                                        );
+
+                                                        return (
+                                                            <div
+                                                                key={`${question.id}-${column.key}`}
+                                                                className="muted"
+                                                                style={
+                                                                    cellStyle
+                                                                }
+                                                                title={value}
+                                                            >
+                                                                {value}
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (
+                                                        mode === "cleaning" &&
+                                                        !column.key.startsWith(
+                                                            "system:",
+                                                        )
+                                                    ) {
                                                         const hasResult =
                                                             question
                                                                 .cleaningFieldStatus[

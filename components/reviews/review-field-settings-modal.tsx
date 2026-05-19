@@ -15,7 +15,7 @@ import {
 } from "@/app/actions/review-field-preferences";
 import { useToast } from "@/components/ui/toast";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
-import { manualReviewReviewerFieldKey } from "@/lib/reviews/system-fields";
+import { reviewQuestionListSystemFieldKeySet } from "@/lib/reviews/system-fields";
 
 type FieldVisibilityDraft = {
     fieldOrder: string[];
@@ -154,7 +154,7 @@ export function ReviewFieldSettingsModal({
     }
 
     function isDetailVisibilityDisabled(fieldKey: string) {
-        return fieldKey === manualReviewReviewerFieldKey;
+        return reviewQuestionListSystemFieldKeySet.has(fieldKey);
     }
 
     async function savePreference() {
