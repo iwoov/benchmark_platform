@@ -175,10 +175,26 @@ export function resolveReviewFieldPreference({
             catalogKeys.includes(fieldKey),
         ),
     );
-    const remainingFieldKeys = catalogKeys.filter(
-        (fieldKey) => !preferredOrder.includes(fieldKey),
+    const missingSystemFieldKeys = catalogKeys.filter(
+        (fieldKey) =>
+            isSystemListField(fieldKey) && !preferredOrder.includes(fieldKey),
     );
-    const fieldOrder = [...preferredOrder, ...remainingFieldKeys];
+    const remainingRawFieldKeys = catalogKeys.filter(
+        (fieldKey) =>
+            !isSystemListField(fieldKey) && !preferredOrder.includes(fieldKey),
+    );
+    const firstRawFieldIndex = preferredOrder.findIndex(
+        (fieldKey) => !isSystemListField(fieldKey),
+    );
+    const fieldOrder =
+        firstRawFieldIndex < 0
+            ? [...preferredOrder, ...missingSystemFieldKeys, ...remainingRawFieldKeys]
+            : [
+                  ...preferredOrder.slice(0, firstRawFieldIndex),
+                  ...missingSystemFieldKeys,
+                  ...preferredOrder.slice(firstRawFieldIndex),
+                  ...remainingRawFieldKeys,
+              ];
 
     return {
         hasSavedPreference: true,
