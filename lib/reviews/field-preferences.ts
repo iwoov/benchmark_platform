@@ -42,6 +42,21 @@ function isDefaultListVisibleField(fieldKey: string) {
     return systemField ? systemField.defaultListVisible : true;
 }
 
+function sortSystemFieldsByDefaultOrder(fieldKeys: string[]) {
+    const defaultOrder = new Map<string, number>(
+        reviewQuestionListSystemFieldOptions.map((field, index) => [
+            field.key,
+            index,
+        ]),
+    );
+
+    return [...fieldKeys].sort(
+        (left, right) =>
+            (defaultOrder.get(left) ?? Number.MAX_SAFE_INTEGER) -
+            (defaultOrder.get(right) ?? Number.MAX_SAFE_INTEGER),
+    );
+}
+
 function normalizeFieldKeys(fieldKeys: string[]) {
     const normalized: string[] = [];
 
@@ -175,26 +190,30 @@ export function resolveReviewFieldPreference({
             catalogKeys.includes(fieldKey),
         ),
     );
-    const missingSystemFieldKeys = catalogKeys.filter(
-        (fieldKey) =>
-            isSystemListField(fieldKey) && !preferredOrder.includes(fieldKey),
+    const preferredSystemFieldKeys = sortSystemFieldsByDefaultOrder(
+        preferredOrder.filter(isSystemListField),
+    );
+    const preferredRawFieldKeys = preferredOrder.filter(
+        (fieldKey) => !isSystemListField(fieldKey),
+    );
+    const missingSystemFieldKeys = sortSystemFieldsByDefaultOrder(
+        catalogKeys.filter(
+            (fieldKey) =>
+                isSystemListField(fieldKey) &&
+                !preferredSystemFieldKeys.includes(fieldKey),
+        ),
     );
     const remainingRawFieldKeys = catalogKeys.filter(
         (fieldKey) =>
-            !isSystemListField(fieldKey) && !preferredOrder.includes(fieldKey),
+            !isSystemListField(fieldKey) &&
+            !preferredRawFieldKeys.includes(fieldKey),
     );
-    const firstRawFieldIndex = preferredOrder.findIndex(
-        (fieldKey) => !isSystemListField(fieldKey),
-    );
-    const fieldOrder =
-        firstRawFieldIndex < 0
-            ? [...preferredOrder, ...missingSystemFieldKeys, ...remainingRawFieldKeys]
-            : [
-                  ...preferredOrder.slice(0, firstRawFieldIndex),
-                  ...missingSystemFieldKeys,
-                  ...preferredOrder.slice(firstRawFieldIndex),
-                  ...remainingRawFieldKeys,
-              ];
+    const fieldOrder = [
+        ...preferredSystemFieldKeys,
+        ...missingSystemFieldKeys,
+        ...preferredRawFieldKeys,
+        ...remainingRawFieldKeys,
+    ];
 
     return {
         hasSavedPreference: true,

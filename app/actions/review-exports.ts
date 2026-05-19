@@ -209,10 +209,17 @@ export async function exportReviewQuestionsAction(
             ? statusCondition.value
             : null;
     const uniqueQuestionIds = [...new Set(parsed.data.questionIds)];
+    const shouldIncludeHistoricalRevisions =
+        parsed.data.scope === "selected" ||
+        (parsed.data.scope === "filteredAll" &&
+            datasourceCondition?.operator === "equals" &&
+            Boolean(datasourceCondition.value.trim()));
     const questions = await prisma.question.findMany({
         where: {
             projectId: parsed.data.projectId,
-            isLatestRevision: true,
+            isLatestRevision: shouldIncludeHistoricalRevisions
+                ? undefined
+                : true,
             ...(parsed.data.scope === "selected"
                 ? {
                       id: {
@@ -221,22 +228,27 @@ export async function exportReviewQuestionsAction(
                   }
                 : {}),
             status:
-                statusCondition?.operator === "equals" && validStatusValue
+                parsed.data.scope === "filteredAll" &&
+                statusCondition?.operator === "equals" &&
+                validStatusValue
                     ? {
                           equals: validStatusValue,
                       }
-                    : statusCondition?.operator === "notEquals" &&
+                    : parsed.data.scope === "filteredAll" &&
+                        statusCondition?.operator === "notEquals" &&
                         validStatusValue
                       ? {
                             not: validStatusValue,
                         }
                       : undefined,
             datasourceId:
+                parsed.data.scope === "filteredAll" &&
                 datasourceCondition?.operator === "equals"
                     ? {
                           equals: datasourceCondition.value,
                       }
-                    : datasourceCondition?.operator === "notEquals"
+                    : parsed.data.scope === "filteredAll" &&
+                        datasourceCondition?.operator === "notEquals"
                       ? {
                             not: datasourceCondition.value,
                         }
@@ -284,6 +296,10 @@ export async function exportReviewQuestionsAction(
         })),
     );
     const filteredQuestions = visibleQuestions.filter((question) => {
+        if (parsed.data.scope === "selected") {
+            return true;
+        }
+
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
         const reviewSummary = reviewSummaryMap.get(
@@ -878,25 +894,37 @@ export async function exportReviewReportAction(
             ? statusCondition.value
             : null;
     const uniqueQuestionIds = [...new Set(parsed.data.questionIds)];
+    const shouldIncludeHistoricalRevisions =
+        parsed.data.scope === "selected" ||
+        (parsed.data.scope === "filteredAll" &&
+            datasourceCondition?.operator === "equals" &&
+            Boolean(datasourceCondition.value.trim()));
 
     const questions = await prisma.question.findMany({
         where: {
             projectId,
-            isLatestRevision: true,
+            isLatestRevision: shouldIncludeHistoricalRevisions
+                ? undefined
+                : true,
             ...(parsed.data.scope === "selected"
                 ? { id: { in: uniqueQuestionIds } }
                 : {}),
             status:
-                statusCondition?.operator === "equals" && validStatusValue
+                parsed.data.scope === "filteredAll" &&
+                statusCondition?.operator === "equals" &&
+                validStatusValue
                     ? { equals: validStatusValue }
-                    : statusCondition?.operator === "notEquals" &&
+                    : parsed.data.scope === "filteredAll" &&
+                        statusCondition?.operator === "notEquals" &&
                         validStatusValue
                       ? { not: validStatusValue }
                       : undefined,
             datasourceId:
+                parsed.data.scope === "filteredAll" &&
                 datasourceCondition?.operator === "equals"
                     ? { equals: datasourceCondition.value }
-                    : datasourceCondition?.operator === "notEquals"
+                    : parsed.data.scope === "filteredAll" &&
+                        datasourceCondition?.operator === "notEquals"
                       ? { not: datasourceCondition.value }
                       : undefined,
         },
@@ -935,6 +963,10 @@ export async function exportReviewReportAction(
 
     // --- Apply in-memory filters ---
     const filteredQuestions = visibleQuestions.filter((question) => {
+        if (parsed.data.scope === "selected") {
+            return true;
+        }
+
         const rawRecord = normalizeRawRecord(question.metadata);
         const sourceRowNumber = extractSourceRowNumber(question.metadata);
         const reviewSummary = reviewSummaryMap.get(
