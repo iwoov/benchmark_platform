@@ -181,7 +181,7 @@ export function CreateUserForm({
                                 <input key={subjectId} type="hidden" name="subjectIds" value={subjectId} />
                             ))}
                             <p className="text-xs leading-relaxed text-muted-foreground">
-                                未分配学科的普通用户或平台管理员将看不到任何题目。学科定义可在超级管理员的"学科管理"页面维护。
+                                未分配学科的普通用户或平台管理员将看不到任何题目。学科定义可在超级管理员的&quot;学科管理&quot;页面维护。
                             </p>
                             {!subjects.length && (
                                 <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm">

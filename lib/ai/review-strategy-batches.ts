@@ -259,6 +259,13 @@ export type AiReviewStrategyBatchRunView = {
     }>;
 };
 
+export type AiReviewStrategyBatchRunPage = {
+    runs: AiReviewStrategyBatchRunView[];
+    page: number;
+    pageSize: number;
+    total: number;
+};
+
 function mapBatchRunView(run: {
     id: string;
     status: BatchRunStatus;
@@ -339,11 +346,27 @@ export async function getAiReviewStrategyBatchRunsForProject(
         userId: string;
         platformRole: PlatformRoleValue;
     },
-    limit = 10,
-) {
+    options: {
+        page?: number;
+        pageSize?: number;
+    } = {},
+): Promise<AiReviewStrategyBatchRunPage> {
     if (!process.env.DATABASE_URL) {
-        return [];
+        return {
+            runs: [],
+            page: 1,
+            pageSize: 20,
+            total: 0,
+        };
     }
+
+    const pageSize = [20, 50, 100].includes(options.pageSize ?? 20)
+        ? (options.pageSize ?? 20)
+        : 20;
+    const requestedPage =
+        Number.isInteger(options.page) && (options.page ?? 0) > 0
+            ? (options.page as number)
+            : 1;
 
     const scopeAdminId = viewer
         ? await resolveUserAdminScopeId(viewer.userId, viewer.platformRole)
@@ -401,17 +424,38 @@ export async function getAiReviewStrategyBatchRunsForProject(
         },
     } satisfies Prisma.AiReviewStrategyBatchRunInclude;
 
-    const activeRuns = await prisma.aiReviewStrategyBatchRun.findMany({
-        where: {
-            ...baseWhere,
-            status: {
-                in: [...ACTIVE_BATCH_STATUSES],
-            },
+    const activeWhere = {
+        ...baseWhere,
+        status: {
+            in: [...ACTIVE_BATCH_STATUSES],
         },
-        orderBy: [{ createdAt: "desc" }],
-        take: limit,
-        include,
-    });
+    } satisfies Prisma.AiReviewStrategyBatchRunWhereInput;
+    const completedWhere = {
+        ...baseWhere,
+        status: {
+            notIn: [...ACTIVE_BATCH_STATUSES],
+        },
+    } satisfies Prisma.AiReviewStrategyBatchRunWhereInput;
+    const [activeTotal, completedTotal] = await Promise.all([
+        prisma.aiReviewStrategyBatchRun.count({
+            where: activeWhere,
+        }),
+        prisma.aiReviewStrategyBatchRun.count({
+            where: completedWhere,
+        }),
+    ]);
+    const total = activeTotal + completedTotal;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * pageSize;
+    const activeRuns =
+        offset < activeTotal
+            ? await prisma.aiReviewStrategyBatchRun.findMany({
+                  where: activeWhere,
+                  orderBy: [{ createdAt: "desc" }],
+                  include,
+              })
+            : [];
 
     activeRuns.sort((left, right) => {
         const statusDiff =
@@ -425,22 +469,21 @@ export async function getAiReviewStrategyBatchRunsForProject(
         return right.createdAt.getTime() - left.createdAt.getTime();
     });
 
+    const activePageRuns = activeRuns.slice(offset, offset + pageSize);
+    const completedTake = pageSize - activePageRuns.length;
+    const completedSkip = Math.max(0, offset - activeTotal);
     const completedRuns =
-        activeRuns.length >= limit
-            ? []
-            : await prisma.aiReviewStrategyBatchRun.findMany({
-                  where: {
-                      ...baseWhere,
-                      status: {
-                          notIn: [...ACTIVE_BATCH_STATUSES],
-                      },
-                  },
+        completedTake > 0
+            ? await prisma.aiReviewStrategyBatchRun.findMany({
+                  where: completedWhere,
                   orderBy: [{ createdAt: "desc" }],
-                  take: limit - activeRuns.length,
+                  skip: completedSkip,
+                  take: completedTake,
                   include,
-              });
+              })
+            : [];
 
-    return [...activeRuns, ...completedRuns]
+    const runs = [...activePageRuns, ...completedRuns]
         .map((run) => ({
             ...run,
             items: run.items.filter((item) =>
@@ -452,6 +495,13 @@ export async function getAiReviewStrategyBatchRunsForProject(
         }))
         .filter((run) => allowedPrimaryValues === null || run.items.length > 0)
         .map(mapBatchRunView);
+
+    return {
+        runs,
+        page,
+        pageSize,
+        total,
+    };
 }
 
 async function syncBatchRunState(batchRunId: string) {

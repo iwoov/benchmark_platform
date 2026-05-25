@@ -115,7 +115,7 @@ type FieldDefinition = {
 
 type ExportFormat = "excel" | "json" | "markdown";
 type ExportScope = "selected" | "filteredAll";
-type ReportFormat = "markdown" | "html";
+type ReportFormat = "markdown" | "html" | "pdf";
 
 type ExportFieldOption = {
     value: string;
@@ -147,6 +147,11 @@ const defaultSystemListColumns: ListColumn[] = [
     {
         key: manualReviewStatusFieldKey,
         label: "人工审核",
+        width: 140,
+    },
+    {
+        key: manualReviewReviewerFieldKey,
+        label: "人工审核人",
         width: 140,
     },
     {
@@ -326,7 +331,7 @@ export function ReviewQuestionList({
         "raw:question_id",
         "manualReviewStatus",
         "reviewComment",
-        "datasourceId",
+        "datasourceName",
     ]);
     const [isExportingReport, setIsExportingReport] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);
@@ -921,7 +926,11 @@ export function ReviewQuestionList({
             return;
         }
 
-        if (!reportDetailFields.length) {
+        const normalizedReportDetailFields = reportDetailFields.filter(
+            (fieldKey) => fieldKey !== "datasourceId",
+        );
+
+        if (!normalizedReportDetailFields.length) {
             toast.warning({
                 title: "请选择详情字段",
                 description: "至少选择 1 个详情字段后再导出。",
@@ -938,7 +947,7 @@ export function ReviewQuestionList({
                 questionIds: selectedQuestions.map((question) => question.id),
                 filters: activeConditions,
                 subjectFieldKey: reportSubjectFieldKey,
-                detailFieldKeys: reportDetailFields,
+                detailFieldKeys: normalizedReportDetailFields,
                 rejectedOnlyInDetails: reportRejectedOnlyInDetails,
                 format: reportFormat,
             });
@@ -2272,6 +2281,10 @@ export function ReviewQuestionList({
                                         {
                                             value: "html",
                                             label: "HTML (.html) — 可通过浏览器打印为 PDF",
+                                        },
+                                        {
+                                            value: "pdf",
+                                            label: "PDF (.pdf)",
                                         },
                                     ]}
                                     size="middle"

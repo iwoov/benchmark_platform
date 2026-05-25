@@ -1186,6 +1186,39 @@
     padding: 0;
 }
 
+.review-response-card {
+    display: grid;
+    gap: 10px;
+}
+
+.review-response-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.review-response-source {
+    color: var(--foreground);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.review-response-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.review-response-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 .revision-panel {
     display: grid;
     gap: 14px;

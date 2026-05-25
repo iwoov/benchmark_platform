@@ -29,6 +29,7 @@ function getInitialTheme(): Theme {
 
 function resolveTheme(theme: Theme): Exclude<Theme, "system"> {
   if (theme !== "system") return theme;
+  if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -37,14 +38,10 @@ function applyTheme(theme: Exclude<Theme, "system">) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<Exclude<Theme, "system">>("light");
-
-  useEffect(() => {
-    const initial = getInitialTheme();
-    setThemeState(initial);
-    setResolvedTheme(resolveTheme(initial));
-  }, []);
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<Exclude<Theme, "system">>(
+    () => resolveTheme(getInitialTheme()),
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;

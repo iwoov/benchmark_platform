@@ -3,6 +3,7 @@ import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
 import { getProjectReviewFieldCatalog } from "@/lib/reviews/field-preferences";
 import type { ReviewQuestionFilterCondition } from "@/lib/reviews/question-list-filters";
+import { reviewQuestionListSystemFieldKeySet } from "@/lib/reviews/system-fields";
 import {
     buildReviewCompositeKey,
     getLatestReviewSummaryMap,
@@ -73,6 +74,89 @@ function extractRawRecord(metadata: unknown) {
             ([key, value]) => [key, normalizeRawValue(value)],
         ),
     );
+}
+
+export type ReviewResponse = {
+    source: string;
+    reviewDate: string;
+    teamLeadComment: string;
+    otherNotesChangesMade: string;
+    agreementWithRejection: string;
+};
+
+function normalizeReviewResponseText(value: unknown) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    if (typeof value === "string") {
+        return value.trim();
+    }
+
+    if (
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        typeof value === "bigint"
+    ) {
+        return String(value);
+    }
+
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function readReviewResponsesValue(metadata: unknown) {
+    const rawValue = extractRawRecordValues(metadata).review_responses;
+
+    if (Array.isArray(rawValue)) {
+        return rawValue;
+    }
+
+    if (typeof rawValue !== "string") {
+        return [];
+    }
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+        return [];
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function extractReviewResponses(metadata: unknown) {
+    return readReviewResponsesValue(metadata)
+        .map((item) => {
+            if (!item || typeof item !== "object" || Array.isArray(item)) {
+                return null;
+            }
+
+            const record = item as Record<string, unknown>;
+            const response = {
+                source: normalizeReviewResponseText(record.source),
+                reviewDate: normalizeReviewResponseText(record.review_date),
+                teamLeadComment: normalizeReviewResponseText(
+                    record.team_lead_comment,
+                ),
+                otherNotesChangesMade: normalizeReviewResponseText(
+                    record.other_notes_changes_made,
+                ),
+                agreementWithRejection: normalizeReviewResponseText(
+                    record.agreement_with_rejection,
+                ),
+            } satisfies ReviewResponse;
+
+            return Object.values(response).some(Boolean) ? response : null;
+        })
+        .filter((item): item is ReviewResponse => Boolean(item));
 }
 
 function normalizeComparableValue(value: unknown): unknown {
@@ -370,6 +454,7 @@ export type ReviewQuestionDetail = {
     sourceRowNumber: number | null;
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
+    reviewResponses: ReviewResponse[];
     businessQuestionKey: string | null;
     revisionNo: number;
     isLatestRevision: boolean;
@@ -1090,7 +1175,9 @@ export async function getReviewQuestionListFilterMeta(
             syncConfig: true,
         },
     });
-    const rawFieldOptions = await getProjectReviewFieldCatalog(projectId);
+    const rawFieldOptions = (
+        await getProjectReviewFieldCatalog(projectId)
+    ).filter((field) => !reviewQuestionListSystemFieldKeySet.has(field.key));
 
     return {
         datasourceOptions: datasources.map((datasource) => ({
@@ -1305,6 +1392,7 @@ export async function getReviewQuestionDetail(
         sourceRowNumber: extractSourceRowNumber(question.metadata),
         rawRecord: extractRawRecord(question.metadata),
         rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        reviewResponses: extractReviewResponses(question.metadata),
         businessQuestionKey: question.businessQuestionKey,
         revisionNo: question.revisionNo,
         isLatestRevision: question.isLatestRevision,

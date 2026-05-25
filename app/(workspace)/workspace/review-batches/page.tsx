@@ -5,6 +5,17 @@ import { getWorkspaceContext } from "@/lib/workspace/context";
 
 export const dynamic = "force-dynamic";
 
+function readFirstSearchParam(value: string | string[] | undefined) {
+    return Array.isArray(value) ? value[0] : value;
+}
+
+function parsePositiveInt(value: string | string[] | undefined, fallback: number) {
+    const rawValue = readFirstSearchParam(value);
+    const parsed = Number(rawValue);
+
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export default async function WorkspaceReviewBatchesPage({
     searchParams,
 }: {
@@ -23,13 +34,18 @@ export default async function WorkspaceReviewBatchesPage({
     );
     const projectIds = projects.map((project) => project.id);
     const resolvedSearchParams = (await searchParams) ?? {};
-    const requestedProjectId = Array.isArray(resolvedSearchParams.projectId)
-        ? resolvedSearchParams.projectId[0]
-        : resolvedSearchParams.projectId;
+    const requestedProjectId = readFirstSearchParam(
+        resolvedSearchParams.projectId,
+    );
+    const requestedPage = parsePositiveInt(resolvedSearchParams.page, 1);
+    const requestedPageSize = parsePositiveInt(
+        resolvedSearchParams.pageSize,
+        20,
+    );
     const selectedProjectId = projectIds.includes(requestedProjectId ?? "")
         ? (requestedProjectId as string)
         : (projectIds[0] ?? "");
-    const initialRuns = selectedProjectId
+    const initialRunPage = selectedProjectId
         ? await getAiReviewStrategyBatchRunsForProject(
               selectedProjectId,
               session?.user
@@ -38,14 +54,26 @@ export default async function WorkspaceReviewBatchesPage({
                         platformRole: session.user.platformRole,
                     }
                   : undefined,
+              {
+                  page: requestedPage,
+                  pageSize: requestedPageSize,
+              },
           )
-        : [];
+        : {
+              runs: [],
+              page: 1,
+              pageSize: 20,
+              total: 0,
+          };
 
     return (
         <AiReviewBatchRunConsole
             projects={projects}
             selectedProjectId={selectedProjectId}
-            initialRuns={initialRuns}
+            initialRuns={initialRunPage.runs}
+            currentPage={initialRunPage.page}
+            pageSize={initialRunPage.pageSize}
+            totalRuns={initialRunPage.total}
             listPath="/workspace/review-batches"
         />
     );

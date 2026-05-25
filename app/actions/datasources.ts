@@ -223,6 +223,7 @@ export async function importProjectDataAction(
                 {
                     id: string;
                     revisionNo: number;
+                    isLatestRevision: boolean;
                     title: string;
                     content: string;
                     answer: string | null;
@@ -234,18 +235,22 @@ export async function importProjectDataAction(
             >();
 
             if (revisionKeys.length) {
-                const latestQuestions = await tx.question.findMany({
+                const existingQuestions = await tx.question.findMany({
                     where: {
                         projectId: project.id,
                         businessQuestionKey: {
                             in: revisionKeys,
                         },
-                        isLatestRevision: true,
                     },
+                    orderBy: [
+                        { businessQuestionKey: "asc" },
+                        { revisionNo: "desc" },
+                    ],
                     select: {
                         id: true,
                         businessQuestionKey: true,
                         revisionNo: true,
+                        isLatestRevision: true,
                         title: true,
                         content: true,
                         answer: true,
@@ -256,14 +261,27 @@ export async function importProjectDataAction(
                     },
                 });
 
-                latestQuestions.forEach((question) => {
+                existingQuestions.forEach((question) => {
                     if (!question.businessQuestionKey) {
+                        return;
+                    }
+
+                    const existing = latestRevisionMap.get(
+                        question.businessQuestionKey,
+                    );
+                    if (
+                        existing &&
+                        (existing.revisionNo > question.revisionNo ||
+                            (existing.revisionNo === question.revisionNo &&
+                                existing.isLatestRevision))
+                    ) {
                         return;
                     }
 
                     latestRevisionMap.set(question.businessQuestionKey, {
                         id: question.id,
                         revisionNo: question.revisionNo,
+                        isLatestRevision: question.isLatestRevision,
                         title: question.title,
                         content: question.content,
                         answer: question.answer,
@@ -342,9 +360,13 @@ export async function importProjectDataAction(
                 });
 
                 if (previousRevision) {
-                    await tx.question.update({
+                    await tx.question.updateMany({
                         where: {
-                            id: previousRevision.id,
+                            projectId: project.id,
+                            businessQuestionKey: row.businessQuestionKey,
+                            id: {
+                                not: createdQuestion.id,
+                            },
                         },
                         data: {
                             isLatestRevision: false,
@@ -361,6 +383,7 @@ export async function importProjectDataAction(
                     latestRevisionMap.set(row.businessQuestionKey, {
                         id: createdQuestion.id,
                         revisionNo,
+                        isLatestRevision: true,
                         title: row.title,
                         content: row.content,
                         answer: row.answer,

@@ -379,7 +379,7 @@ function ReviewerOverviewView({ data }: { data: NonNullable<WorkspaceOverviewDat
                             </Link>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            "我近 7 天完成"只统计你本人提交的人工审核记录。
+                            &quot;我近 7 天完成&quot;只统计你本人提交的人工审核记录。
                         </p>
                     </CardContent>
                 </Card>

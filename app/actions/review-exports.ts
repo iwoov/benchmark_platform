@@ -1,7 +1,9 @@
 "use server";
 
+import { createRequire } from "node:module";
 import { z } from "zod";
 import * as XLSX from "xlsx";
+import PDFDocument from "pdfkit";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import {
@@ -87,6 +89,8 @@ const reviewStatusLabelMap: Record<string, string> = {
     PASS: "通过",
     REJECT: "驳回",
 };
+
+const requireFromProject = createRequire(`${process.cwd()}/package.json`);
 
 function normalizeRawRecord(metadata: unknown) {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -614,7 +618,7 @@ export async function exportReviewQuestionsAction(
 // Export review report
 // ---------------------------------------------------------------------------
 
-const reportFormatSchema = z.enum(["markdown", "html"]);
+const reportFormatSchema = z.enum(["markdown", "html", "pdf"]);
 
 const exportReviewReportSchema = z.object({
     projectId: z.string().trim().min(1, "缺少项目 ID"),
@@ -643,6 +647,12 @@ type SubjectGroupStats = {
 type SubjectGroupDetail = {
     subject: string;
     rows: Array<Record<string, string>>;
+};
+
+type PdfTableColumn<T> = {
+    header: string;
+    width: number;
+    getValue: (row: T) => string | number;
 };
 
 function percent(numerator: number, denominator: number) {
@@ -720,6 +730,450 @@ function buildReportMarkdown(
     }
 
     return lines.join("\n");
+}
+
+function resolvePdfFontPath(weight: "regular" | "semibold") {
+    const fontPath =
+        weight === "semibold"
+            ? "@expo-google-fonts/noto-sans-sc/600SemiBold/NotoSansSC_600SemiBold.ttf"
+            : "@expo-google-fonts/noto-sans-sc/400Regular/NotoSansSC_400Regular.ttf";
+
+    return requireFromProject.resolve(fontPath);
+}
+
+async function buildReportPdf(
+    projectName: string,
+    datePart: string,
+    overallStats: SubjectGroupStats,
+    groupStats: SubjectGroupStats[],
+    groupDetails: SubjectGroupDetail[],
+    detailHeaders: string[],
+) {
+    const doc = new PDFDocument({
+        size: "A4",
+        margin: 40,
+        bufferPages: true,
+        info: {
+            Title: `审核报告 - ${projectName}`,
+            Author: "EvalCheck",
+            Subject: "审核报告",
+        },
+    });
+    const chunks: Buffer[] = [];
+    const pdfBufferPromise = new Promise<Buffer>((resolve, reject) => {
+        doc.on("data", (chunk: Buffer | Uint8Array) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
+        doc.on("error", reject);
+    });
+
+    doc.registerFont("report-regular", resolvePdfFontPath("regular"));
+    doc.registerFont("report-semibold", resolvePdfFontPath("semibold"));
+
+    const margin = doc.page.margins.left;
+    const contentWidth = doc.page.width - margin * 2;
+    const bottomLimit = () => doc.page.height - doc.page.margins.bottom;
+
+    function ensureSpace(height: number) {
+        if (doc.y + height > bottomLimit()) {
+            doc.addPage();
+        }
+    }
+
+    function textHeight(
+        text: string,
+        width: number,
+        fontSize: number,
+        fontName = "report-regular",
+    ) {
+        doc.font(fontName).fontSize(fontSize);
+        return doc.heightOfString(text || " ", {
+            width,
+            lineGap: 2,
+        });
+    }
+
+    function wrapTextLines(
+        text: string,
+        width: number,
+        fontSize: number,
+        fontName = "report-regular",
+    ) {
+        doc.font(fontName).fontSize(fontSize);
+
+        const lines: string[] = [];
+        const paragraphs = (text || " ")
+            .replaceAll("\r\n", "\n")
+            .replaceAll("\r", "\n")
+            .split("\n");
+
+        for (const paragraph of paragraphs) {
+            if (!paragraph) {
+                lines.push(" ");
+                continue;
+            }
+
+            let line = "";
+
+            for (const char of Array.from(paragraph)) {
+                const candidate = `${line}${char}`;
+
+                if (
+                    !line ||
+                    doc.widthOfString(candidate, { characterSpacing: 0 }) <=
+                        width
+                ) {
+                    line = candidate;
+                    continue;
+                }
+
+                lines.push(line);
+                line = char;
+            }
+
+            if (line) {
+                lines.push(line);
+            }
+        }
+
+        return lines;
+    }
+
+    function drawPagedText(
+        text: string,
+        x: number,
+        width: number,
+        options: {
+            fontName?: string;
+            fontSize?: number;
+            color?: string;
+            lineGap?: number;
+        } = {},
+    ) {
+        const fontName = options.fontName ?? "report-regular";
+        const fontSize = options.fontSize ?? 9.5;
+        const color = options.color ?? "#111827";
+        const lineGap = options.lineGap ?? 1.5;
+        const lines = wrapTextLines(text, width, fontSize, fontName);
+
+        doc.font(fontName).fontSize(fontSize).fillColor(color);
+
+        for (const line of lines) {
+            const lineHeight = doc.currentLineHeight() + lineGap;
+
+            if (doc.y + lineHeight > bottomLimit()) {
+                doc.addPage();
+            }
+
+            doc.font(fontName)
+                .fontSize(fontSize)
+                .fillColor(color)
+                .text(line, x, doc.y, {
+                    width,
+                    lineGap: 0,
+                    lineBreak: false,
+                });
+            doc.y += lineGap;
+        }
+    }
+
+    function drawSectionTitle(text: string) {
+        ensureSpace(38);
+        doc.moveDown(0.7);
+        doc.font("report-semibold")
+            .fontSize(16)
+            .fillColor("#111827")
+            .text(text, margin, doc.y, { width: contentWidth });
+        doc.moveDown(0.5);
+    }
+
+    function drawSubsectionTitle(text: string) {
+        ensureSpace(30);
+        doc.moveDown(0.45);
+        doc.font("report-semibold")
+            .fontSize(13)
+            .fillColor("#374151")
+            .text(text, margin, doc.y, { width: contentWidth });
+        doc.moveDown(0.35);
+    }
+
+    function drawParagraph(text: string, options?: { muted?: boolean }) {
+        const normalized = text.trim() ? text : " ";
+        const height = textHeight(normalized, contentWidth, 10.5);
+        ensureSpace(Math.min(height + 6, 72));
+        doc.font("report-regular")
+            .fontSize(10.5)
+            .fillColor(options?.muted ? "#6b7280" : "#1f2937")
+            .text(normalized, margin, doc.y, {
+                width: contentWidth,
+                lineGap: 2,
+            });
+        doc.moveDown(0.25);
+    }
+
+    function drawDivider() {
+        ensureSpace(16);
+        const y = doc.y + 5;
+        doc.moveTo(margin, y)
+            .lineTo(margin + contentWidth, y)
+            .lineWidth(0.5)
+            .strokeColor("#e5e7eb")
+            .stroke();
+        doc.y = y + 10;
+    }
+
+    function drawTable<T>(columns: PdfTableColumn<T>[], rows: T[]) {
+        const paddingX = 6;
+        const paddingY = 5;
+        const headerHeight = 24;
+
+        function drawHeader() {
+            ensureSpace(headerHeight + 12);
+            let x = margin;
+            const y = doc.y;
+
+            doc.rect(margin, y, contentWidth, headerHeight)
+                .fillColor("#f3f4f6")
+                .fill();
+
+            for (const column of columns) {
+                doc.rect(x, y, column.width, headerHeight)
+                    .lineWidth(0.5)
+                    .strokeColor("#d1d5db")
+                    .stroke();
+                doc.font("report-semibold")
+                    .fontSize(9.5)
+                    .fillColor("#111827")
+                    .text(column.header, x + paddingX, y + paddingY, {
+                        width: column.width - paddingX * 2,
+                        lineGap: 1,
+                    });
+                x += column.width;
+            }
+
+            doc.y = y + headerHeight;
+        }
+
+        drawHeader();
+
+        for (const row of rows) {
+            const cellHeights = columns.map((column) =>
+                textHeight(
+                    String(column.getValue(row) ?? ""),
+                    column.width - paddingX * 2,
+                    9.5,
+                ),
+            );
+            const rowHeight = Math.max(24, Math.max(...cellHeights) + paddingY * 2);
+
+            if (doc.y + rowHeight > bottomLimit()) {
+                doc.addPage();
+                drawHeader();
+            }
+
+            let x = margin;
+            const y = doc.y;
+
+            for (const column of columns) {
+                doc.rect(x, y, column.width, rowHeight)
+                    .lineWidth(0.5)
+                    .strokeColor("#d1d5db")
+                    .stroke();
+                doc.font("report-regular")
+                    .fontSize(9.5)
+                    .fillColor("#1f2937")
+                    .text(String(column.getValue(row) ?? ""), x + paddingX, y + paddingY, {
+                        width: column.width - paddingX * 2,
+                        lineGap: 1,
+                    });
+                x += column.width;
+            }
+
+            doc.y = y + rowHeight;
+        }
+
+        doc.moveDown(0.8);
+    }
+
+    function drawInlineFieldGrid(fields: Array<[string, string]>) {
+        if (!fields.length) return;
+
+        const columnGap = 10;
+        const columnsPerRow = Math.min(3, fields.length);
+        const columnWidth =
+            (contentWidth - columnGap * (columnsPerRow - 1)) / columnsPerRow;
+        const labelSize = 8.5;
+        const valueSize = 9.5;
+        const paddingY = 3;
+
+        for (let index = 0; index < fields.length; index += columnsPerRow) {
+            const rowFields = fields.slice(index, index + columnsPerRow);
+            const rowHeight = Math.max(
+                ...rowFields.map(([label, value]) => {
+                    const labelHeight = textHeight(
+                        label,
+                        columnWidth,
+                        labelSize,
+                        "report-semibold",
+                    );
+                    const valueHeight = textHeight(
+                        value || " ",
+                        columnWidth,
+                        valueSize,
+                    );
+                    return labelHeight + valueHeight + paddingY * 2;
+                }),
+            );
+
+            ensureSpace(rowHeight + 2);
+
+            const y = doc.y;
+
+            rowFields.forEach(([label, value], fieldIndex) => {
+                const x = margin + fieldIndex * (columnWidth + columnGap);
+                doc.font("report-semibold")
+                    .fontSize(labelSize)
+                    .fillColor("#6b7280")
+                    .text(label, x, y, {
+                        width: columnWidth,
+                        lineGap: 0,
+                    });
+                doc.font("report-regular")
+                    .fontSize(valueSize)
+                    .fillColor("#111827")
+                    .text(value || " ", x, y + 12, {
+                        width: columnWidth,
+                        lineGap: 1,
+                    });
+            });
+
+            doc.y = y + rowHeight + 2;
+        }
+
+        doc.moveDown(0.15);
+    }
+
+    function drawTextBlock(label: string, value: string) {
+        const normalized = value.trim() ? value.trim() : " ";
+        ensureSpace(36);
+        doc.font("report-semibold")
+            .fontSize(9)
+            .fillColor("#6b7280")
+            .text(label, margin, doc.y, { width: contentWidth });
+        doc.moveDown(0.1);
+        drawPagedText(normalized, margin, contentWidth, {
+            fontName: "report-regular",
+            fontSize: 9.5,
+            color: "#111827",
+            lineGap: 1.5,
+        });
+        doc.moveDown(0.25);
+    }
+
+    doc.font("report-semibold")
+        .fontSize(20)
+        .fillColor("#111827")
+        .text(`审核报告 - ${projectName}`, margin, doc.y, {
+            width: contentWidth,
+        });
+    doc.moveDown(0.35);
+    doc.font("report-regular")
+        .fontSize(10.5)
+        .fillColor("#6b7280")
+        .text(`导出时间：${datePart}`, margin, doc.y, { width: contentWidth });
+    drawDivider();
+
+    drawSectionTitle("一、总体概况");
+    drawTable(
+        [
+            { header: "指标", width: 160, getValue: (row) => row[0] },
+            { header: "数值", width: contentWidth - 160, getValue: (row) => row[1] },
+        ],
+        [
+            ["总题目数", overallStats.total],
+            ["已通过", overallStats.approved],
+            ["未通过", overallStats.rejected],
+            ["待审核", overallStats.pending],
+            ["通过率", overallStats.passRate],
+        ] as Array<[string, string | number]>,
+    );
+
+    drawSubsectionTitle("按学科统计");
+    drawTable(
+        [
+            { header: "学科", width: 152, getValue: (row) => row.subject },
+            { header: "总题目数", width: 72, getValue: (row) => row.total },
+            { header: "已通过", width: 66, getValue: (row) => row.approved },
+            { header: "未通过", width: 66, getValue: (row) => row.rejected },
+            { header: "待审核", width: 66, getValue: (row) => row.pending },
+            {
+                header: "通过率",
+                width: contentWidth - 152 - 72 - 66 - 66 - 66,
+                getValue: (row) => row.passRate,
+            },
+        ],
+        groupStats,
+    );
+
+    drawSectionTitle("二、分学科题目详情");
+
+    for (const group of groupDetails) {
+        drawSubsectionTitle(group.subject);
+
+        if (!group.rows.length) {
+            drawParagraph("（暂无题目）", { muted: true });
+            continue;
+        }
+
+        group.rows.forEach((row, index) => {
+            ensureSpace(28);
+            doc.font("report-semibold")
+                .fontSize(11)
+                .fillColor("#111827")
+                .text(`题目 ${index + 1}`, margin, doc.y, {
+                    width: contentWidth,
+                });
+            doc.moveDown(0.12);
+
+            const inlineFields: Array<[string, string]> = [];
+            const textBlocks: Array<[string, string]> = [];
+
+            for (const header of detailHeaders) {
+                const value = formatCellValue(row[header] ?? "").trim();
+
+                if (header === "审核意见") {
+                    textBlocks.push([header, value]);
+                } else {
+                    inlineFields.push([header, value]);
+                }
+            }
+
+            drawInlineFieldGrid(inlineFields);
+
+            for (const [label, value] of textBlocks) {
+                drawTextBlock(label, value);
+            }
+
+            drawDivider();
+        });
+    }
+
+    const pageRange = doc.bufferedPageRange();
+    for (let i = pageRange.start; i < pageRange.start + pageRange.count; i += 1) {
+        doc.switchToPage(i);
+        doc.font("report-regular")
+            .fontSize(9)
+            .fillColor("#9ca3af")
+            .text(`${i + 1} / ${pageRange.count}`, margin, doc.page.height - 34, {
+                width: contentWidth,
+                align: "center",
+            });
+    }
+
+    doc.end();
+
+    return pdfBufferPromise;
 }
 
 function wrapMarkdownInHtml(markdown: string, projectName: string) {
@@ -1263,6 +1717,35 @@ export async function exportReviewReportAction(
             fileName: `${fileNameBase}.md`,
             mimeType: "text/markdown;charset=utf-8",
             base64: toBase64(markdown),
+        };
+    }
+
+    if (format === "pdf") {
+        let pdf: Buffer;
+
+        try {
+            pdf = await buildReportPdf(
+                projectName,
+                datePart,
+                overallStats,
+                groupStats,
+                groupDetails,
+                detailHeaders,
+            );
+        } catch (error) {
+            return {
+                error:
+                    error instanceof Error
+                        ? `PDF 生成失败：${error.message}`
+                        : "PDF 生成失败，请稍后再试。",
+            };
+        }
+
+        return {
+            success: `审核报告已生成，共 ${orderedQuestions.length} 道题目，${groupStats.length} 个学科。`,
+            fileName: `${fileNameBase}.pdf`,
+            mimeType: "application/pdf",
+            base64: toBase64(pdf),
         };
     }
 

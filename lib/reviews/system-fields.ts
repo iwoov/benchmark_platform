@@ -28,6 +28,11 @@ export const reviewQuestionListSystemFieldOptions = [
         defaultListVisible: true,
     },
     {
+        key: manualReviewReviewerFieldKey,
+        label: "人工审核人",
+        defaultListVisible: true,
+    },
+    {
         key: manualReviewUpdatedAtFieldKey,
         label: "人工审核时间",
         defaultListVisible: true,
@@ -37,13 +42,16 @@ export const reviewQuestionListSystemFieldOptions = [
         label: "更新时间",
         defaultListVisible: true,
     },
-    {
-        key: manualReviewReviewerFieldKey,
-        label: "人工审核人",
-        defaultListVisible: false,
-    },
 ] as const;
 
 export const reviewQuestionListSystemFieldKeySet = new Set<string>(
     reviewQuestionListSystemFieldOptions.map((field) => field.key),
 );
+
+export const requiredReviewQuestionListVisibleSystemFieldKeys = [
+    datasourceFieldKey,
+    revisionFieldKey,
+    aiReviewStatusFieldKey,
+    manualReviewStatusFieldKey,
+    manualReviewReviewerFieldKey,
+] as const;

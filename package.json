@@ -26,6 +26,7 @@
         "backfill:cleaned-question-id": "tsx scripts/backfill-cleaned-question-id.ts"
     },
     "dependencies": {
+        "@expo-google-fonts/noto-sans-sc": "^0.4.3",
         "@prisma/client": "^6.7.0",
         "@tailwindcss/postcss": "^4.3.0",
         "bcryptjs": "^3.0.2",
@@ -36,6 +37,7 @@
         "next": "^16.0.0",
         "next-auth": "^5.0.0-beta.29",
         "node-unrar-js": "^2.0.2",
+        "pdfkit": "^0.18.0",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
         "react-markdown": "^10.1.0",
@@ -48,6 +50,7 @@
     },
     "devDependencies": {
         "@types/node": "^24.5.2",
+        "@types/pdfkit": "^0.17.6",
         "@types/react": "^19.1.13",
         "@types/react-dom": "^19.1.9",
         "concurrently": "^9.2.1",

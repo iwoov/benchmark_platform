@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -26,6 +26,19 @@ export type ModalProps = {
   children: ReactNode;
 };
 
+function subscribeToClientMount(onStoreChange: () => void) {
+  queueMicrotask(onStoreChange);
+  return () => {};
+}
+
+function getClientMountSnapshot() {
+  return typeof document !== "undefined";
+}
+
+function getServerMountSnapshot() {
+  return false;
+}
+
 export function Modal({
   open,
   onOpenChange,
@@ -40,11 +53,11 @@ export function Modal({
   hideCloseButton = false,
   children,
 }: ModalProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    subscribeToClientMount,
+    getClientMountSnapshot,
+    getServerMountSnapshot,
+  );
 
   const close = useCallback(() => onOpenChange?.(false), [onOpenChange]);
 

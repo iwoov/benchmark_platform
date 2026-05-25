@@ -519,6 +519,20 @@ function getTranslatableFieldValue(value: unknown) {
     return String(value);
 }
 
+function formatReviewResponseDate(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    const date = new Date(trimmed);
+    if (Number.isNaN(date.getTime())) {
+        return trimmed;
+    }
+
+    return date.toLocaleDateString("zh-CN");
+}
+
 type CleaningFieldResultView = {
     fieldKey: string;
     originalValue: string | null;
@@ -1559,6 +1573,101 @@ export function QuestionReviewDetail({
                                         ]}
                                     />
                                 ) : null}
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {question.reviewResponses.length ? (
+                        <section className="content-surface review-content-surface">
+                            <div
+                                className="section-head"
+                                style={{ marginBottom: 16 }}
+                            >
+                                <div>
+                                    <h3 className="review-section-title">
+                                        修订回复
+                                    </h3>
+                                    <p className="muted review-page-copy">
+                                        展示导入数据中的 review_responses，便于核对题目修订反馈和处理说明。
+                                    </p>
+                                </div>
+                                <Tag color="processing">
+                                    {question.reviewResponses.length} 条
+                                </Tag>
+                            </div>
+
+                            <div className="detail-card-grid">
+                                {question.reviewResponses.map(
+                                    (response, index) => (
+                                        <div
+                                            key={`${response.source}-${response.reviewDate}-${index}`}
+                                            className="detail-field-card review-response-card"
+                                        >
+                                            <div className="review-response-head">
+                                                <div className="detail-field-label">
+                                                    回复 {index + 1}
+                                                </div>
+                                                <Space size={6} wrap>
+                                                    {response.agreementWithRejection ? (
+                                                        <Tag
+                                                            color={
+                                                                response.agreementWithRejection.toLowerCase() ===
+                                                                "agree"
+                                                                    ? "success"
+                                                                    : "gold"
+                                                            }
+                                                        >
+                                                            {
+                                                                response.agreementWithRejection
+                                                            }
+                                                        </Tag>
+                                                    ) : null}
+                                                    {response.reviewDate ? (
+                                                        <Tag>
+                                                            {formatReviewResponseDate(
+                                                                response.reviewDate,
+                                                            )}
+                                                        </Tag>
+                                                    ) : null}
+                                                </Space>
+                                            </div>
+
+                                            {response.source ? (
+                                                <div className="review-response-source">
+                                                    {response.source}
+                                                </div>
+                                            ) : null}
+
+                                            <div className="review-response-grid">
+                                                {response.teamLeadComment ? (
+                                                    <div>
+                                                        <div className="review-response-label">
+                                                            Team Lead Comment
+                                                        </div>
+                                                        <div className="detail-field-content">
+                                                            {
+                                                                response.teamLeadComment
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                                {response.otherNotesChangesMade ? (
+                                                    <div>
+                                                        <div className="review-response-label">
+                                                            Other Notes /
+                                                            Changes Made
+                                                        </div>
+                                                        <div className="detail-field-content">
+                                                            {
+                                                                response.otherNotesChangesMade
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    ),
+                                )}
                             </div>
                         </section>
                     ) : null}

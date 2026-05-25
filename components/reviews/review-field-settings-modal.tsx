@@ -15,7 +15,10 @@ import {
 } from "@/app/actions/review-field-preferences";
 import { useToast } from "@/components/ui/toast";
 import type { ResolvedReviewFieldPreference } from "@/lib/reviews/field-preferences";
-import { reviewQuestionListSystemFieldKeySet } from "@/lib/reviews/system-fields";
+import {
+    requiredReviewQuestionListVisibleSystemFieldKeys,
+    reviewQuestionListSystemFieldKeySet,
+} from "@/lib/reviews/system-fields";
 
 type FieldVisibilityDraft = {
     fieldOrder: string[];
@@ -63,6 +66,10 @@ function createDraft(fieldPreference: ResolvedReviewFieldPreference): FieldVisib
         detailVisibleFieldKeys: fieldPreference.detailVisibleFieldKeys,
     };
 }
+
+const requiredListVisibleFieldKeySet = new Set<string>(
+    requiredReviewQuestionListVisibleSystemFieldKeys,
+);
 
 export function ReviewFieldSettingsModal({
     open,
@@ -155,6 +162,10 @@ export function ReviewFieldSettingsModal({
 
     function isDetailVisibilityDisabled(fieldKey: string) {
         return reviewQuestionListSystemFieldKeySet.has(fieldKey);
+    }
+
+    function isListVisibilityDisabled(fieldKey: string) {
+        return requiredListVisibleFieldKeySet.has(fieldKey);
     }
 
     async function savePreference() {
@@ -399,6 +410,9 @@ export function ReviewFieldSettingsModal({
 
                                     <Checkbox
                                         checked={listVisibleSet.has(fieldKey)}
+                                        disabled={isListVisibilityDisabled(
+                                            fieldKey,
+                                        )}
                                         onChange={(event) =>
                                             updateVisibility(
                                                 fieldKey,

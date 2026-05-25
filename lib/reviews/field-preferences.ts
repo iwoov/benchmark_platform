@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { readRawFieldOrder } from "@/lib/datasources/sync-config";
 import {
+    requiredReviewQuestionListVisibleSystemFieldKeys,
     reviewQuestionListSystemFieldKeySet,
     reviewQuestionListSystemFieldOptions,
 } from "@/lib/reviews/system-fields";
@@ -40,6 +41,17 @@ function isDefaultListVisibleField(fieldKey: string) {
     );
 
     return systemField ? systemField.defaultListVisible : true;
+}
+
+function ensureRequiredListVisibleFields(
+    fieldKeys: string[],
+    catalogKeys: string[],
+) {
+    const requiredFieldKeys = requiredReviewQuestionListVisibleSystemFieldKeys
+        .filter((fieldKey) => catalogKeys.includes(fieldKey))
+        .filter((fieldKey) => !fieldKeys.includes(fieldKey));
+
+    return normalizeFieldKeys([...requiredFieldKeys, ...fieldKeys]);
 }
 
 function sortSystemFieldsByDefaultOrder(fieldKeys: string[]) {
@@ -219,10 +231,13 @@ export function resolveReviewFieldPreference({
         hasSavedPreference: true,
         fieldCatalog,
         fieldOrder,
-        listVisibleFieldKeys: normalizeFieldKeys(
-            preference.listVisibleFieldKeys.filter((fieldKey) =>
-                catalogKeys.includes(fieldKey),
+        listVisibleFieldKeys: ensureRequiredListVisibleFields(
+            normalizeFieldKeys(
+                preference.listVisibleFieldKeys.filter((fieldKey) =>
+                    catalogKeys.includes(fieldKey),
+                ),
             ),
+            catalogKeys,
         ),
         detailVisibleFieldKeys: normalizeFieldKeys(
             preference.detailVisibleFieldKeys.filter(
@@ -273,10 +288,13 @@ export function sanitizeReviewFieldPreferenceInput({
     return {
         version: 1,
         fieldOrder: [...normalizedFieldOrder, ...missingFieldKeys],
-        listVisibleFieldKeys: normalizeFieldKeys(
-            listVisibleFieldKeys.filter((fieldKey) =>
-                normalizedCatalogKeys.includes(fieldKey),
+        listVisibleFieldKeys: ensureRequiredListVisibleFields(
+            normalizeFieldKeys(
+                listVisibleFieldKeys.filter((fieldKey) =>
+                    normalizedCatalogKeys.includes(fieldKey),
+                ),
             ),
+            normalizedCatalogKeys,
         ),
         detailVisibleFieldKeys: normalizeFieldKeys(
             detailVisibleFieldKeys.filter(

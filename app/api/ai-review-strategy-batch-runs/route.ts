@@ -11,6 +11,8 @@ import {
 
 const querySchema = z.object({
     projectId: z.string().trim().min(1, "缺少项目 ID"),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).default(20),
 });
 
 const restartSchema = z.object({
@@ -33,6 +35,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsed = querySchema.safeParse({
         projectId: url.searchParams.get("projectId"),
+        page: url.searchParams.get("page") ?? undefined,
+        pageSize: url.searchParams.get("pageSize") ?? undefined,
     });
 
     if (!parsed.success) {
@@ -59,16 +63,23 @@ export async function GET(request: Request) {
         );
     }
 
-    const runs = await getAiReviewStrategyBatchRunsForProject(
+    const runPage = await getAiReviewStrategyBatchRunsForProject(
         parsed.data.projectId,
         {
             userId: session.user.id,
             platformRole: session.user.platformRole,
         },
+        {
+            page: parsed.data.page,
+            pageSize: parsed.data.pageSize,
+        },
     );
 
     return Response.json({
-        runs,
+        runs: runPage.runs,
+        page: runPage.page,
+        pageSize: runPage.pageSize,
+        total: runPage.total,
     });
 }
 

@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Empty, Popconfirm, Select, Space, Tag } from "@/components/ui/legacy-ui-adapters";
+import {
+    Button,
+    Empty,
+    Pagination,
+    Popconfirm,
+    Select,
+    Space,
+    Tag,
+} from "@/components/ui/legacy-ui-adapters";
 import { Bot, RefreshCcw } from "lucide-react";
 import {
     cancelAiReviewStrategyBatchRunAction,
@@ -99,16 +107,23 @@ export function AiReviewBatchRunConsole({
     projects,
     selectedProjectId,
     initialRuns,
+    currentPage,
+    pageSize,
+    totalRuns,
     listPath,
 }: {
     projects: ProjectOption[];
     selectedProjectId: string;
     initialRuns: BatchRunView[];
+    currentPage: number;
+    pageSize: number;
+    totalRuns: number;
     listPath: string;
 }) {
     const router = useRouter();
     const toast = useToast();
     const [runs, setRuns] = useState(initialRuns);
+    const [total, setTotal] = useState(totalRuns);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [cancellingBatchRunId, setCancellingBatchRunId] = useState<
         string | null
@@ -122,7 +137,31 @@ export function AiReviewBatchRunConsole({
 
     useEffect(() => {
         setRuns(initialRuns);
-    }, [initialRuns]);
+        setTotal(totalRuns);
+    }, [initialRuns, totalRuns]);
+
+    const buildListUrl = useCallback(
+        (next: { projectId?: string; page?: number; pageSize?: number }) => {
+            const params = new URLSearchParams({
+                projectId: next.projectId ?? selectedProjectId,
+                page: String(next.page ?? currentPage),
+                pageSize: String(next.pageSize ?? pageSize),
+            });
+
+            return `${listPath}?${params.toString()}`;
+        },
+        [currentPage, listPath, pageSize, selectedProjectId],
+    );
+
+    const buildApiUrl = useCallback(() => {
+        const params = new URLSearchParams({
+            projectId: selectedProjectId,
+            page: String(currentPage),
+            pageSize: String(pageSize),
+        });
+
+        return `/api/ai-review-strategy-batch-runs?${params.toString()}`;
+    }, [currentPage, pageSize, selectedProjectId]);
 
     useEffect(() => {
         if (!selectedProjectId) {
@@ -134,15 +173,13 @@ export function AiReviewBatchRunConsole({
 
         async function loadRuns() {
             try {
-                const response = await fetch(
-                    `/api/ai-review-strategy-batch-runs?projectId=${selectedProjectId}`,
-                    {
-                        cache: "no-store",
-                    },
-                );
+                const response = await fetch(buildApiUrl(), {
+                    cache: "no-store",
+                });
                 const payload = (await response.json().catch(() => null)) as {
                     error?: string;
                     runs?: BatchRunView[];
+                    total?: number;
                 } | null;
 
                 if (!response.ok) {
@@ -152,6 +189,7 @@ export function AiReviewBatchRunConsole({
                 if (!disposed) {
                     const nextRuns = payload?.runs ?? [];
                     setRuns(nextRuns);
+                    setTotal(payload?.total ?? 0);
                     timer = setTimeout(
                         loadRuns,
                         nextRuns.some((run) =>
@@ -176,21 +214,19 @@ export function AiReviewBatchRunConsole({
                 clearTimeout(timer);
             }
         };
-    }, [selectedProjectId]);
+    }, [buildApiUrl, selectedProjectId]);
 
     async function refreshRuns() {
         setIsRefreshing(true);
 
         try {
-            const response = await fetch(
-                `/api/ai-review-strategy-batch-runs?projectId=${selectedProjectId}`,
-                {
-                    cache: "no-store",
-                },
-            );
+            const response = await fetch(buildApiUrl(), {
+                cache: "no-store",
+            });
             const payload = (await response.json().catch(() => null)) as {
                 error?: string;
                 runs?: BatchRunView[];
+                total?: number;
             } | null;
 
             if (!response.ok) {
@@ -198,6 +234,7 @@ export function AiReviewBatchRunConsole({
             }
 
             setRuns(payload?.runs ?? []);
+            setTotal(payload?.total ?? 0);
         } catch (error) {
             toast.error({
                 title: "刷新批量任务失败",
@@ -309,7 +346,18 @@ export function AiReviewBatchRunConsole({
     }
 
     function pushProject(projectId: string) {
-        router.push(`${listPath}?projectId=${projectId}`);
+        router.push(buildListUrl({ projectId, page: 1 }));
+    }
+
+    function pushPage(page: number, nextPageSize?: number) {
+        const normalizedPageSize = nextPageSize ?? pageSize;
+
+        router.push(
+            buildListUrl({
+                page: normalizedPageSize === pageSize ? page : 1,
+                pageSize: normalizedPageSize,
+            }),
+        );
     }
 
     return (
@@ -574,6 +622,14 @@ export function AiReviewBatchRunConsole({
                                     </div>
                                 );
                             })}
+                            <Pagination
+                                current={currentPage}
+                                pageSize={pageSize}
+                                total={total}
+                                showSizeChanger
+                                pageSizeOptions={["20", "50", "100"]}
+                                onChange={pushPage}
+                            />
                         </div>
                     )}
                 </div>
