@@ -122,13 +122,16 @@ async function requireStrategyAdminAccess() {
 
 function revalidateStrategyPaths(questionId?: string) {
     revalidatePath("/admin/ai-strategies");
+    revalidatePath("/admin/evaluation-strategies");
     revalidatePath("/dashboard/ai-strategies");
+    revalidatePath("/workspace/evaluations");
 
     if (questionId) {
         revalidatePath(`/admin/review-tasks/${questionId}`);
         revalidatePath(`/admin/data-cleaning/${questionId}`);
         revalidatePath(`/workspace/reviews/${questionId}`);
         revalidatePath(`/workspace/data-cleaning/${questionId}`);
+        revalidatePath(`/workspace/evaluations/${questionId}`);
     }
 }
 

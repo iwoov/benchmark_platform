@@ -8,6 +8,7 @@ import {
     ClipboardCheck,
     Cpu,
     FileSearch,
+    Gauge,
     FolderKanban,
     LayoutDashboard,
     Layers3,
@@ -68,6 +69,7 @@ const adminSections: NavSection[] = [
             { href: "/admin/ai/models", label: "模型路由", icon: Cpu },
             { href: "/admin/ai/routes", label: "供应商", icon: PlugZap },
             { href: "/admin/ai-strategies", label: "AI 策略", icon: BrainCircuit },
+            { href: "/admin/evaluation-strategies", label: "评测策略", icon: Gauge },
         ],
     },
     {
@@ -96,6 +98,7 @@ const workspaceSections: NavSection[] = [
             { href: "/workspace/projects", label: "我的项目", icon: FolderKanban },
             { href: "/workspace/submissions", label: "出题任务", icon: PlugZap },
             { href: "/workspace/reviews", label: "数据质检", icon: ScrollText },
+            { href: "/workspace/evaluations", label: "数据评测", icon: Gauge },
             { href: "/workspace/data-cleaning", label: "数据清洗", icon: Sparkles },
             { href: "/workspace/review-batches", label: "批量任务", icon: Bot },
         ],
@@ -155,6 +158,7 @@ export function Sidebar({
                       }
                       if (
                           item.href === "/workspace/reviews" ||
+                          item.href === "/workspace/evaluations" ||
                           item.href === "/workspace/data-cleaning" ||
                           item.href === "/workspace/review-batches"
                       ) {
