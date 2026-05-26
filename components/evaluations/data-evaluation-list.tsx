@@ -39,6 +39,7 @@ type BatchRunResponse = {
     error?: string;
     summary?: {
         createdCount: number;
+        createdItemCount: number;
         skippedSuccessfulCount: number;
         skippedUnavailableCount: number;
         skippedActiveCount: number;
@@ -226,7 +227,8 @@ export function DataEvaluationList({
             const summary = payload.summary;
             const description = summary
                 ? [
-                      `新建 ${summary.createdCount} 个任务`,
+                      `新建 ${summary.createdCount} 个批量任务`,
+                      `执行项 ${summary.createdItemCount}`,
                       `跳过成功 ${summary.skippedSuccessfulCount}`,
                       `跳过排队/运行中 ${summary.skippedActiveCount}`,
                       summary.failedCount ? `失败 ${summary.failedCount}` : null,
@@ -558,7 +560,8 @@ export function DataEvaluationList({
                             模型 {selectedColumnCodes.length}
                         </Badge>
                         <Badge variant="outline">
-                            预计任务 {selectedRows.length * selectedColumnCodes.length}
+                            预计执行项{" "}
+                            {selectedRows.length * selectedColumnCodes.length}
                         </Badge>
                     </div>
                 </div>
