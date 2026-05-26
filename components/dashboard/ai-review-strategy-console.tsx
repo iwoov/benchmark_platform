@@ -419,6 +419,64 @@ function createDefaultStrategyForm(
     };
 }
 
+function createDefaultEvaluationStrategyForm(scopeAdminId = ""): StrategyFormState {
+    const solveStep: AiReviewAiToolStep = {
+        ...createDefaultAiToolStep("AI_SOLVE_QUESTION"),
+        id: "eval_solve_1",
+        name: "一阶段：模型作答",
+        runCount: 1,
+    };
+    const judgeStep: AiReviewAiToolStep = {
+        ...createDefaultAiToolStep("ANSWER_MATCH_CHECK"),
+        id: "eval_judge_1",
+        name: "二阶段：答案正确性判断",
+        runCount: 1,
+        sourceStepId: solveStep.id,
+    };
+
+    return {
+        scopeAdminId,
+        name: "",
+        code: "",
+        description: "",
+        enabled: true,
+        projectIds: [],
+        datasourceIds: [],
+        definition: {
+            version: 1,
+            steps: [solveStep, judgeStep],
+        },
+    };
+}
+
+function getStructuredOutputContract(toolType: AiReviewAiToolType) {
+    switch (toolType) {
+        case "AI_SOLVE_QUESTION":
+            return `{
+  "answer": "模型答案",
+  "normalizedAnswer": "标准化答案",
+  "reasoning": "作答过程",
+  "confidence": 0.8
+}`;
+        case "ANSWER_MATCH_CHECK":
+            return `{
+  "matchLevel": "EXACT|SEMANTIC_MATCH|PARTIAL_MATCH|MISMATCH|UNKNOWN",
+  "isCorrect": true,
+  "summary": "判题摘要",
+  "difference": null
+}`;
+        case "DIFFICULTY_EVALUATION":
+            return `{
+  "difficultyLevel": "EASY|MEDIUM|HARD",
+  "score": 3,
+  "summary": "难度判断摘要",
+  "evidence": []
+}`;
+        default:
+            return null;
+    }
+}
+
 function createStrategyFormState(strategy?: {
     id: string;
     scopeAdminId: string;
@@ -547,8 +605,8 @@ const STRATEGY_CATEGORIES: Array<{
     {
         value: "EVALUATION",
         label: "评测策略",
-        description: "难度评估与综合打分",
-        defaultTool: "DIFFICULTY_EVALUATION",
+        description: "两阶段评测：一阶段模型作答，二阶段模型判断答案是否正确",
+        defaultTool: "AI_SOLVE_QUESTION",
         createButtonLabel: "新建评测策略",
     },
     {
@@ -560,6 +618,12 @@ const STRATEGY_CATEGORIES: Array<{
     },
 ];
 
+function parseStrategyCategory(value: string | null): StrategyCategory | null {
+    return STRATEGY_CATEGORIES.some((category) => category.value === value)
+        ? (value as StrategyCategory)
+        : null;
+}
+
 function getStrategyCategory(strategy: {
     definition: { steps: AiReviewStrategyStep[] };
 }): Exclude<StrategyCategory, "CHAT"> {
@@ -570,7 +634,9 @@ function getStrategyCategory(strategy: {
     if (aiSteps.some((step) => step.toolType === "FIELD_CLEANING")) {
         return "CLEANING";
     }
-    if (aiSteps.some((step) => step.toolType === "DIFFICULTY_EVALUATION")) {
+    if (
+        aiSteps.some((step) => step.toolType === "ANSWER_MATCH_CHECK")
+    ) {
         return "EVALUATION";
     }
     return "REVIEW";
@@ -619,6 +685,7 @@ export function AiReviewStrategyConsole({
     chatConfigs,
     adminScopeOptions,
     activeScopeAdminId,
+    initialCategory,
 }: {
     databaseEnabled: boolean;
     currentPlatformRole: "SUPER_ADMIN" | "PLATFORM_ADMIN" | "USER";
@@ -661,6 +728,7 @@ export function AiReviewStrategyConsole({
         username: string | null;
     }>;
     activeScopeAdminId: string | null;
+    initialCategory?: string | null;
 }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -682,7 +750,9 @@ export function AiReviewStrategyConsole({
     const [isSavingChat, startSavingChat] = useTransition();
     const [isDeletingChat, startDeletingChat] = useTransition();
     const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
-    const [activeCategory, setActiveCategory] = useState<StrategyCategory>("REVIEW");
+    const [activeCategory, setActiveCategory] = useState<StrategyCategory>(
+        parseStrategyCategory(initialCategory ?? null) ?? "REVIEW",
+    );
 
     type StrategyBucketKey = Exclude<StrategyCategory, "CHAT">;
     const strategiesByCategory = useMemo(() => {
@@ -806,6 +876,11 @@ export function AiReviewStrategyConsole({
         setModalOpen(true);
     }
 
+    function openCreateEvaluationModal() {
+        setForm(createDefaultEvaluationStrategyForm(activeScopeAdminId ?? ""));
+        setModalOpen(true);
+    }
+
     function openEditModal(strategy: (typeof strategies)[number]) {
         setForm(createStrategyFormState(strategy));
         setModalOpen(true);
@@ -900,6 +975,7 @@ export function AiReviewStrategyConsole({
             ...defaultStep,
             id: step.id,
             modelCode: step.modelCode,
+            modelCodes: step.modelCodes,
             sourceStepId: step.sourceStepId,
         }));
     }
@@ -981,6 +1057,22 @@ export function AiReviewStrategyConsole({
         const params = new URLSearchParams(window.location.search);
         params.set("scopeAdminId", scopeAdminId);
         router.replace(`${pathname}?${params.toString()}`);
+    }
+
+    function handleCategoryChange(category: StrategyCategory) {
+        setActiveCategory(category);
+
+        const params = new URLSearchParams(window.location.search);
+        if (category === "REVIEW") {
+            params.delete("category");
+        } else {
+            params.set("category", category);
+        }
+
+        router.replace(
+            params.size ? `${pathname}?${params.toString()}` : pathname,
+            { scroll: false },
+        );
     }
 
     function handleDelete(strategyId: string) {
@@ -1076,7 +1168,7 @@ export function AiReviewStrategyConsole({
                             className="muted"
                             style={{ margin: "10px 0 0", lineHeight: 1.7 }}
                         >
-                            这里维护题目审核与数据清洗场景的 AI
+                            这里维护题目审核、数据清洗与数据评测场景的 AI
                             工具和规则步骤。管理员创建策略，审核员在列表或详情页选择并执行。
                         </p>
                     </div>
@@ -1114,6 +1206,8 @@ export function AiReviewStrategyConsole({
                             onClick={() => {
                                 if (activeCategory === "CHAT") {
                                     openCreateChatModal();
+                                } else if (activeCategory === "EVALUATION") {
+                                    openCreateEvaluationModal();
                                 } else if (activeCategoryMeta.defaultTool) {
                                     openCreateModal(activeCategoryMeta.defaultTool);
                                 }
@@ -1142,7 +1236,7 @@ export function AiReviewStrategyConsole({
                                 type="button"
                                 role="tab"
                                 aria-selected={isActive}
-                                onClick={() => setActiveCategory(cat.value)}
+                                onClick={() => handleCategoryChange(cat.value)}
                                 className={`strategy-tab${
                                     isActive ? " strategy-tab-active" : ""
                                 }`}
@@ -2033,9 +2127,16 @@ export function AiReviewStrategyConsole({
                                                             使用模型
                                                         </label>
                                                         <Select
+                                                            mode="multiple"
                                                             value={
-                                                                step.modelCode ||
-                                                                undefined
+                                                                step.modelCodes
+                                                                    .length
+                                                                    ? step.modelCodes
+                                                                    : step.modelCode
+                                                                      ? [
+                                                                            step.modelCode,
+                                                                        ]
+                                                                      : []
                                                             }
                                                             onChange={(value) =>
                                                                 updateStep(
@@ -2044,8 +2145,19 @@ export function AiReviewStrategyConsole({
                                                                         currentStep,
                                                                     ) => ({
                                                                         ...(currentStep as AiReviewAiToolStep),
+                                                                        modelCodes:
+                                                                            Array.isArray(
+                                                                                value,
+                                                                            )
+                                                                                ? value
+                                                                                : [],
                                                                         modelCode:
-                                                                            value,
+                                                                            Array.isArray(
+                                                                                value,
+                                                                            )
+                                                                                ? (value[0] ??
+                                                                                  "")
+                                                                                : "",
                                                                     }),
                                                                 )
                                                             }
@@ -2053,6 +2165,7 @@ export function AiReviewStrategyConsole({
                                                                 modelSelectOptions
                                                             }
                                                             placeholder="请选择模型"
+                                                            maxTagCount="responsive"
                                                             size="large"
                                                         />
                                                     </div>
@@ -2191,6 +2304,35 @@ export function AiReviewStrategyConsole({
                                                         }
                                                     />
                                                 </div>
+                                                {getStructuredOutputContract(
+                                                    step.toolType,
+                                                ) ? (
+                                                    <div style={{ marginTop: 16 }}>
+                                                        <label className="field-label">
+                                                            结构化返回
+                                                        </label>
+                                                        <pre
+                                                            style={{
+                                                                margin: 0,
+                                                                overflowX: "auto",
+                                                                border:
+                                                                    "1px solid var(--color-border)",
+                                                                borderRadius: 8,
+                                                                background:
+                                                                    "var(--color-muted)",
+                                                                padding: 12,
+                                                                fontSize: 12,
+                                                                lineHeight: 1.6,
+                                                                color:
+                                                                    "var(--color-foreground)",
+                                                            }}
+                                                        >
+                                                            {getStructuredOutputContract(
+                                                                step.toolType,
+                                                            )}
+                                                        </pre>
+                                                    </div>
+                                                ) : null}
                                             </>
                                         ) : (
                                             <>

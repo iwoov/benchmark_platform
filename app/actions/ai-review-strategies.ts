@@ -13,6 +13,7 @@ import { isAdminRole } from "@/lib/auth/roles";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import {
     aiReviewStrategyPersistedSchema,
+    getAiToolStepModelCodes,
     type AiReviewStrategyPersistedInput,
 } from "@/lib/ai/review-strategy-schema";
 import {
@@ -122,13 +123,14 @@ async function requireStrategyAdminAccess() {
 
 function revalidateStrategyPaths(questionId?: string) {
     revalidatePath("/admin/ai-strategies");
-    revalidatePath("/admin/evaluation-strategies");
+    revalidatePath("/admin/evaluations");
     revalidatePath("/dashboard/ai-strategies");
     revalidatePath("/workspace/evaluations");
 
     if (questionId) {
         revalidatePath(`/admin/review-tasks/${questionId}`);
         revalidatePath(`/admin/data-cleaning/${questionId}`);
+        revalidatePath(`/admin/evaluations/${questionId}`);
         revalidatePath(`/workspace/reviews/${questionId}`);
         revalidatePath(`/workspace/data-cleaning/${questionId}`);
         revalidatePath(`/workspace/evaluations/${questionId}`);
@@ -246,7 +248,7 @@ async function validateStrategyPayload(input: AiReviewStrategyPersistedInput) {
         ...new Set(
             input.definition.steps
                 .filter((step) => step.kind === "AI_TOOL")
-                .map((step) => step.modelCode),
+                .flatMap((step) => getAiToolStepModelCodes(step)),
         ),
     ];
 

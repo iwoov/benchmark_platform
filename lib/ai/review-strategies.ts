@@ -24,6 +24,7 @@ import {
     type AiReviewComparisonOperator,
     type AiReviewRuleStep,
     type AiReviewStrategyDefinition,
+    getAiToolStepModelCodes,
 } from "@/lib/ai/review-strategy-schema";
 import { readImageFields, readImageMap } from "@/lib/datasources/sync-config";
 import {
@@ -113,6 +114,17 @@ export type AiReviewStrategyRunView = {
     };
     triggeredByName: string;
     parsedResult: StrategyExecutionResult | null;
+};
+
+export type EvaluationModelFilter = {
+    answerModelCode?: string | null;
+    judgeModelCode?: string | null;
+};
+
+type StrategyExecutionOptions = {
+    enableBuiltInTools?: boolean;
+    disableReviewPersistence?: boolean;
+    evaluationModelFilter?: EvaluationModelFilter;
 };
 
 function parseStringArray(input: unknown) {
@@ -650,7 +662,7 @@ function getToolContract(type: AiReviewAiToolType) {
         case "AI_SOLVE_QUESTION":
             return `{"answer":string,"normalizedAnswer":string,"reasoning":string,"confidence":0-1}`;
         case "ANSWER_MATCH_CHECK":
-            return `{"matchLevel":"EXACT|SEMANTIC_MATCH|PARTIAL_MATCH|MISMATCH|UNKNOWN","isConsistent":boolean,"summary":string,"difference":string|null}`;
+            return `{"matchLevel":"EXACT|SEMANTIC_MATCH|PARTIAL_MATCH|MISMATCH|UNKNOWN","isCorrect":boolean,"summary":string,"difference":string|null}`;
         case "REASONING_COMPARE":
             return `{"isConsistent":boolean,"summary":string,"missingPoints":string[],"riskLevel":"LOW|MEDIUM|HIGH"}`;
         case "DIFFICULTY_EVALUATION":
@@ -1090,6 +1102,18 @@ function coerceAiOutput(
     }
 
     if (toolType === "ANSWER_MATCH_CHECK") {
+        if (
+            typeof payload.isCorrect === "boolean" &&
+            typeof payload.isConsistent !== "boolean"
+        ) {
+            payload.isConsistent = payload.isCorrect;
+        }
+        if (
+            typeof payload.isConsistent === "boolean" &&
+            typeof payload.isCorrect !== "boolean"
+        ) {
+            payload.isCorrect = payload.isConsistent;
+        }
         payload.summary = toLooseString(payload.summary) ?? "";
         payload.difference =
             payload.difference === null
@@ -1138,6 +1162,10 @@ function deriveMetrics(
 
     if (typeof output.isConsistent === "boolean") {
         metrics.isConsistent = output.isConsistent;
+    }
+
+    if (typeof output.isCorrect === "boolean") {
+        metrics.isCorrect = output.isCorrect;
     }
 
     if (typeof output.confidence === "number") {
@@ -1202,11 +1230,10 @@ async function executeAiToolItem(
     question: ReviewQuestionDetail,
     previousResults: StepExecutionResult[],
     sourceItem: StepExecutionItem | undefined,
+    modelCode: string,
     index: number,
     runIndex: number,
-    options?: {
-        enableBuiltInTools?: boolean;
-    },
+    options?: StrategyExecutionOptions,
 ) {
     const selectedFields = selectFields(question, step.fieldKeys);
 
@@ -1218,7 +1245,9 @@ async function executeAiToolItem(
 
     const promptInput = {
         runIndex,
+        modelCode,
         sourceOutput: sourceItem?.output ?? null,
+        sourceMeta: sourceItem?.requestMeta ?? null,
         selectedFields: fieldsWithPlaceholders,
         originalSelectedFields: selectedFields,
     };
@@ -1238,7 +1267,7 @@ async function executeAiToolItem(
     ];
 
     const response = await invokeAiModel({
-        modelCode: step.modelCode,
+        modelCode,
         stream: true,
         responseMimeType: "application/json",
         enableBuiltInTools: options?.enableBuiltInTools,
@@ -1261,7 +1290,7 @@ async function executeAiToolItem(
             sourceStepId: step.sourceStepId,
             promptInput,
             requestMeta: {
-                modelCode: step.modelCode,
+                modelCode,
                 protocol: response.protocol,
             },
             rawResponse: {
@@ -1367,6 +1396,7 @@ function buildRunningAiToolStepResult(
 function buildAiToolTasks(
     step: AiReviewAiToolStep,
     previousResults: StepExecutionResult[],
+    modelCodesOverride?: string[],
 ) {
     const sourceStepItems =
         step.sourceStepId &&
@@ -1382,6 +1412,7 @@ function buildAiToolTasks(
             tasks: [] as Array<{
                 index: number;
                 runIndex: number;
+                modelCode: string;
                 sourceItem: StepExecutionItem | undefined;
             }>,
         };
@@ -1390,18 +1421,23 @@ function buildAiToolTasks(
     const tasks: Array<{
         index: number;
         runIndex: number;
+        modelCode: string;
         sourceItem: StepExecutionItem | undefined;
     }> = [];
+    const modelCodes = modelCodesOverride ?? getAiToolStepModelCodes(step);
     let currentIndex = 1;
 
     for (const sourceItem of sourceStepItems) {
-        for (let runIndex = 1; runIndex <= step.runCount; runIndex += 1) {
-            tasks.push({
-                index: currentIndex,
-                runIndex,
-                sourceItem,
-            });
-            currentIndex += 1;
+        for (const modelCode of modelCodes) {
+            for (let runIndex = 1; runIndex <= step.runCount; runIndex += 1) {
+                tasks.push({
+                    index: currentIndex,
+                    runIndex,
+                    modelCode,
+                    sourceItem,
+                });
+                currentIndex += 1;
+            }
         }
     }
 
@@ -1409,6 +1445,39 @@ function buildAiToolTasks(
         sourceStepItems,
         tasks,
     };
+}
+
+function isDataEvaluationToolType(toolType: AiReviewAiToolType) {
+    return (
+        toolType === "AI_SOLVE_QUESTION" ||
+        toolType === "ANSWER_MATCH_CHECK" ||
+        toolType === "DIFFICULTY_EVALUATION"
+    );
+}
+
+function resolveStepModelCodesForExecution(
+    step: AiReviewAiToolStep,
+    filter?: EvaluationModelFilter,
+) {
+    const configuredCodes = getAiToolStepModelCodes(step);
+
+    if (!filter) {
+        return configuredCodes;
+    }
+
+    const selectedCode =
+        step.toolType === "AI_SOLVE_QUESTION"
+            ? filter.answerModelCode
+            : step.toolType === "ANSWER_MATCH_CHECK" ||
+                step.toolType === "DIFFICULTY_EVALUATION"
+              ? filter.judgeModelCode
+              : null;
+
+    if (!selectedCode) {
+        return [] as string[];
+    }
+
+    return configuredCodes.includes(selectedCode) ? [selectedCode] : [];
 }
 
 function buildCompletedAiToolStepResult(
@@ -1446,12 +1515,17 @@ async function runAiToolStep(
     step: AiReviewAiToolStep,
     question: ReviewQuestionDetail,
     previousResults: StepExecutionResult[],
-    executionOptions?: {
-        enableBuiltInTools?: boolean;
-    },
+    executionOptions?: StrategyExecutionOptions,
     onProgress?: (partial: StepExecutionResult) => void | Promise<void>,
 ) {
-    const { sourceStepItems, tasks } = buildAiToolTasks(step, previousResults);
+    const { sourceStepItems, tasks } = buildAiToolTasks(
+        step,
+        previousResults,
+        resolveStepModelCodesForExecution(
+            step,
+            executionOptions?.evaluationModelFilter,
+        ),
+    );
 
     if (step.sourceStepId && !sourceStepItems.length) {
         return {
@@ -1461,6 +1535,18 @@ async function runAiToolStep(
             stepType: step.toolType,
             status: "SKIPPED" as const,
             summary: "来源步骤没有可用结果，当前步骤已跳过。",
+            items: [],
+        };
+    }
+
+    if (!tasks.length) {
+        return {
+            stepId: step.id,
+            stepName: step.name,
+            stepKind: "AI_TOOL" as const,
+            stepType: step.toolType,
+            status: "SKIPPED" as const,
+            summary: "当前单模型评测运行不包含此步骤。",
             items: [],
         };
     }
@@ -1479,6 +1565,7 @@ async function runAiToolStep(
                 question,
                 previousResults,
                 task.sourceItem,
+                task.modelCode,
                 task.index,
                 task.runIndex,
                 executionOptions,
@@ -2064,7 +2151,7 @@ export async function getApplicableAiReviewStrategies(
             definitions.flatMap(({ definition }) =>
                 definition.steps
                     .filter((step) => step.kind === "AI_TOOL")
-                    .map((step) => step.modelCode),
+                    .flatMap((step) => getAiToolStepModelCodes(step)),
             ),
         ),
     ];
@@ -2103,7 +2190,10 @@ export async function getApplicableAiReviewStrategies(
                 ...new Set(
                     definition.steps.flatMap((step) =>
                         step.kind === "AI_TOOL"
-                            ? (modelBuiltInToolsMap[step.modelCode] ?? [])
+                            ? getAiToolStepModelCodes(step).flatMap(
+                                  (modelCode) =>
+                                      modelBuiltInToolsMap[modelCode] ?? [],
+                              )
                             : [],
                     ),
                 ),
@@ -2456,6 +2546,7 @@ export async function retryAiReviewStrategyRunItem(
         question,
         previousResults,
         targetTask.sourceItem,
+        targetTask.modelCode,
         targetTask.index,
         targetTask.runIndex,
         extractRunExecutionOptions(run.requestPayload),
@@ -2711,9 +2802,7 @@ export async function executeAiReviewStrategy(
     strategyId: string,
     questionId: string,
     triggeredById: string,
-    executionOptions?: {
-        enableBuiltInTools?: boolean;
-    },
+    executionOptions?: StrategyExecutionOptions,
 ) {
     const [strategy, question] = await Promise.all([
         loadStrategyForExecution(strategyId),
@@ -2741,6 +2830,10 @@ export async function executeAiReviewStrategy(
         },
         execution: {
             enableBuiltInTools: executionOptions?.enableBuiltInTools === true,
+            disableReviewPersistence:
+                executionOptions?.disableReviewPersistence === true,
+            evaluationModelFilter:
+                executionOptions?.evaluationModelFilter ?? null,
         },
         question: {
             id: question.id,
@@ -2749,16 +2842,18 @@ export async function executeAiReviewStrategy(
             datasourceName: question.datasource.name,
         },
     });
-    const existingRun = await prisma.aiReviewStrategyRun.findFirst({
-        where: {
-            strategyId: strategy.id,
-            questionId: question.id,
-        },
-        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-        select: {
-            id: true,
-        },
-    });
+    const existingRun = executionOptions?.evaluationModelFilter
+        ? null
+        : await prisma.aiReviewStrategyRun.findFirst({
+              where: {
+                  strategyId: strategy.id,
+                  questionId: question.id,
+              },
+              orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+              select: {
+                  id: true,
+              },
+          });
     const run = existingRun
         ? await prisma.aiReviewStrategyRun.update({
               where: {
@@ -2802,6 +2897,26 @@ export async function executeAiReviewStrategy(
                         step.kind === "AI_TOOL" ? step.toolType : step.ruleType,
                     status: "SKIPPED",
                     summary: "步骤已停用。",
+                    items: [],
+                });
+                await persistRunProgress(run.id, parsedResult);
+                continue;
+            }
+
+            if (
+                executionOptions?.evaluationModelFilter &&
+                (step.kind === "RULE" ||
+                    (step.kind === "AI_TOOL" &&
+                        !isDataEvaluationToolType(step.toolType)))
+            ) {
+                stepResults.push({
+                    stepId: step.id,
+                    stepName: step.name,
+                    stepKind: step.kind,
+                    stepType:
+                        step.kind === "AI_TOOL" ? step.toolType : step.ruleType,
+                    status: "SKIPPED",
+                    summary: "当前单模型评测运行不包含此步骤。",
                     items: [],
                 });
                 await persistRunProgress(run.id, parsedResult);
@@ -2878,7 +2993,12 @@ export async function executeAiReviewStrategy(
             resolveFinalRecommendation(stepResults);
         parsedResult.reviewPersistence = null;
 
-        if (parsedResult.finalRecommendation?.decision) {
+        if (executionOptions?.disableReviewPersistence) {
+            parsedResult.reviewPersistence = {
+                status: "SKIPPED",
+                message: "本次运行仅用于数据评测，不自动保存审核结论。",
+            };
+        } else if (parsedResult.finalRecommendation?.decision) {
             const comment = buildAutoReviewComment(
                 {
                     name: strategy.name,

@@ -56,8 +56,8 @@ export const aiReviewToolLabels: Record<AiReviewAiToolType, string> = {
     QUESTION_COMPLETENESS_CHECK: "题目完整性检查",
     TEXT_QUALITY_CHECK: "文本质量检查",
     TRANSLATE_TO_CHINESE: "翻译为中文",
-    AI_SOLVE_QUESTION: "AI 解题任务",
-    ANSWER_MATCH_CHECK: "答案一致性比对",
+    AI_SOLVE_QUESTION: "模型作答",
+    ANSWER_MATCH_CHECK: "答案正确性判断",
     REASONING_COMPARE: "解题过程比对",
     DIFFICULTY_EVALUATION: "难度评估",
     REVIEW_SUMMARY: "审核总结建议",
@@ -94,9 +94,9 @@ export const aiReviewDefaultPrompts: Record<AiReviewAiToolType, string> = {
     TRANSLATE_TO_CHINESE:
         "请将输入内容忠实翻译为简体中文。如果输入包含 JSON、字段列表或其他半结构化内容，请保持原有结构、键名、编号和格式，只翻译自然语言内容。如果原文已经是中文，可直接返回原文。",
     AI_SOLVE_QUESTION:
-        "请像正式答题一样独立完成作答，并输出简洁可信的解题过程。必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。answer、normalizedAnswer、reasoning 必须是纯文本，禁止 LaTeX 与任何反斜杠数学命令（如 \\frac、\\sqrt、\\int、\\chi）；如需表达公式请使用 ASCII 文本（例如 sqrt(a/b), integral_0^1 f(t) dt）。confidence 必须是 0 到 1 的数字，不要用字符串。",
+        "请像正式答题一样独立完成作答。只基于 selectedFields 中给出的题目字段作答，不要读取标准答案字段；如果 selectedFields 中意外包含 answer 或 analysis，也不要把它们当成依据。必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。answer、normalizedAnswer、reasoning 必须是纯文本，禁止 LaTeX 与任何反斜杠数学命令（如 \\frac、\\sqrt、\\int、\\chi）；如需表达公式请使用 ASCII 文本（例如 sqrt(a/b), integral_0^1 f(t) dt）。confidence 必须是 0 到 1 的数字，不要用字符串。",
     ANSWER_MATCH_CHECK:
-        "请判断标准答案与模型答案是完全一致、语义一致、部分一致还是明显不一致。",
+        "请判断上游模型作答是否正确。请以 selectedFields 中的标准答案、解析和题干为依据，并结合 upstreamResult 中的模型答案与推理过程判断。必须只返回一个合法 JSON 对象，不要输出 Markdown、代码块或额外解释。isCorrect 表示模型答案是否可判定为正确；matchLevel 表示模型答案与标准答案的匹配程度；difference 只在存在差异或无法确认时填写。",
     REASONING_COMPARE:
         "请比较标准解析与模型推理过程是否一致，指出标准解析缺失或不充分的地方。",
     DIFFICULTY_EVALUATION:
@@ -153,6 +153,7 @@ export const aiReviewMetricOptionsByToolType: Record<
         { value: "isCorrect", label: "是否答对" },
     ],
     ANSWER_MATCH_CHECK: [
+        { value: "isCorrect", label: "是否正确" },
         { value: "isConsistent", label: "是否一致" },
         { value: "matchLevel", label: "匹配等级" },
     ],
@@ -194,7 +195,16 @@ const optionalSourceStepSchema = z
 export const aiToolStepSchema = strategyStepBaseSchema.extend({
     kind: z.literal("AI_TOOL"),
     toolType: z.enum(aiReviewAiToolTypes),
-    modelCode: z.string().trim().min(1, "请选择模型"),
+    modelCode: z.string().trim().max(100, "模型编码不能超过 100 个字符").default(""),
+    modelCodes: z
+        .array(
+            z
+                .string()
+                .trim()
+                .min(1, "模型编码不能为空")
+                .max(100, "模型编码不能超过 100 个字符"),
+        )
+        .default([]),
     fieldKeys: z
         .array(
             z
@@ -311,6 +321,17 @@ export const aiReviewStrategyDefinitionSchema = z.object({
 
                 if (
                     step.kind === "AI_TOOL" &&
+                    !step.modelCode &&
+                    !step.modelCodes.length
+                ) {
+                    context.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        message: `步骤 ${step.name} 请选择模型`,
+                    });
+                }
+
+                if (
+                    step.kind === "AI_TOOL" &&
                     step.toolType !== "REVIEW_SUMMARY" &&
                     !step.fieldKeys.length
                 ) {
@@ -403,7 +424,8 @@ export const aiSolveOutputSchema = z.object({
 
 export const answerMatchOutputSchema = z.object({
     matchLevel: z.enum(aiReviewMatchLevels),
-    isConsistent: z.boolean(),
+    isCorrect: z.boolean(),
+    isConsistent: z.boolean().optional(),
     summary: z.string().min(1),
     difference: z.string().nullable(),
 });
@@ -495,9 +517,26 @@ export type AiReviewToolOutputMap = {
     REVIEW_SUMMARY: z.infer<typeof reviewSummaryOutputSchema>;
 };
 
+export function getAiToolStepModelCodes(
+    step: Pick<AiReviewAiToolStep, "modelCode" | "modelCodes">,
+) {
+    const codes = step.modelCodes.length ? step.modelCodes : [step.modelCode];
+
+    return [...new Set(codes.filter(Boolean))];
+}
+
 export function createDefaultAiToolStep(
     type: AiReviewAiToolType = "TEXT_QUALITY_CHECK",
 ): AiReviewAiToolStep {
+    const defaultFieldKeys =
+        type === "FIELD_CLEANING"
+            ? ["secondary"]
+            : type === "AI_SOLVE_QUESTION"
+              ? ["title", "content", "questionType"]
+              : type === "ANSWER_MATCH_CHECK"
+                ? ["title", "content", "answer", "analysis"]
+                : [];
+
     return {
         id: `step_${Math.random().toString(36).slice(2, 8)}`,
         name: aiReviewToolLabels[type],
@@ -505,7 +544,8 @@ export function createDefaultAiToolStep(
         kind: "AI_TOOL",
         toolType: type,
         modelCode: "",
-        fieldKeys: type === "FIELD_CLEANING" ? ["secondary"] : [],
+        modelCodes: [],
+        fieldKeys: defaultFieldKeys,
         promptTemplate: aiReviewDefaultPrompts[type],
         runCount: 1,
         sourceStepId: undefined,

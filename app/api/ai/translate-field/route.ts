@@ -17,7 +17,6 @@ async function resolveTranslationModelCode() {
     const preferredModelCodes = [
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-flash-preview",
-        "gemini-3.1-pro-preview",
     ];
 
     const models = await prisma.aiModel.findMany({

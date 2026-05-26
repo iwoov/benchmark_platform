@@ -1,11 +1,14 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { DataEvaluationList } from "@/components/evaluations/data-evaluation-list";
+import { getHomePathByRole } from "@/lib/auth/navigation";
+import { isAdminRole } from "@/lib/auth/roles";
+import { prisma } from "@/lib/db/prisma";
 import {
     getDataEvaluationQuestionList,
     type DataEvaluationModelColumn,
     type DataEvaluationQuestionRow,
 } from "@/lib/evaluations/data-evaluations";
-import { getWorkspaceContext } from "@/lib/workspace/context";
 
 export const dynamic = "force-dynamic";
 
@@ -19,21 +22,36 @@ function parsePositiveInt(
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export default async function WorkspaceEvaluationsPage({
+export default async function AdminEvaluationsPage({
     searchParams,
 }: {
     searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
     const session = await auth();
-    const workspaceContext = session?.user
-        ? await getWorkspaceContext(session.user.id)
-        : null;
-    const projects =
-        workspaceContext?.reviewerProjects.map((membership) => ({
-            id: membership.project.id,
-            name: membership.project.name,
-            code: membership.project.code,
-        })) ?? [];
+
+    if (!session?.user) {
+        redirect("/login");
+    }
+
+    if (!isAdminRole(session.user.platformRole)) {
+        redirect(getHomePathByRole(session.user.platformRole));
+    }
+
+    const projects = process.env.DATABASE_URL
+        ? await prisma.project.findMany({
+              where: {
+                  status: "ACTIVE",
+              },
+              orderBy: {
+                  createdAt: "desc",
+              },
+              select: {
+                  id: true,
+                  name: true,
+                  code: true,
+              },
+          })
+        : [];
     const resolvedSearchParams = (await searchParams) ?? {};
     const requestedProjectId = Array.isArray(resolvedSearchParams.projectId)
         ? resolvedSearchParams.projectId[0]
@@ -50,8 +68,8 @@ export default async function WorkspaceEvaluationsPage({
               page: parsePositiveInt(resolvedSearchParams.page, 1),
               pageSize: parsePositiveInt(resolvedSearchParams.pageSize, 50),
               viewer: {
-                  userId: session?.user?.id ?? "",
-                  platformRole: session?.user?.platformRole ?? "USER",
+                  userId: session.user.id,
+                  platformRole: session.user.platformRole,
               },
           })
         : {
@@ -71,7 +89,7 @@ export default async function WorkspaceEvaluationsPage({
             page={data.page}
             pageSize={data.pageSize}
             total={data.total}
-            basePath="/workspace/evaluations"
+            basePath="/admin/evaluations"
         />
     );
 }

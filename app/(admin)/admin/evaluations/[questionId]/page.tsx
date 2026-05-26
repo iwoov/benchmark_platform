@@ -1,15 +1,16 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { DataEvaluationDetail } from "@/components/evaluations/data-evaluation-detail";
+import { getHomePathByRole } from "@/lib/auth/navigation";
+import { isAdminRole } from "@/lib/auth/roles";
 import {
     getDataEvaluationDetail,
     getDataEvaluationQuestionNavigation,
 } from "@/lib/evaluations/data-evaluations";
-import { canUserReviewProject } from "@/lib/reviews/permissions";
 
 export const dynamic = "force-dynamic";
 
-export default async function WorkspaceEvaluationDetailPage({
+export default async function AdminEvaluationDetailPage({
     params,
     searchParams,
 }: {
@@ -20,6 +21,10 @@ export default async function WorkspaceEvaluationDetailPage({
 
     if (!session?.user) {
         redirect("/login");
+    }
+
+    if (!isAdminRole(session.user.platformRole)) {
+        redirect(getHomePathByRole(session.user.platformRole));
     }
 
     const { questionId } = await params;
@@ -39,26 +44,14 @@ export default async function WorkspaceEvaluationDetailPage({
     const projectId = Array.isArray(resolvedSearchParams.projectId)
         ? resolvedSearchParams.projectId[0]
         : resolvedSearchParams.projectId;
-    const [canReview, navigation] = await Promise.all([
-        canUserReviewProject(
-            session.user.id,
-            session.user.platformRole,
-            data.question.project.id,
-        ),
-        getDataEvaluationQuestionNavigation({
-            questionId,
-            projectId,
-            viewer: {
-                userId: session.user.id,
-                platformRole: session.user.platformRole,
-            },
-        }),
-    ]);
-
-    if (!canReview) {
-        redirect("/workspace/evaluations");
-    }
-
+    const navigation = await getDataEvaluationQuestionNavigation({
+        questionId,
+        projectId,
+        viewer: {
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+        },
+    });
     const listSearch = new URLSearchParams();
     for (const key of ["projectId", "page", "pageSize"]) {
         const value = resolvedSearchParams[key];
@@ -76,8 +69,8 @@ export default async function WorkspaceEvaluationDetailPage({
             results={data.results}
             listPath={
                 listSearch.size
-                    ? `/workspace/evaluations?${listSearch.toString()}`
-                    : "/workspace/evaluations"
+                    ? `/admin/evaluations?${listSearch.toString()}`
+                    : "/admin/evaluations"
             }
             navigation={navigation}
         />

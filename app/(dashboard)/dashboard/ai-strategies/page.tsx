@@ -27,6 +27,9 @@ export default async function AiReviewStrategiesPage({
     const scopeAdminId = Array.isArray(resolvedSearchParams.scopeAdminId)
         ? resolvedSearchParams.scopeAdminId[0]
         : resolvedSearchParams.scopeAdminId;
+    const initialCategory = Array.isArray(resolvedSearchParams.category)
+        ? resolvedSearchParams.category[0]
+        : resolvedSearchParams.category;
 
     const [data, chatConfigs] = await Promise.all([
         getAiReviewStrategyConsoleData({
@@ -48,6 +51,7 @@ export default async function AiReviewStrategiesPage({
             chatConfigs={chatConfigs}
             adminScopeOptions={data.adminScopeOptions}
             activeScopeAdminId={data.activeScopeAdminId}
+            initialCategory={initialCategory}
         />
     );
 }

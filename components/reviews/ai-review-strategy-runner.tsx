@@ -467,14 +467,18 @@ function getStepItemInlineTags(
         }
 
         case "ANSWER_MATCH_CHECK":
+            const isCorrect =
+                typeof data.isCorrect === "boolean"
+                    ? data.isCorrect
+                    : Boolean(data.isConsistent);
             return [
                 {
                     label: String(data.matchLevel ?? ""),
                     color: getMatchLevelColor(String(data.matchLevel ?? "")),
                 },
                 {
-                    label: data.isConsistent ? "一致" : "不一致",
-                    color: data.isConsistent ? "success" : "error",
+                    label: isCorrect ? "正确" : "错误",
+                    color: isCorrect ? "success" : "error",
                 },
             ];
 
@@ -863,6 +867,10 @@ function renderStepItemOutput(stepType: string, output: unknown) {
             );
 
         case "ANSWER_MATCH_CHECK":
+            const isCorrect =
+                typeof data.isCorrect === "boolean"
+                    ? data.isCorrect
+                    : Boolean(data.isConsistent);
             return (
                 <div className="step-output-rendered">
                     <div className="step-output-row">
@@ -873,8 +881,8 @@ function renderStepItemOutput(stepType: string, output: unknown) {
                         >
                             匹配: {String(data.matchLevel ?? "")}
                         </Tag>
-                        <Tag color={data.isConsistent ? "success" : "error"}>
-                            {data.isConsistent ? "一致" : "不一致"}
+                        <Tag color={isCorrect ? "success" : "error"}>
+                            {isCorrect ? "答案正确" : "答案不正确"}
                         </Tag>
                     </div>
                     <div className="step-output-summary">

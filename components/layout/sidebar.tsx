@@ -69,13 +69,13 @@ const adminSections: NavSection[] = [
             { href: "/admin/ai/models", label: "模型路由", icon: Cpu },
             { href: "/admin/ai/routes", label: "供应商", icon: PlugZap },
             { href: "/admin/ai-strategies", label: "AI 策略", icon: BrainCircuit },
-            { href: "/admin/evaluation-strategies", label: "评测策略", icon: Gauge },
         ],
     },
     {
         title: "数据工作台",
         items: [
             { href: "/admin/review-tasks", label: "数据质检", icon: ClipboardCheck },
+            { href: "/admin/evaluations", label: "数据评测", icon: Gauge },
             { href: "/admin/data-cleaning", label: "数据清洗", icon: Sparkles },
             { href: "/admin/review-batches", label: "批量任务", icon: Layers3 },
             { href: "/admin/reviews", label: "审核记录", icon: FileSearch },
