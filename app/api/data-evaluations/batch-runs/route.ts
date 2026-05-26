@@ -16,6 +16,7 @@ const createBatchRunSchema = z.object({
     columnCodes: z
         .array(z.string().trim().min(1, "缺少模型列编码"))
         .min(1, "至少选择 1 个模型"),
+    concurrency: z.number().int("并发数无效").min(1).max(2).default(1),
     skipSuccessful: z.boolean().default(true),
 });
 
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
                 userId: session.user.id,
                 platformRole: session.user.platformRole,
             },
+            includeRawResponse: false,
         });
 
         if (!data || data.question.project.id !== parsed.data.projectId) {
@@ -159,6 +161,7 @@ export async function POST(request: Request) {
             const batchRun = await createDataEvaluationModelRunBatchRunGroup({
                 strategyId,
                 items,
+                concurrency: parsed.data.concurrency,
                 createdById: session.user.id,
             });
             summary.createdCount += 1;

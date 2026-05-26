@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS "AiReviewStrategyBatchRunItem_batchRunId_questionId_key";

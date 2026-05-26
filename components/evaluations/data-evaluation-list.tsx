@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BarChart3, Play } from "lucide-react";
+import { BarChart3, Edit3, Play, RefreshCw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty";
-import { Select } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Popconfirm } from "@/components/ui/popconfirm";
 import {
     Table,
     TableBody,
@@ -37,6 +38,11 @@ type ProjectOption = {
 type BatchRunResponse = {
     success?: string;
     error?: string;
+    failures?: Array<{
+        questionId: string;
+        columnCode: string;
+        message: string;
+    }>;
     summary?: {
         createdCount: number;
         createdItemCount: number;
@@ -46,6 +52,11 @@ type BatchRunResponse = {
         skippedInaccessibleCount: number;
         failedCount: number;
     };
+};
+
+type QuestionOperationResponse = {
+    success?: string;
+    error?: string;
 };
 
 function resultBadge(result: DataEvaluationResult | null) {
@@ -105,6 +116,26 @@ function buildDetailHref(
     return `${basePath}/${rowId}?${params.toString()}`;
 }
 
+function stringifyRawValue(value: unknown) {
+    if (typeof value === "string") {
+        return value;
+    }
+
+    return JSON.stringify(value, null, 2);
+}
+
+function parseEditedRawValue(originalValue: unknown, input: string) {
+    if (typeof originalValue === "string") {
+        return input;
+    }
+
+    try {
+        return JSON.parse(input);
+    } catch {
+        return input;
+    }
+}
+
 export function DataEvaluationList({
     projects,
     selectedProjectId,
@@ -133,7 +164,17 @@ export function DataEvaluationList({
     const [batchModalOpen, setBatchModalOpen] = useState(false);
     const [selectedColumnCodes, setSelectedColumnCodes] = useState<string[]>([]);
     const [skipSuccessful, setSkipSuccessful] = useState(true);
+    const [batchConcurrency, setBatchConcurrency] = useState(1);
     const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
+    const [editingRow, setEditingRow] =
+        useState<DataEvaluationQuestionRow | null>(null);
+    const [editingFieldKey, setEditingFieldKey] = useState("");
+    const [editingFieldValue, setEditingFieldValue] = useState("");
+    const [isSavingField, setIsSavingField] = useState(false);
+    const [updatingRow, setUpdatingRow] =
+        useState<DataEvaluationQuestionRow | null>(null);
+    const [replacementFile, setReplacementFile] = useState<File | null>(null);
+    const [isReplacingRecord, setIsReplacingRecord] = useState(false);
     const selectedQuestionIdSet = useMemo(
         () => new Set(selectedQuestionIds),
         [selectedQuestionIds],
@@ -153,6 +194,10 @@ export function DataEvaluationList({
                 label: model.label,
             })),
         [modelColumns],
+    );
+    const editingFieldKeys = useMemo(
+        () => (editingRow ? Object.keys(editingRow.rawRecord) : []),
+        [editingRow],
     );
 
     useEffect(() => {
@@ -213,6 +258,10 @@ export function DataEvaluationList({
                     projectId: selectedProjectId,
                     questionIds: selectedRows.map((row) => row.id),
                     columnCodes: selectedColumnCodes,
+                    concurrency: Math.min(
+                        2,
+                        Math.max(1, Math.floor(batchConcurrency || 1)),
+                    ),
                     skipSuccessful,
                 }),
             });
@@ -232,18 +281,38 @@ export function DataEvaluationList({
                       `跳过成功 ${summary.skippedSuccessfulCount}`,
                       `跳过排队/运行中 ${summary.skippedActiveCount}`,
                       summary.failedCount ? `失败 ${summary.failedCount}` : null,
+                      payload.failures?.[0]?.message
+                          ? `原因：${payload.failures[0].message}`
+                          : null,
                   ]
                       .filter(Boolean)
                       .join("，")
                 : (payload.success ?? "后台 worker 会按模型配置执行。");
 
-            toast.success({
-                title: summary?.createdCount ? "批量任务已提交" : "没有新任务",
-                description,
-            });
-            setBatchModalOpen(false);
-            setSelectedQuestionIds([]);
-            router.refresh();
+            if (summary?.failedCount && !summary.createdCount) {
+                toast.error({
+                    title: "批量任务创建失败",
+                    description,
+                });
+            } else if (summary?.failedCount) {
+                toast.warning({
+                    title: "部分批量任务已提交",
+                    description,
+                });
+                setBatchModalOpen(false);
+                setSelectedQuestionIds([]);
+                router.refresh();
+            } else {
+                toast.success({
+                    title: summary?.createdCount
+                        ? "批量任务已提交"
+                        : "没有新任务",
+                    description,
+                });
+                setBatchModalOpen(false);
+                setSelectedQuestionIds([]);
+                router.refresh();
+            }
         } catch (error) {
             toast.error({
                 title: "创建批量任务失败",
@@ -255,6 +324,150 @@ export function DataEvaluationList({
         } finally {
             setIsSubmittingBatch(false);
         }
+    };
+
+    const openEditModal = (row: DataEvaluationQuestionRow) => {
+        const fieldKeys = Object.keys(row.rawRecord);
+        const fieldKey = fieldKeys[0] ?? "";
+
+        setEditingRow(row);
+        setEditingFieldKey(fieldKey);
+        setEditingFieldValue(stringifyRawValue(row.rawRecord[fieldKey]));
+    };
+
+    const updateEditingField = (fieldKey: string) => {
+        setEditingFieldKey(fieldKey);
+        setEditingFieldValue(
+            stringifyRawValue(editingRow?.rawRecord[fieldKey]),
+        );
+    };
+
+    const submitFieldEdit = async () => {
+        if (!editingRow || !editingFieldKey) {
+            return;
+        }
+
+        setIsSavingField(true);
+
+        try {
+            const response = await fetch(
+                `/api/data-evaluations/questions/${encodeURIComponent(
+                    editingRow.id,
+                )}`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        fieldKey: editingFieldKey,
+                        value: parseEditedRawValue(
+                            editingRow.rawRecord[editingFieldKey],
+                            editingFieldValue,
+                        ),
+                    }),
+                },
+            );
+            const payload = (await response
+                .json()
+                .catch(() => ({}))) as QuestionOperationResponse;
+
+            if (!response.ok) {
+                throw new Error(payload.error ?? "字段更新失败。");
+            }
+
+            toast.success({
+                title: "字段已更新",
+                description: payload.success ?? "题目字段已保存。",
+            });
+            setEditingRow(null);
+            router.refresh();
+        } catch (error) {
+            toast.error({
+                title: "字段更新失败",
+                description:
+                    error instanceof Error ? error.message : "字段更新失败。",
+            });
+        } finally {
+            setIsSavingField(false);
+        }
+    };
+
+    const submitRecordReplacement = async () => {
+        if (!updatingRow || !replacementFile) {
+            return;
+        }
+
+        setIsReplacingRecord(true);
+
+        try {
+            const formData = new FormData();
+            formData.set("file", replacementFile);
+
+            const response = await fetch(
+                `/api/data-evaluations/questions/${encodeURIComponent(
+                    updatingRow.id,
+                )}`,
+                {
+                    method: "PUT",
+                    body: formData,
+                },
+            );
+            const payload = (await response
+                .json()
+                .catch(() => ({}))) as QuestionOperationResponse;
+
+            if (!response.ok) {
+                throw new Error(payload.error ?? "原始记录覆盖失败。");
+            }
+
+            toast.success({
+                title: "原始记录已覆盖",
+                description: payload.success ?? "题目原始记录已更新。",
+            });
+            setUpdatingRow(null);
+            setReplacementFile(null);
+            router.refresh();
+        } catch (error) {
+            toast.error({
+                title: "原始记录覆盖失败",
+                description:
+                    error instanceof Error
+                        ? error.message
+                        : "原始记录覆盖失败。",
+            });
+        } finally {
+            setIsReplacingRecord(false);
+        }
+    };
+
+    const deleteQuestion = async (row: DataEvaluationQuestionRow) => {
+        const response = await fetch(
+            `/api/data-evaluations/questions/${encodeURIComponent(row.id)}`,
+            {
+                method: "DELETE",
+            },
+        );
+        const payload = (await response
+            .json()
+            .catch(() => ({}))) as QuestionOperationResponse;
+
+        if (!response.ok) {
+            toast.error({
+                title: "删除失败",
+                description: payload.error ?? "题目删除失败。",
+            });
+            return;
+        }
+
+        toast.success({
+            title: "题目已删除",
+            description: payload.success ?? "该条数据已删除。",
+        });
+        setSelectedQuestionIds((previous) =>
+            previous.filter((questionId) => questionId !== row.id),
+        );
+        router.refresh();
     };
 
     return (
@@ -367,6 +580,9 @@ export function DataEvaluationList({
                                         {model.label}
                                     </TableHead>
                                 ))}
+                                <TableHead className="sticky right-0 min-w-40 bg-muted/95 text-right">
+                                    操作
+                                </TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -420,6 +636,7 @@ export function DataEvaluationList({
                                         <TableCell>
                                             <Link
                                                 href={detailHref}
+                                                prefetch={false}
                                                 className="font-medium text-primary hover:underline"
                                                 onClick={(event) =>
                                                     event.stopPropagation()
@@ -436,6 +653,75 @@ export function DataEvaluationList({
                                                 )}
                                             </TableCell>
                                         ))}
+                                        <TableCell
+                                            className="sticky right-0 bg-card text-right shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]"
+                                            onClick={(event) =>
+                                                event.stopPropagation()
+                                            }
+                                            onKeyDown={(event) =>
+                                                event.stopPropagation()
+                                            }
+                                        >
+                                            {row.canManage ? (
+                                                <div className="inline-flex items-center gap-1">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        title="编辑字段"
+                                                        aria-label="编辑字段"
+                                                        onClick={() =>
+                                                            openEditModal(row)
+                                                        }
+                                                    >
+                                                        <Edit3 size={15} />
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        title="JSON 覆盖"
+                                                        aria-label="JSON 覆盖"
+                                                        onClick={() => {
+                                                            setUpdatingRow(row);
+                                                            setReplacementFile(
+                                                                null,
+                                                            );
+                                                        }}
+                                                    >
+                                                        <RefreshCw size={15} />
+                                                    </Button>
+                                                    <Popconfirm
+                                                        title="删除题目"
+                                                        description="删除后该题目的评测结果和运行记录会一并删除。"
+                                                        confirmText="删除"
+                                                        tone="destructive"
+                                                        onConfirm={() =>
+                                                            deleteQuestion(row)
+                                                        }
+                                                    >
+                                                        {(open) => (
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                title="删除"
+                                                                aria-label="删除"
+                                                                onClick={open}
+                                                            >
+                                                                <Trash2
+                                                                    size={15}
+                                                                />
+                                                            </Button>
+                                                        )}
+                                                    </Popconfirm>
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted-foreground">
+                                                    -
+                                                </span>
+                                            )}
+                                        </TableCell>
                                     </TableRow>
                                 );
                             })}
@@ -458,6 +744,7 @@ export function DataEvaluationList({
                             selectedProjectId,
                             Math.max(1, page - 1),
                         )}
+                        prefetch={false}
                         aria-disabled={page <= 1}
                         className={cn(
                             "inline-flex h-8 items-center justify-center rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted",
@@ -475,6 +762,7 @@ export function DataEvaluationList({
                             selectedProjectId,
                             Math.min(totalPages, page + 1),
                         )}
+                        prefetch={false}
                         aria-disabled={page >= totalPages}
                         className={cn(
                             "inline-flex h-8 items-center justify-center rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted",
@@ -552,6 +840,40 @@ export function DataEvaluationList({
                         </p>
                     </div>
 
+                    <div className="grid gap-2">
+                        <label
+                            htmlFor="batch-run-concurrency"
+                            className="text-sm font-medium text-foreground"
+                        >
+                            并发数
+                        </label>
+                        <Input
+                            id="batch-run-concurrency"
+                            type="number"
+                            min={1}
+                            max={2}
+                            step={1}
+                            value={batchConcurrency}
+                            disabled={isSubmittingBatch}
+                            onChange={(event) =>
+                                setBatchConcurrency(
+                                    Math.min(
+                                        2,
+                                        Math.max(
+                                            1,
+                                            Math.floor(
+                                                Number(event.target.value) || 1,
+                                            ),
+                                        ),
+                                    ),
+                                )
+                            }
+                        />
+                        <p className="text-xs leading-5 text-muted-foreground">
+                            同一批量任务最多同时执行 2 个评测项。
+                        </p>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         <Badge variant="info">
                             题目 {selectedRows.length}
@@ -563,7 +885,134 @@ export function DataEvaluationList({
                             预计执行项{" "}
                             {selectedRows.length * selectedColumnCodes.length}
                         </Badge>
+                        <Badge variant="outline">
+                            并发 {batchConcurrency}
+                        </Badge>
                     </div>
+                </div>
+            </Modal>
+
+            <Modal
+                open={Boolean(editingRow)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setEditingRow(null);
+                    }
+                }}
+                title="编辑字段"
+                description={editingRow?.sourceQuestionId}
+                width={640}
+                footer={
+                    <>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={isSavingField}
+                            onClick={() => setEditingRow(null)}
+                        >
+                            取消
+                        </Button>
+                        <Button
+                            type="button"
+                            leftIcon={<Edit3 size={16} />}
+                            loading={isSavingField}
+                            disabled={!editingFieldKey}
+                            onClick={submitFieldEdit}
+                        >
+                            保存
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="edit-field-key">字段</Label>
+                        <Select
+                            id="edit-field-key"
+                            value={editingFieldKey}
+                            disabled={isSavingField}
+                            onChange={(event) =>
+                                updateEditingField(event.target.value)
+                            }
+                        >
+                            {editingFieldKeys.map((fieldKey) => (
+                                <option key={fieldKey} value={fieldKey}>
+                                    {fieldKey}
+                                </option>
+                            ))}
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="edit-field-value">值</Label>
+                        <Textarea
+                            id="edit-field-value"
+                            value={editingFieldValue}
+                            disabled={isSavingField}
+                            className="min-h-44 font-mono text-xs"
+                            onChange={(event) =>
+                                setEditingFieldValue(event.target.value)
+                            }
+                        />
+                    </div>
+                </div>
+            </Modal>
+
+            <Modal
+                open={Boolean(updatingRow)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setUpdatingRow(null);
+                        setReplacementFile(null);
+                    }
+                }}
+                title="JSON 覆盖"
+                description={updatingRow?.sourceQuestionId}
+                width={560}
+                footer={
+                    <>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={isReplacingRecord}
+                            onClick={() => {
+                                setUpdatingRow(null);
+                                setReplacementFile(null);
+                            }}
+                        >
+                            取消
+                        </Button>
+                        <Button
+                            type="button"
+                            leftIcon={<RefreshCw size={16} />}
+                            loading={isReplacingRecord}
+                            disabled={!replacementFile}
+                            onClick={submitRecordReplacement}
+                        >
+                            覆盖
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="replace-json-file">JSON 文件</Label>
+                        <Input
+                            id="replace-json-file"
+                            type="file"
+                            accept="application/json,.json"
+                            disabled={isReplacingRecord}
+                            onChange={(event) =>
+                                setReplacementFile(
+                                    event.target.files?.[0] ?? null,
+                                )
+                            }
+                        />
+                    </div>
+                    {updatingRow ? (
+                        <div className="rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                            当前字段数 {Object.keys(updatingRow.rawRecord).length}
+                        </div>
+                    ) : null}
                 </div>
             </Modal>
         </div>

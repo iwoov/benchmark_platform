@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { auth } from "@/auth";
-import { canAccessAdminScope } from "@/lib/auth/admin-scope";
 import { prisma } from "@/lib/db/prisma";
+import { canAccessAiReviewStrategy } from "@/lib/ai/review-strategy-visibility";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 import {
@@ -125,7 +125,13 @@ export async function POST(request: Request) {
             projectId: true,
             strategy: {
                 select: {
+                    code: true,
                     scopeAdminId: true,
+                    scopeAdmin: {
+                        select: {
+                            platformRole: true,
+                        },
+                    },
                 },
             },
         },
@@ -156,11 +162,11 @@ export async function POST(request: Request) {
     }
 
     if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            batchRun.strategy.scopeAdminId,
-        ))
+        !(await canAccessAiReviewStrategy({
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+            strategy: batchRun.strategy,
+        }))
     ) {
         return Response.json(
             {

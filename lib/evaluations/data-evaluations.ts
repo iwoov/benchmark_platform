@@ -92,6 +92,8 @@ export type DataEvaluationQuestionRow = {
     questionType: string | null;
     difficulty: string | null;
     updatedAt: string;
+    canManage: boolean;
+    rawRecord: Record<string, unknown>;
     results: Record<string, DataEvaluationResult | null>;
 };
 
@@ -221,6 +223,20 @@ function extractRawRecordString(metadata: unknown, key: string) {
     const normalized = value.trim();
 
     return normalized || null;
+}
+
+function extractRawRecord(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+        return {} as Record<string, unknown>;
+    }
+
+    const rawRecord = (metadata as Record<string, unknown>).rawRecord;
+
+    if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
+        return {} as Record<string, unknown>;
+    }
+
+    return rawRecord as Record<string, unknown>;
 }
 
 async function getEvaluationStrategies(viewer: EvaluationViewer) {
@@ -566,6 +582,9 @@ function extractRunResults(
         };
     },
     modelLabelMap: Map<string, string>,
+    options?: {
+        includeRawResponse?: boolean;
+    },
 ) {
     const definition = parseDefinition(run.strategy.definition);
     if (!definition) {
@@ -674,8 +693,8 @@ function extractRunResults(
                 sourceModelCode,
                 sourceOutput: readPromptSourceOutput(item),
             });
-            const answerRawResponse =
-                stepDefinition.toolType === "AI_SOLVE_QUESTION"
+            const answerRawResponse = options?.includeRawResponse
+                ? stepDefinition.toolType === "AI_SOLVE_QUESTION"
                     ? buildRawResponsePart({
                           item,
                           modelCode: answerModelCode,
@@ -692,9 +711,10 @@ function extractRunResults(
                           modelLabel: answerModelLabel,
                           stepId: stepDefinition.sourceStepId ?? null,
                           stepName: sourceStep?.name ?? null,
-                      });
-            const judgeRawResponse =
-                stepDefinition.toolType === "AI_SOLVE_QUESTION"
+                      })
+                : null;
+            const judgeRawResponse = options?.includeRawResponse
+                ? stepDefinition.toolType === "AI_SOLVE_QUESTION"
                     ? null
                     : buildRawResponsePart({
                           item,
@@ -705,7 +725,8 @@ function extractRunResults(
                               typeof stepRecord.stepName === "string"
                                   ? stepRecord.stepName
                                   : stepDefinition.name,
-                      });
+                      })
+                : null;
 
             results.push({
                 modelCode: columnKey,
@@ -762,6 +783,9 @@ async function getLatestEvaluationResults(
     questionIds: string[],
     modelColumns: DataEvaluationModelColumn[],
     strategies: Array<{ id: string }>,
+    options?: {
+        includeRawResponse?: boolean;
+    },
 ) {
     const emptyMap = new Map<string, Record<string, DataEvaluationResult | null>>();
     const columnCodes = modelColumns.map((column) => column.code);
@@ -821,7 +845,7 @@ async function getLatestEvaluationResults(
             continue;
         }
 
-        for (const result of extractRunResults(run, modelLabelMap)) {
+        for (const result of extractRunResults(run, modelLabelMap, options)) {
             if (!columnCodeSet.has(result.modelCode)) {
                 continue;
             }
@@ -1012,6 +1036,18 @@ export async function getDataEvaluationQuestionList(input: {
     const modelCodes = getEvaluationModelCodes(strategies);
     const modelLabelMap = await getModelLabelMap(modelCodes);
     const modelColumns = getEvaluationModelColumns(strategies, modelLabelMap);
+    const project = await prisma.project.findUnique({
+        where: {
+            id: input.projectId,
+        },
+        select: {
+            createdById: true,
+        },
+    });
+    const canManageProjectQuestions =
+        input.viewer.platformRole === "SUPER_ADMIN" ||
+        (input.viewer.platformRole === "PLATFORM_ADMIN" &&
+            project?.createdById === input.viewer.userId);
 
     const questions = await prisma.question.findMany({
         where: {
@@ -1050,6 +1086,7 @@ export async function getDataEvaluationQuestionList(input: {
         pageQuestions.map((question) => question.id),
         modelColumns,
         strategies,
+        { includeRawResponse: false },
     );
 
     return {
@@ -1065,6 +1102,8 @@ export async function getDataEvaluationQuestionList(input: {
             questionType: question.questionType,
             difficulty: question.difficulty,
             updatedAt: question.updatedAt.toISOString(),
+            canManage: canManageProjectQuestions,
+            rawRecord: extractRawRecord(question.metadata),
             results:
                 resultMap.get(question.id) ??
                 Object.fromEntries(modelColumns.map((column) => [column.code, null])),
@@ -1079,6 +1118,7 @@ export async function getDataEvaluationQuestionList(input: {
 export async function getDataEvaluationDetail(input: {
     questionId: string;
     viewer: EvaluationViewer;
+    includeRawResponse?: boolean;
 }) {
     const question = await getReviewQuestionDetail(
         input.questionId,
@@ -1099,6 +1139,7 @@ export async function getDataEvaluationDetail(input: {
         [question.id],
         modelColumns,
         strategies,
+        { includeRawResponse: input.includeRawResponse ?? true },
     );
 
     return {

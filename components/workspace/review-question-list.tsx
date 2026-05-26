@@ -10,16 +10,20 @@ import {
     InputNumber,
     Modal,
     Pagination,
+    Popconfirm,
     Select,
     Tag,
 } from "@/components/ui/legacy-ui-adapters";
 import {
     Bot,
     Download,
+    Edit3,
     Eye,
     FileText,
+    RefreshCw,
     SlidersHorizontal,
     Sparkles,
+    Trash2,
     X,
 } from "lucide-react";
 import { createAiReviewStrategyBatchRunAction } from "@/app/actions/ai-review-strategies";
@@ -102,6 +106,7 @@ type ReviewQuestionItem = {
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
     cleaningFieldStatus: Record<string, boolean>;
+    canManage: boolean;
 };
 
 type ReviewStatus = "PASS" | "REJECT" | "NONE";
@@ -126,6 +131,11 @@ type ListColumn = {
     key: string;
     label: string;
     width: number;
+};
+
+type QuestionOperationResponse = {
+    success?: string;
+    error?: string;
 };
 
 const defaultSystemListColumns: ListColumn[] = [
@@ -261,6 +271,26 @@ function formatReviewTooltip(
     return details.join("\n");
 }
 
+function stringifyRawValue(value: unknown) {
+    if (typeof value === "string") {
+        return value;
+    }
+
+    return JSON.stringify(value, null, 2);
+}
+
+function parseEditedRawValue(originalValue: unknown, input: string) {
+    if (typeof originalValue === "string") {
+        return input;
+    }
+
+    try {
+        return JSON.parse(input);
+    } catch {
+        return input;
+    }
+}
+
 export function ReviewQuestionList({
     canReview,
     scopeLabel,
@@ -334,6 +364,15 @@ export function ReviewQuestionList({
         "datasourceName",
     ]);
     const [isExportingReport, setIsExportingReport] = useState(false);
+    const [editingQuestion, setEditingQuestion] =
+        useState<ReviewQuestionItem | null>(null);
+    const [editingFieldKey, setEditingFieldKey] = useState("");
+    const [editingFieldValue, setEditingFieldValue] = useState("");
+    const [isSavingField, setIsSavingField] = useState(false);
+    const [updatingQuestion, setUpdatingQuestion] =
+        useState<ReviewQuestionItem | null>(null);
+    const [replacementFile, setReplacementFile] = useState<File | null>(null);
+    const [isReplacingRecord, setIsReplacingRecord] = useState(false);
     const selectionAnchorQuestionIdRef = useRef<string | null>(null);
     const pageLabels =
         mode === "cleaning"
@@ -453,6 +492,10 @@ export function ReviewQuestionList({
             ),
         [questions, selectedQuestionIdSet],
     );
+    const editingFieldKeys = useMemo(
+        () => (editingQuestion ? Object.keys(editingQuestion.rawRecord) : []),
+        [editingQuestion],
+    );
     const exportFieldOptions = useMemo<ExportFieldOption[]>(() => {
         const baseFields: ExportFieldOption[] = [
             { value: "externalRecordId", label: "外部记录 ID" },
@@ -521,13 +564,47 @@ export function ReviewQuestionList({
     const selectedProject = projects.find(
         (project) => project.id === selectedProjectId,
     );
+    const showOperationColumn = mode === "quality";
+    const operationColumnWidth = showOperationColumn ? 156 : 0;
+    const tableHeaderHeight = 46;
+    const tableRowHeight = 50;
+    const operationButtonStyle = {
+        width: 32,
+        height: 32,
+        padding: 0,
+    } as const;
+    const operationColumnStyle = {
+        width: operationColumnWidth,
+        flex: "0 0 auto",
+        borderLeft: "1px solid rgba(217, 224, 234, 0.85)",
+        background: "rgba(255, 255, 255, 0.98)",
+        boxShadow: "-8px 0 12px -12px rgba(15, 23, 42, 0.45)",
+    } as const;
+    const operationHeaderStyle = {
+        height: tableHeaderHeight,
+        padding: "0 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        background: "rgba(248, 250, 252, 0.95)",
+        fontWeight: 700,
+    } as const;
+    const operationRowStyle = {
+        height: tableRowHeight,
+        padding: "0 16px",
+        borderTop: "1px solid rgba(217, 224, 234, 0.85)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        overflow: "hidden",
+        textAlign: "right",
+    } as const;
     const gridTemplateColumns = [
         "52px",
         ...listColumns.map((column) => `${column.width}px`),
     ].join(" ");
     const tableWidth =
-        52 +
-        listColumns.reduce((total, column) => total + column.width, 0);
+        52 + listColumns.reduce((total, column) => total + column.width, 0);
 
     useEffect(() => {
         setSelectedQuestionIds((current) =>
@@ -693,6 +770,206 @@ export function ReviewQuestionList({
         });
 
         selectionAnchorQuestionIdRef.current = questionId;
+    }
+
+    function openEditModal(question: ReviewQuestionItem) {
+        const fieldKeys = Object.keys(question.rawRecord);
+        const fieldKey = fieldKeys[0] ?? "";
+
+        setEditingQuestion(question);
+        setEditingFieldKey(fieldKey);
+        setEditingFieldValue(stringifyRawValue(question.rawRecord[fieldKey]));
+    }
+
+    function updateEditingField(fieldKey: string) {
+        setEditingFieldKey(fieldKey);
+        setEditingFieldValue(
+            stringifyRawValue(editingQuestion?.rawRecord[fieldKey]),
+        );
+    }
+
+    async function submitFieldEdit() {
+        if (!editingQuestion || !editingFieldKey) {
+            return;
+        }
+
+        setIsSavingField(true);
+
+        try {
+            const response = await fetch(
+                `/api/data-evaluations/questions/${encodeURIComponent(
+                    editingQuestion.id,
+                )}`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        fieldKey: editingFieldKey,
+                        value: parseEditedRawValue(
+                            editingQuestion.rawRecord[editingFieldKey],
+                            editingFieldValue,
+                        ),
+                    }),
+                },
+            );
+            const payload = (await response
+                .json()
+                .catch(() => ({}))) as QuestionOperationResponse;
+
+            if (!response.ok) {
+                throw new Error(payload.error ?? "字段更新失败。");
+            }
+
+            toast.success({
+                title: "字段已更新",
+                description: payload.success ?? "题目字段已保存。",
+            });
+            setEditingQuestion(null);
+            router.refresh();
+        } catch (error) {
+            toast.error({
+                title: "字段更新失败",
+                description:
+                    error instanceof Error ? error.message : "字段更新失败。",
+            });
+        } finally {
+            setIsSavingField(false);
+        }
+    }
+
+    async function submitRecordReplacement() {
+        if (!updatingQuestion || !replacementFile) {
+            return;
+        }
+
+        setIsReplacingRecord(true);
+
+        try {
+            const formData = new FormData();
+            formData.set("file", replacementFile);
+
+            const response = await fetch(
+                `/api/data-evaluations/questions/${encodeURIComponent(
+                    updatingQuestion.id,
+                )}`,
+                {
+                    method: "PUT",
+                    body: formData,
+                },
+            );
+            const payload = (await response
+                .json()
+                .catch(() => ({}))) as QuestionOperationResponse;
+
+            if (!response.ok) {
+                throw new Error(payload.error ?? "原始记录覆盖失败。");
+            }
+
+            toast.success({
+                title: "原始记录已覆盖",
+                description: payload.success ?? "题目原始记录已更新。",
+            });
+            setUpdatingQuestion(null);
+            setReplacementFile(null);
+            router.refresh();
+        } catch (error) {
+            toast.error({
+                title: "原始记录覆盖失败",
+                description:
+                    error instanceof Error
+                        ? error.message
+                        : "原始记录覆盖失败。",
+            });
+        } finally {
+            setIsReplacingRecord(false);
+        }
+    }
+
+    async function deleteQuestion(question: ReviewQuestionItem) {
+        const response = await fetch(
+            `/api/data-evaluations/questions/${encodeURIComponent(
+                question.id,
+            )}`,
+            {
+                method: "DELETE",
+            },
+        );
+        const payload = (await response
+            .json()
+            .catch(() => ({}))) as QuestionOperationResponse;
+
+        if (!response.ok) {
+            toast.error({
+                title: "删除失败",
+                description: payload.error ?? "题目删除失败。",
+            });
+            return;
+        }
+
+        toast.success({
+            title: "题目已删除",
+            description: payload.success ?? "该条数据已删除。",
+        });
+        setSelectedQuestionIds((current) =>
+            current.filter((questionId) => questionId !== question.id),
+        );
+        router.refresh();
+    }
+
+    function renderQuestionOperations(question: ReviewQuestionItem) {
+        if (!question.canManage) {
+            return <span className="muted">-</span>;
+        }
+
+        return (
+            <div
+                style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                }}
+            >
+                <Button
+                    type="text"
+                    size="small"
+                    title="编辑字段"
+                    aria-label="编辑字段"
+                    icon={<Edit3 size={15} />}
+                    style={operationButtonStyle}
+                    onClick={() => openEditModal(question)}
+                />
+                <Button
+                    type="text"
+                    size="small"
+                    title="JSON 覆盖"
+                    aria-label="JSON 覆盖"
+                    icon={<RefreshCw size={15} />}
+                    style={operationButtonStyle}
+                    onClick={() => {
+                        setUpdatingQuestion(question);
+                        setReplacementFile(null);
+                    }}
+                />
+                <Popconfirm
+                    title="删除题目"
+                    description="删除后该题目的质检结果和运行记录会一并删除。"
+                    okText="删除"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => deleteQuestion(question)}
+                >
+                    <Button
+                        type="text"
+                        size="small"
+                        title="删除"
+                        aria-label="删除"
+                        icon={<Trash2 size={15} />}
+                        style={operationButtonStyle}
+                    />
+                </Popconfirm>
+            </div>
+        );
     }
 
     async function createBatchRun() {
@@ -1212,62 +1489,72 @@ export function ReviewQuestionList({
                                 </div>
                             ) : null}
                             <div
-                                className="review-list-scroll"
+                                className="table-surface"
                                 style={{
-                                    overflowX: "auto",
-                                    overflowY: "hidden",
                                     marginTop: 20,
+                                    display: "flex",
+                                    alignItems: "stretch",
+                                    overflow: "hidden",
                                 }}
                             >
                                 <div
-                                    className="table-surface"
+                                    className="review-list-scroll"
                                     style={{
-                                        minWidth: tableWidth,
-                                        width: "max-content",
+                                        flex: "1 1 auto",
+                                        minWidth: 0,
+                                        overflowX: "auto",
+                                        overflowY: "hidden",
                                     }}
                                 >
                                     <div
-                                        className="review-table-head"
                                         style={{
-                                            display: "grid",
-                                            gridTemplateColumns:
-                                                gridTemplateColumns,
-                                            gap: 16,
-                                            padding: "11px 16px",
-                                            background:
-                                                "rgba(248, 250, 252, 0.9)",
-                                            fontWeight: 700,
-                                            alignItems: "center",
+                                            minWidth: tableWidth,
+                                            width: "max-content",
                                         }}
                                     >
-                                        <div>
-                                            <Checkbox
-                                                checked={allVisibleSelected}
-                                                indeterminate={
-                                                    partiallyVisibleSelected
-                                                }
-                                                onChange={(event) =>
-                                                    setSelectedQuestionIds(
-                                                        event.target.checked
-                                                            ? visibleQuestionIds
-                                                            : [],
-                                                    )
-                                                }
-                                                onClick={(event) =>
-                                                    event.stopPropagation()
-                                                }
-                                            />
-                                        </div>
-                                        {listColumns.map((column) => (
-                                            <div
-                                                key={column.key}
-                                                style={cellStyle}
-                                                title={column.label}
-                                            >
-                                                {column.label}
+                                        <div
+                                            className="review-table-head"
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns:
+                                                    gridTemplateColumns,
+                                                gap: 16,
+                                                height: tableHeaderHeight,
+                                                padding: "0 16px",
+                                                background:
+                                                    "rgba(248, 250, 252, 0.9)",
+                                                fontWeight: 700,
+                                                alignItems: "center",
+                                            }}
+                                        >
+                                            <div>
+                                                <Checkbox
+                                                    checked={allVisibleSelected}
+                                                    indeterminate={
+                                                        partiallyVisibleSelected
+                                                    }
+                                                    onChange={(event) =>
+                                                        setSelectedQuestionIds(
+                                                            event.target.checked
+                                                                ? visibleQuestionIds
+                                                                : [],
+                                                        )
+                                                    }
+                                                    onClick={(event) =>
+                                                        event.stopPropagation()
+                                                    }
+                                                />
                                             </div>
-                                        ))}
-                                    </div>
+                                            {listColumns.map((column) => (
+                                                <div
+                                                    key={column.key}
+                                                    style={cellStyle}
+                                                    title={column.label}
+                                                >
+                                                    {column.label}
+                                                </div>
+                                            ))}
+                                        </div>
 
                                     {questions.map((question) => {
                                         const isSelected =
@@ -1290,10 +1577,12 @@ export function ReviewQuestionList({
                                                     gridTemplateColumns:
                                                         gridTemplateColumns,
                                                     gap: 16,
-                                                    padding: "12px 16px",
+                                                    height: tableRowHeight,
+                                                    padding: "0 16px",
                                                     borderTop:
                                                         "1px solid rgba(217, 224, 234, 0.85)",
                                                     alignItems: "center",
+                                                    overflow: "hidden",
                                                     cursor: "pointer",
                                                 }}
                                                 onClick={() =>
@@ -1577,6 +1866,40 @@ export function ReviewQuestionList({
                                         );
                                     })}
                                 </div>
+                            </div>
+                            {showOperationColumn ? (
+                                <div style={operationColumnStyle}>
+                                    <div style={operationHeaderStyle}>操作</div>
+                                    {questions.map((question) => {
+                                        const isSelected =
+                                            selectedQuestionIdSet.has(
+                                                question.id,
+                                            );
+
+                                        return (
+                                            <div
+                                                key={`operation-${question.id}`}
+                                                style={{
+                                                    ...operationRowStyle,
+                                                    background: isSelected
+                                                        ? "rgba(239, 246, 255, 0.98)"
+                                                        : "rgba(255, 255, 255, 0.98)",
+                                                }}
+                                                onClick={(event) =>
+                                                    event.stopPropagation()
+                                                }
+                                                onKeyDown={(event) =>
+                                                    event.stopPropagation()
+                                                }
+                                            >
+                                                {renderQuestionOperations(
+                                                    question,
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
                             </div>
                             <div
                                 style={{
@@ -1866,6 +2189,112 @@ export function ReviewQuestionList({
                             >
                                 + 添加条件
                             </Button>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={Boolean(editingQuestion)}
+                        rootClassName="review-dialog"
+                        title="编辑字段"
+                        onCancel={() => setEditingQuestion(null)}
+                        onOk={submitFieldEdit}
+                        okText={isSavingField ? "保存中" : "保存"}
+                        cancelText="取消"
+                        confirmLoading={isSavingField}
+                        okButtonProps={{ disabled: !editingFieldKey }}
+                        destroyOnHidden
+                    >
+                        <div
+                            style={{ display: "grid", gap: 16, marginTop: 16 }}
+                        >
+                            <div>
+                                <div className="review-toolbar-label">题目</div>
+                                <div className="muted">
+                                    {editingQuestion?.title ??
+                                        editingQuestion?.externalRecordId ??
+                                        "-"}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="review-toolbar-label">字段</div>
+                                <Select
+                                    value={editingFieldKey}
+                                    disabled={isSavingField}
+                                    options={editingFieldKeys.map((fieldKey) => ({
+                                        value: fieldKey,
+                                        label: fieldKey,
+                                    }))}
+                                    style={{ width: "100%" }}
+                                    onChange={updateEditingField}
+                                />
+                            </div>
+                            <div>
+                                <div className="review-toolbar-label">值</div>
+                                <Input.TextArea
+                                    value={editingFieldValue}
+                                    disabled={isSavingField}
+                                    style={{
+                                        minHeight: 176,
+                                        fontFamily:
+                                            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                                        fontSize: 12,
+                                    }}
+                                    onChange={(event) =>
+                                        setEditingFieldValue(event.target.value)
+                                    }
+                                />
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal
+                        open={Boolean(updatingQuestion)}
+                        rootClassName="review-dialog"
+                        title="JSON 覆盖"
+                        onCancel={() => {
+                            setUpdatingQuestion(null);
+                            setReplacementFile(null);
+                        }}
+                        onOk={submitRecordReplacement}
+                        okText={isReplacingRecord ? "覆盖中" : "覆盖"}
+                        cancelText="取消"
+                        confirmLoading={isReplacingRecord}
+                        okButtonProps={{ disabled: !replacementFile }}
+                        destroyOnHidden
+                    >
+                        <div
+                            style={{ display: "grid", gap: 16, marginTop: 16 }}
+                        >
+                            <div className="workspace-tip">
+                                <Tag color="gold">要求</Tag>
+                                <span>
+                                    JSON 必须是单个对象，会直接覆盖该条原始记录。
+                                </span>
+                            </div>
+                            <div>
+                                <div className="review-toolbar-label">
+                                    JSON 文件
+                                </div>
+                                <Input
+                                    type="file"
+                                    accept="application/json,.json"
+                                    disabled={isReplacingRecord}
+                                    onChange={(event) =>
+                                        setReplacementFile(
+                                            event.target.files?.[0] ?? null,
+                                        )
+                                    }
+                                />
+                            </div>
+                            {updatingQuestion ? (
+                                <div className="muted">
+                                    当前字段数{" "}
+                                    {
+                                        Object.keys(updatingQuestion.rawRecord)
+                                            .length
+                                    }
+                                </div>
+                            ) : null}
                         </div>
                     </Modal>
 

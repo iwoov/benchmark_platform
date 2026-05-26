@@ -13,6 +13,7 @@ import {
     retryAiReviewStrategyRunItem,
     type EvaluationModelFilter,
 } from "@/lib/ai/review-strategies";
+import { getVisibleAiReviewStrategyWhere } from "@/lib/ai/review-strategy-visibility";
 import { aiReviewStrategyDefinitionSchema } from "@/lib/ai/review-strategy-schema";
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import {
@@ -110,6 +111,58 @@ function strategyAppliesToQuestion(
 
 function serializeJson(value: unknown) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function extractExecutionFailureMessage(input: {
+    errorMessage?: string | null;
+    parsedResult: unknown;
+}) {
+    if (input.errorMessage) {
+        return input.errorMessage;
+    }
+
+    const parsedResult = input.parsedResult;
+    if (
+        !parsedResult ||
+        typeof parsedResult !== "object" ||
+        Array.isArray(parsedResult)
+    ) {
+        return "模型运行失败。";
+    }
+
+    const stepResults = (parsedResult as Record<string, unknown>).stepResults;
+    if (!Array.isArray(stepResults)) {
+        return "模型运行失败。";
+    }
+
+    for (const step of stepResults) {
+        if (!step || typeof step !== "object" || Array.isArray(step)) {
+            continue;
+        }
+
+        const stepRecord = step as Record<string, unknown>;
+        if (typeof stepRecord.error === "string" && stepRecord.error.trim()) {
+            return stepRecord.error;
+        }
+
+        const items = stepRecord.items;
+        if (!Array.isArray(items)) {
+            continue;
+        }
+
+        for (const item of items) {
+            if (!item || typeof item !== "object" || Array.isArray(item)) {
+                continue;
+            }
+
+            const error = (item as Record<string, unknown>).error;
+            if (typeof error === "string" && error.trim()) {
+                return error;
+            }
+        }
+    }
+
+    return "模型运行失败。";
 }
 
 type RetryRunItemTaskPayload = {
@@ -448,13 +501,14 @@ export async function getAiReviewStrategyBatchRunsForProject(
 
     const baseWhere = {
         projectId,
-        ...(viewer?.platformRole === "SUPER_ADMIN"
-            ? {}
-            : {
-                  strategy: {
-                      scopeAdminId: scopeAdminId ?? "__no_scope__",
-                  },
-              }),
+        ...(viewer
+            ? {
+                  strategy: getVisibleAiReviewStrategyWhere({
+                      platformRole: viewer.platformRole,
+                      scopeAdminId,
+                  }),
+              }
+            : {}),
     } satisfies Prisma.AiReviewStrategyBatchRunWhereInput;
 
     const include = {
@@ -940,6 +994,7 @@ export async function createDataEvaluationModelRunBatchRunGroup(input: {
         columnCode: string;
         evaluationModelFilter: EvaluationModelFilter;
     }>;
+    concurrency: number;
     createdById: string;
 }) {
     if (!process.env.DATABASE_URL) {
@@ -958,6 +1013,11 @@ export async function createDataEvaluationModelRunBatchRunGroup(input: {
     if (!uniqueItems.length) {
         throw new Error("至少选择 1 个题目模型组合后才能创建批量任务。");
     }
+
+    const resolvedConcurrency = Math.min(
+        2,
+        Math.max(1, Math.floor(input.concurrency || 1)),
+    );
 
     const [strategy, questions] = await Promise.all([
         prisma.aiReviewStrategy.findUnique({
@@ -1058,7 +1118,7 @@ export async function createDataEvaluationModelRunBatchRunGroup(input: {
                 status: pendingCount
                     ? BatchRunStatus.PENDING
                     : BatchRunStatus.SUCCESS,
-                concurrency: 1,
+                concurrency: resolvedConcurrency,
                 totalCount: items.length,
                 pendingCount,
                 runningCount: 0,
@@ -1686,14 +1746,25 @@ async function executeBatchRunItem(
             throw new Error("重试后的运行结果为空。");
         }
 
+        const executionFailed = executionParsedResult.status === "FAILED";
+        const executionFailureMessage = executionFailed
+            ? extractExecutionFailureMessage({
+                  errorMessage:
+                      "errorMessage" in execution ? execution.errorMessage : null,
+                  parsedResult: executionParsedResult,
+              })
+            : null;
+
         await prisma.aiReviewStrategyBatchRunItem.update({
             where: {
                 id: item.id,
             },
             data: {
-                status: BatchRunItemStatus.SUCCESS,
+                status: executionFailed
+                    ? BatchRunItemStatus.FAILED
+                    : BatchRunItemStatus.SUCCESS,
                 runId: executionRunId,
-                errorMessage: null,
+                errorMessage: executionFailureMessage,
                 resultPayload: serializeJson(
                     dataEvaluationPayload
                         ? {
@@ -1701,6 +1772,7 @@ async function executeBatchRunItem(
                               result: {
                                   runId: executionRunId,
                                   status: executionParsedResult.status,
+                                  errorMessage: executionFailureMessage,
                               },
                           }
                         : retryPayload
@@ -1713,6 +1785,7 @@ async function executeBatchRunItem(
                                       executionParsedResult.finalRecommendation,
                                   reviewPersistence:
                                       executionParsedResult.reviewPersistence,
+                                  errorMessage: executionFailureMessage,
                               },
                           }
                         : {
@@ -1727,7 +1800,7 @@ async function executeBatchRunItem(
                 finishedAt: new Date(),
             },
         });
-        logInfo("batch.item.success", {
+        logInfo(executionFailed ? "batch.item.failed_run" : "batch.item.success", {
             batchRunId: batchRun.id,
             itemId: item.id,
             questionId: item.questionId,
@@ -1738,6 +1811,7 @@ async function executeBatchRunItem(
                   ? "RETRY_RUN_ITEM"
                   : "EXECUTE_STRATEGY",
             durationMs: Date.now() - startedAt,
+            error: executionFailureMessage,
         });
     } catch (error) {
         const message =

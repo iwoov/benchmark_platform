@@ -8,6 +8,7 @@ import {
 import type { PlatformRoleValue } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import { ensureDefaultAiReviewStrategyForAdmin } from "@/lib/ai/default-review-strategy";
+import { getVisibleAiReviewStrategyWhere } from "@/lib/ai/review-strategy-visibility";
 import {
     invokeAiModel,
     resolveAiInvocationText,
@@ -2123,11 +2124,12 @@ export async function getApplicableAiReviewStrategies(
     const strategies = await prisma.aiReviewStrategy.findMany({
         where: {
             enabled: true,
-            ...(viewer?.platformRole === "SUPER_ADMIN"
-                ? {}
-                : {
-                      scopeAdminId: scopeAdminId ?? "__no_scope__",
-                  }),
+            ...(viewer
+                ? getVisibleAiReviewStrategyWhere({
+                      platformRole: viewer.platformRole,
+                      scopeAdminId,
+                  })
+                : {}),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });
@@ -2234,11 +2236,12 @@ export async function getReviewQuestionListAiStrategies(
     const strategies = await prisma.aiReviewStrategy.findMany({
         where: {
             enabled: true,
-            ...(viewer?.platformRole === "SUPER_ADMIN"
-                ? {}
-                : {
-                      scopeAdminId: scopeAdminId ?? "__no_scope__",
-                  }),
+            ...(viewer
+                ? getVisibleAiReviewStrategyWhere({
+                      platformRole: viewer.platformRole,
+                      scopeAdminId,
+                  })
+                : {}),
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     });

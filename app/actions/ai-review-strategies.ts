@@ -27,6 +27,7 @@ import {
     createAiReviewStrategyRetryRunItemBatchRun,
     deleteAiReviewStrategyBatchRun,
 } from "@/lib/ai/review-strategy-batches";
+import { canAccessAiReviewStrategy } from "@/lib/ai/review-strategy-visibility";
 
 export type AiReviewStrategyActionState = {
     error?: string;
@@ -580,7 +581,13 @@ export async function runAiReviewStrategyAction(
             id: parsed.data.strategyId,
         },
         select: {
+            code: true,
             scopeAdminId: true,
+            scopeAdmin: {
+                select: {
+                    platformRole: true,
+                },
+            },
         },
     });
 
@@ -591,11 +598,11 @@ export async function runAiReviewStrategyAction(
     }
 
     if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            strategy.scopeAdminId,
-        ))
+        !(await canAccessAiReviewStrategy({
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+            strategy,
+        }))
     ) {
         return {
             error: "你不能执行其他管理员域的审核策略。",
@@ -950,7 +957,13 @@ export async function createAiReviewStrategyBatchRunAction(
             id: parsed.data.strategyId,
         },
         select: {
+            code: true,
             scopeAdminId: true,
+            scopeAdmin: {
+                select: {
+                    platformRole: true,
+                },
+            },
         },
     });
 
@@ -961,11 +974,11 @@ export async function createAiReviewStrategyBatchRunAction(
     }
 
     if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            strategy.scopeAdminId,
-        ))
+        !(await canAccessAiReviewStrategy({
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+            strategy,
+        }))
     ) {
         return {
             error: "你不能创建其他管理员域的批量审核任务。",
@@ -1096,7 +1109,13 @@ export async function cancelAiReviewStrategyBatchRunAction(
             projectId: true,
             strategy: {
                 select: {
+                    code: true,
                     scopeAdminId: true,
+                    scopeAdmin: {
+                        select: {
+                            platformRole: true,
+                        },
+                    },
                 },
             },
         },
@@ -1121,11 +1140,11 @@ export async function cancelAiReviewStrategyBatchRunAction(
     }
 
     if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            batchRun.strategy.scopeAdminId,
-        ))
+        !(await canAccessAiReviewStrategy({
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+            strategy: batchRun.strategy,
+        }))
     ) {
         return {
             error: "你不能取消其他管理员域的批量审核任务。",
@@ -1194,7 +1213,13 @@ export async function deleteAiReviewStrategyBatchRunAction(
             projectId: true,
             strategy: {
                 select: {
+                    code: true,
                     scopeAdminId: true,
+                    scopeAdmin: {
+                        select: {
+                            platformRole: true,
+                        },
+                    },
                 },
             },
         },
@@ -1207,11 +1232,11 @@ export async function deleteAiReviewStrategyBatchRunAction(
     }
 
     if (
-        !(await canAccessAdminScope(
-            session.user.id,
-            session.user.platformRole,
-            batchRun.strategy.scopeAdminId,
-        ))
+        !(await canAccessAiReviewStrategy({
+            userId: session.user.id,
+            platformRole: session.user.platformRole,
+            strategy: batchRun.strategy,
+        }))
     ) {
         return {
             error: "你不能删除其他管理员域的批量审核任务。",

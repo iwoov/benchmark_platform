@@ -28,6 +28,7 @@ import type {
     DataEvaluationModelColumn,
     DataEvaluationQuestionDetail,
     DataEvaluationQuestionNavigation,
+    DataEvaluationRawResponsePart,
     DataEvaluationResult,
     DataEvaluationRunState,
 } from "@/lib/evaluations/data-evaluations";
@@ -140,6 +141,10 @@ function renderAnswerText(result: DataEvaluationResult) {
     return result.answer ?? result.normalizedAnswer ?? "";
 }
 
+function hasRawResponsePart(part: DataEvaluationRawResponsePart | null | undefined) {
+    return Boolean(part && (part.output != null || part.rawResponse != null));
+}
+
 function getOrderedRawFieldEntries(question: DataEvaluationQuestionDetail) {
     const keys = [
         ...question.rawFieldOrder,
@@ -190,12 +195,14 @@ export function DataEvaluationDetail({
     question,
     modelColumns,
     results,
+    initialRunStates,
     listPath,
     navigation,
 }: {
     question: DataEvaluationQuestionDetail;
     modelColumns: DataEvaluationModelColumn[];
     results: Record<string, DataEvaluationResult | null>;
+    initialRunStates?: Record<string, DataEvaluationRunState | null>;
     listPath: string;
     navigation: DataEvaluationQuestionNavigation;
 }) {
@@ -204,13 +211,13 @@ export function DataEvaluationDetail({
     const [currentResults, setCurrentResults] = useState(results);
     const [runStates, setRunStates] = useState<
         Record<string, DataEvaluationRunState | null>
-    >({});
+    >(initialRunStates ?? {});
     const [submittingColumnCode, setSubmittingColumnCode] = useState<
         string | null
     >(null);
     const [rawResponseModal, setRawResponseModal] = useState<{
         title: string;
-        payload: unknown;
+        part: DataEvaluationRawResponsePart;
     } | null>(null);
     const [isNavigatingList, startNavigatingList] = useTransition();
     const detailBasePath = listPath.split("?")[0];
@@ -246,15 +253,38 @@ export function DataEvaluationDetail({
         }
 
         if (payload.results) {
-            setCurrentResults(payload.results);
+            setCurrentResults((previous) =>
+                Object.fromEntries(
+                    modelColumns.map((model) => {
+                        const next = payload.results?.[model.code] ?? null;
+                        const current = previous[model.code] ?? null;
+
+                        return [
+                            model.code,
+                            next && current?.runId === next.runId
+                                ? {
+                                      ...next,
+                                      rawResponse:
+                                          next.rawResponse ??
+                                          current.rawResponse,
+                                  }
+                                : next,
+                        ];
+                    }),
+                ),
+            );
         }
 
         if (payload.runStates) {
             setRunStates(payload.runStates);
         }
-    }, [modelColumns.length, question.id]);
+    }, [modelColumns, question.id]);
 
     useEffect(() => {
+        if (!activeColumnCodes.length) {
+            return;
+        }
+
         let cancelled = false;
 
         const tick = async () => {
@@ -270,7 +300,7 @@ export function DataEvaluationDetail({
         void tick();
         const interval = window.setInterval(() => {
             void tick();
-        }, activeColumnCodes.length ? 3000 : 8000);
+        }, 3000);
 
         return () => {
             cancelled = true;
@@ -438,6 +468,13 @@ export function DataEvaluationDetail({
                             const answerText = result
                                 ? renderAnswerText(result)
                                 : "";
+                            const answerResponsePart =
+                                result?.rawResponse?.answer ?? null;
+                            const judgeResponsePart =
+                                result?.rawResponse?.judge ?? null;
+                            const showStageModelLabels = Boolean(
+                                result?.answerModelLabel && result.judgeModelLabel,
+                            );
                             const hasJudgeResult = Boolean(
                                 result &&
                                     (result.judgeModelCode ||
@@ -445,7 +482,8 @@ export function DataEvaluationDetail({
                                         result.matchLevel ||
                                         typeof result.confidence === "number" ||
                                         typeof result.score === "number" ||
-                                        result.isCorrect !== null),
+                                        result.isCorrect !== null ||
+                                        hasRawResponsePart(judgeResponsePart)),
                             );
 
                             return (
@@ -460,23 +498,6 @@ export function DataEvaluationDetail({
                                         </div>
                                         <div className="flex shrink-0 items-center gap-2">
                                             {formatResultStatus(result, runState)}
-                                            {result?.rawResponse ? (
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    leftIcon={<Eye size={14} />}
-                                                    onClick={() =>
-                                                        setRawResponseModal({
-                                                            title: `${model.label} 原始响应`,
-                                                            payload:
-                                                                result.rawResponse,
-                                                        })
-                                                    }
-                                                >
-                                                    查看原始响应
-                                                </Button>
-                                            ) : null}
                                             <Button
                                                 type="button"
                                                 size="sm"
@@ -553,16 +574,38 @@ export function DataEvaluationDetail({
                                                 </div>
                                                 <div className="grid gap-3 md:grid-cols-2">
                                                     <div className="space-y-2 rounded-md border border-border bg-muted/25 p-3">
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                                                作答结果
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0 space-y-1">
+                                                                {showStageModelLabels &&
+                                                                result.answerModelLabel ? (
+                                                                    <Badge variant="primary">
+                                                                        {
+                                                                            result.answerModelLabel
+                                                                        }
+                                                                    </Badge>
+                                                                ) : (
+                                                                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                                                        作答
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                            {result.answerModelLabel ? (
-                                                                <Badge variant="primary">
-                                                                    {
-                                                                        result.answerModelLabel
+                                                            {hasRawResponsePart(
+                                                                answerResponsePart,
+                                                            ) ? (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    variant="secondary"
+                                                                    leftIcon={<Eye size={14} />}
+                                                                    onClick={() =>
+                                                                        setRawResponseModal({
+                                                                            title: `${model.label} 作答阶段响应`,
+                                                                            part: answerResponsePart!,
+                                                                        })
                                                                     }
-                                                                </Badge>
+                                                                >
+                                                                    查看响应
+                                                                </Button>
                                                             ) : null}
                                                         </div>
                                                         {answerText ? (
@@ -578,10 +621,39 @@ export function DataEvaluationDetail({
 
                                                     {hasJudgeResult ? (
                                                         <div className="space-y-2 rounded-md border border-border bg-muted/25 p-3">
-                                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                                                    评判结果
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="min-w-0 space-y-1">
+                                                                    {showStageModelLabels &&
+                                                                    result.judgeModelLabel ? (
+                                                                        <Badge variant="info">
+                                                                            {
+                                                                                result.judgeModelLabel
+                                                                            }
+                                                                        </Badge>
+                                                                    ) : (
+                                                                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                                                            评判
+                                                                        </div>
+                                                                    )}
                                                                 </div>
+                                                                {hasRawResponsePart(
+                                                                    judgeResponsePart,
+                                                                ) ? (
+                                                                    <Button
+                                                                        type="button"
+                                                                        size="sm"
+                                                                        variant="secondary"
+                                                                        leftIcon={<Eye size={14} />}
+                                                                        onClick={() =>
+                                                                            setRawResponseModal({
+                                                                                title: `${model.label} 评判阶段响应`,
+                                                                                part: judgeResponsePart!,
+                                                                            })
+                                                                        }
+                                                                    >
+                                                                        查看响应
+                                                                    </Button>
+                                                                ) : null}
                                                             </div>
                                                             {renderJudgeResultBadges(
                                                                 result,
@@ -618,9 +690,42 @@ export function DataEvaluationDetail({
                 title={rawResponseModal?.title ?? "原始响应"}
                 width={840}
             >
-                <pre className="max-h-[70vh] overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-foreground">
-                    {formatJson(rawResponseModal?.payload)}
-                </pre>
+                <div className="space-y-4">
+                    <div className="grid gap-2 text-sm md:grid-cols-2">
+                        {rawResponseModal?.part.modelLabel ? (
+                            <div>
+                                <span className="text-muted-foreground">
+                                    模型：
+                                </span>
+                                {rawResponseModal.part.modelLabel}
+                            </div>
+                        ) : null}
+                        {rawResponseModal?.part.stepName ? (
+                            <div>
+                                <span className="text-muted-foreground">
+                                    阶段：
+                                </span>
+                                {rawResponseModal.part.stepName}
+                            </div>
+                        ) : null}
+                    </div>
+                    <div className="space-y-2">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            返回正文 JSON
+                        </div>
+                        <pre className="max-h-[32vh] overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-foreground">
+                            {formatJson(rawResponseModal?.part.output)}
+                        </pre>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            原始响应
+                        </div>
+                        <pre className="max-h-[38vh] overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-foreground">
+                            {formatJson(rawResponseModal?.part.rawResponse)}
+                        </pre>
+                    </div>
+                </div>
             </Modal>
         </div>
     );

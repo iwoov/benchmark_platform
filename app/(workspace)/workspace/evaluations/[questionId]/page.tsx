@@ -4,6 +4,7 @@ import { DataEvaluationDetail } from "@/components/evaluations/data-evaluation-d
 import {
     getDataEvaluationDetail,
     getDataEvaluationQuestionNavigation,
+    getDataEvaluationRunStates,
 } from "@/lib/evaluations/data-evaluations";
 import { canUserReviewProject } from "@/lib/reviews/permissions";
 
@@ -39,7 +40,7 @@ export default async function WorkspaceEvaluationDetailPage({
     const projectId = Array.isArray(resolvedSearchParams.projectId)
         ? resolvedSearchParams.projectId[0]
         : resolvedSearchParams.projectId;
-    const [canReview, navigation] = await Promise.all([
+    const [canReview, navigation, runStates] = await Promise.all([
         canUserReviewProject(
             session.user.id,
             session.user.platformRole,
@@ -52,6 +53,10 @@ export default async function WorkspaceEvaluationDetailPage({
                 userId: session.user.id,
                 platformRole: session.user.platformRole,
             },
+        }),
+        getDataEvaluationRunStates({
+            questionId: data.question.id,
+            modelColumns: data.modelColumns,
         }),
     ]);
 
@@ -74,6 +79,7 @@ export default async function WorkspaceEvaluationDetailPage({
             question={data.question}
             modelColumns={data.modelColumns}
             results={data.results}
+            initialRunStates={runStates}
             listPath={
                 listSearch.size
                     ? `/workspace/evaluations?${listSearch.toString()}`

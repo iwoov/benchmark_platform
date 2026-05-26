@@ -2,7 +2,9 @@ import { prisma } from "@/lib/db/prisma";
 import { aiReviewDefaultPrompts } from "@/lib/ai/review-strategy-schema";
 
 export const DEFAULT_REVIEW_STRATEGY_CODE = "review_common";
+export const SHARED_ADMIN_REVIEW_STRATEGY_CODE = "review_common_admin";
 export const DEFAULT_REVIEW_STRATEGY_NAME = "审核策略-通用";
+export const SHARED_ADMIN_REVIEW_STRATEGY_NAME = "审核策略-通用(admin)";
 
 function createDefaultStrategyDefinition(modelCode: string) {
     return {
@@ -26,15 +28,36 @@ function createDefaultStrategyDefinition(modelCode: string) {
 export async function ensureDefaultAiReviewStrategyForAdmin(input: {
     scopeAdminId: string;
     createdById?: string;
+    scopeAdminRole?: "SUPER_ADMIN" | "PLATFORM_ADMIN";
 }) {
     if (!process.env.DATABASE_URL) {
         return null;
     }
 
+    const scopeAdminRole =
+        input.scopeAdminRole ??
+        (
+            await prisma.user.findUnique({
+                where: {
+                    id: input.scopeAdminId,
+                },
+                select: {
+                    platformRole: true,
+                },
+            })
+        )?.platformRole;
+    const isSharedAdminStrategy = scopeAdminRole === "SUPER_ADMIN";
+    const strategyCode = isSharedAdminStrategy
+        ? SHARED_ADMIN_REVIEW_STRATEGY_CODE
+        : DEFAULT_REVIEW_STRATEGY_CODE;
+    const strategyName = isSharedAdminStrategy
+        ? SHARED_ADMIN_REVIEW_STRATEGY_NAME
+        : DEFAULT_REVIEW_STRATEGY_NAME;
+
     const existing = await prisma.aiReviewStrategy.findFirst({
         where: {
             scopeAdminId: input.scopeAdminId,
-            code: DEFAULT_REVIEW_STRATEGY_CODE,
+            code: strategyCode,
         },
         select: {
             id: true,
@@ -56,10 +79,12 @@ export async function ensureDefaultAiReviewStrategyForAdmin(input: {
         data: {
             scopeAdminId: input.scopeAdminId,
             createdById: input.createdById ?? input.scopeAdminId,
-            code: DEFAULT_REVIEW_STRATEGY_CODE,
-            name: DEFAULT_REVIEW_STRATEGY_NAME,
+            code: strategyCode,
+            name: strategyName,
             description:
-                "管理员域默认通用审核策略，可按本管理员实际业务继续调整。",
+                isSharedAdminStrategy
+                    ? "超级管理员共享通用审核策略，可供普通审核用户跨管理员域查看和执行。"
+                    : "管理员域默认通用审核策略，可按本管理员实际业务继续调整。",
             enabled: true,
             projectIds: [],
             datasourceIds: [],

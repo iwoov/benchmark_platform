@@ -38,6 +38,7 @@ async function resolveEvaluationDetail(questionId: string) {
             userId: session.user.id,
             platformRole: session.user.platformRole,
         },
+        includeRawResponse: false,
     });
 
     if (!data) {

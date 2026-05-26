@@ -493,7 +493,6 @@ model AiReviewStrategyBatchRunItem {
   createdAt     DateTime                 @default(now())
   updatedAt     DateTime                 @updatedAt
 
-  @@unique([batchRunId, questionId])
   @@unique([batchRunId, sequence])
   @@index([batchRunId, status, sequence])
   @@index([questionId, createdAt])

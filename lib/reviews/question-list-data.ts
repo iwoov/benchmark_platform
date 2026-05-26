@@ -406,6 +406,7 @@ export type ReviewQuestionListItem = {
     rawRecord: Record<string, string>;
     rawFieldOrder: string[];
     cleaningFieldStatus: Record<string, boolean>;
+    canManage: boolean;
 };
 
 export type ReviewQuestionRevisionLink = {
@@ -814,6 +815,7 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                     id: true,
                     name: true,
                     code: true,
+                    createdById: true,
                 },
             },
             datasource: {
@@ -887,6 +889,7 @@ export async function getReviewQuestionListData(projectIds?: string[]) {
                     question.datasource.syncConfig,
                 ),
                 cleaningFieldStatus: {},
+                canManage: false,
             };
         });
 }
@@ -1001,6 +1004,7 @@ export async function getReviewQuestionListPageData({
                     id: true,
                     name: true,
                     code: true,
+                    createdById: true,
                 },
             },
             datasource: {
@@ -1035,6 +1039,10 @@ export async function getReviewQuestionListPageData({
                 aiReview: null,
                 manualReview: null,
             };
+            const canManage =
+                viewer?.platformRole === "SUPER_ADMIN" ||
+                (viewer?.platformRole === "PLATFORM_ADMIN" &&
+                    question.project.createdById === viewer.userId);
 
             return {
                 id: question.id,
@@ -1059,6 +1067,7 @@ export async function getReviewQuestionListPageData({
                     question.datasource.syncConfig,
                 ),
                 cleaningFieldStatus: {},
+                canManage,
             };
         })
         .filter((question) => {

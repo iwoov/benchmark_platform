@@ -75,6 +75,7 @@ export type AiStreamInvocationSuccess = {
         baseUrl: string;
     };
     attemptStartedAt: number;
+    timeoutMs: number;
     response: Response;
 };
 
@@ -132,6 +133,49 @@ function getReasoningBudget(reasoningLevel: AiReasoningLevel) {
         default:
             return null;
     }
+}
+
+function usesAnthropicAdaptiveThinking(route: AiResolvedRoute) {
+    const modelName = route.providerModelName.toLowerCase();
+
+    return modelName.includes("claude-opus-4-7");
+}
+
+function getAnthropicThinkingConfig(
+    reasoningLevel: AiReasoningLevel,
+    route: AiResolvedRoute,
+) {
+    const reasoningEffort = getReasoningEffort(reasoningLevel);
+    const reasoningBudget = getReasoningBudget(reasoningLevel);
+
+    if (!reasoningEffort || !reasoningBudget) {
+        return {
+            thinking: null,
+            outputConfig: null,
+            budgetTokens: null,
+        };
+    }
+
+    if (usesAnthropicAdaptiveThinking(route)) {
+        return {
+            thinking: {
+                type: "adaptive",
+            },
+            outputConfig: {
+                effort: reasoningEffort,
+            },
+            budgetTokens: null,
+        };
+    }
+
+    return {
+        thinking: {
+            type: "enabled",
+            budget_tokens: reasoningBudget,
+        },
+        outputConfig: null,
+        budgetTokens: reasoningBudget,
+    };
 }
 
 function getGeminiThinkingLevel(reasoningLevel: AiReasoningLevel) {
@@ -317,10 +361,16 @@ function buildAnthropicPayload(
     stream: boolean,
 ) {
     const { systemText, conversation } = splitSystemMessages(input.messages);
-    const reasoningBudget = getReasoningBudget(config.reasoningLevel);
+    const thinkingConfig = getAnthropicThinkingConfig(
+        config.reasoningLevel,
+        route,
+    );
     const resolvedMaxTokens =
         input.maxTokens ?? config.maxTokensDefault ?? 2048;
-    const maxTokens = Math.max(resolvedMaxTokens, (reasoningBudget ?? 0) + 256);
+    const maxTokens = Math.max(
+        resolvedMaxTokens,
+        (thinkingConfig.budgetTokens ?? 0) + 256,
+    );
 
     return {
         model: route.providerModelName,
@@ -353,13 +403,13 @@ function buildAnthropicPayload(
                       }),
         })),
         ...(systemText ? { system: systemText } : {}),
-        ...(reasoningBudget
+        ...(thinkingConfig.thinking
             ? {
-                  thinking: {
-                      type: "enabled",
-                      budget_tokens: reasoningBudget,
-                  },
+                  thinking: thinkingConfig.thinking,
               }
+            : {}),
+        ...(thinkingConfig.outputConfig
+            ? { output_config: thinkingConfig.outputConfig }
             : {}),
         stream,
     };
@@ -746,6 +796,33 @@ function extractStreamDeltaText(
     }
 }
 
+async function readStreamChunkWithTimeout(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    timeoutMs: number,
+) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+        return await Promise.race([
+            reader.read(),
+            new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) => {
+                timer = setTimeout(() => {
+                    void reader.cancel("stream timeout").catch(() => undefined);
+                    reject(
+                        new Error(
+                            `Stream timeout after ${timeoutMs}ms before response completed`,
+                        ),
+                    );
+                }, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+}
+
 export async function resolveAiInvocationText(
     result: AiInvocationSuccess | AiStreamInvocationSuccess,
 ): Promise<{
@@ -761,6 +838,7 @@ export async function resolveAiInvocationText(
 
     const contentType = result.response.headers.get("content-type") ?? "";
     const startedAt = result.attemptStartedAt;
+    const streamDeadlineAt = startedAt + result.timeoutMs;
     let rawText = "";
 
     if (result.response.body) {
@@ -770,7 +848,18 @@ export async function resolveAiInvocationText(
         let chunkCount = 0;
 
         while (true) {
-            const { value, done } = await reader.read();
+            const remainingMs = streamDeadlineAt - Date.now();
+            if (remainingMs <= 0) {
+                void reader.cancel("stream timeout").catch(() => undefined);
+                throw new Error(
+                    `Stream timeout after ${result.timeoutMs}ms before response completed`,
+                );
+            }
+
+            const { value, done } = await readStreamChunkWithTimeout(
+                reader,
+                remainingMs,
+            );
             if (done) {
                 break;
             }
@@ -1036,6 +1125,7 @@ export async function invokeAiModel(
                             baseUrl: route.baseUrl,
                         },
                         attemptStartedAt: routeStartAt,
+                        timeoutMs: requestTimeoutMs,
                         response,
                     };
                 }
