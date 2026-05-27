@@ -3,6 +3,12 @@ import { aiReviewDefaultPrompts } from "@/lib/ai/review-strategy-schema";
 
 export const DEFAULT_REVIEW_STRATEGY_CODE = "review_common";
 export const SHARED_ADMIN_REVIEW_STRATEGY_CODE = "review_common_admin";
+export const SHARED_FRONTIER_SCIENCE_REVIEW_STRATEGY_CODE =
+    "review_frontier_science_common";
+export const SHARED_REVIEW_STRATEGY_CODES = [
+    SHARED_ADMIN_REVIEW_STRATEGY_CODE,
+    SHARED_FRONTIER_SCIENCE_REVIEW_STRATEGY_CODE,
+] as const;
 export const DEFAULT_REVIEW_STRATEGY_NAME = "审核策略-通用";
 export const SHARED_ADMIN_REVIEW_STRATEGY_NAME = "审核策略-通用(admin)";
 

@@ -24,12 +24,28 @@ const fieldAliases = {
         "题干",
         "题目",
     ],
-    answer: ["answer", "参考答案", "答案", "correctanswer"],
-    analysis: ["analysis", "解析", "explanation", "详解"],
+    answer: ["answer", "ground_truth", "groundTruth", "参考答案", "答案", "correctanswer"],
+    analysis: ["solution", "analysis", "解析", "explanation", "详解"],
+    primary: ["primary", "一级学科", "一级分类", "学科", "领域"],
+    options: ["options", "选项", "choices", "choice"],
+    imageId: ["image_id", "imageid", "imageId", "图片id", "图片ID", "图片"],
     questionType: ["questiontype", "题型", "类型", "type"],
     difficulty: ["difficulty", "难度", "level"],
     status: ["status", "状态"],
 } satisfies Record<string, string[]>;
+
+const requiredValueFields = [
+    { key: "businessQuestionKey", label: "question_id" },
+    { key: "content", label: "question" },
+    { key: "answer", label: "answer" },
+    { key: "analysis", label: "solution" },
+    { key: "primary", label: "primary" },
+] as const;
+
+const requiredPresenceFields = [
+    { key: "options", label: "options" },
+    { key: "imageId", label: "image_id" },
+] as const;
 
 type ParsedRow = {
     externalRecordId: string;
@@ -147,18 +163,54 @@ function buildFieldMapping(keys: string[]) {
         }
     }
 
-    const nonEmptyKeys = keys.filter((key) => trimToNull(key));
-
-    if (!mapping.title && nonEmptyKeys[0]) {
-        mapping.title = nonEmptyKeys[0];
-    }
-
-    if (!mapping.content) {
-        mapping.content =
-            nonEmptyKeys.find((key) => key !== mapping.title) ?? mapping.title;
-    }
-
     return mapping;
+}
+
+function validateImportFieldSchema(
+    rows: Record<string, unknown>[],
+    fieldMapping: Record<keyof typeof fieldAliases, string>,
+) {
+    const missingFieldLabels = [
+        ...requiredValueFields,
+        ...requiredPresenceFields,
+    ].flatMap((field) => (fieldMapping[field.key] ? [] : [field.label]));
+
+    if (missingFieldLabels.length) {
+        throw new Error(
+            `导入文件缺少必需字段：${missingFieldLabels.join("、")}。options 和 image_id 字段可以留空，但必须保留字段。`,
+        );
+    }
+
+    const rowErrors = rows.flatMap((row, rowIndex) => {
+        const missingValueLabels = requiredValueFields.flatMap((field) => {
+            const mappedKey = fieldMapping[field.key];
+            return trimToNull(row[mappedKey]) ? [] : [field.label];
+        });
+        const missingPresenceLabels = requiredPresenceFields.flatMap(
+            (field) => {
+                const mappedKey = fieldMapping[field.key];
+                return Object.prototype.hasOwnProperty.call(row, mappedKey)
+                    ? []
+                    : [field.label];
+            },
+        );
+        const missingLabels = [
+            ...missingValueLabels,
+            ...missingPresenceLabels,
+        ];
+
+        return missingLabels.length
+            ? [`第 ${rowIndex + 1} 行缺少：${missingLabels.join("、")}`]
+            : [];
+    });
+
+    if (rowErrors.length) {
+        throw new Error(
+            `导入文件存在必填字段缺失：${rowErrors.slice(0, 10).join("；")}${
+                rowErrors.length > 10 ? "；..." : ""
+            }`,
+        );
+    }
 }
 
 function normalizeStatus(value: unknown): QuestionStatus {
@@ -251,6 +303,7 @@ function normalizeRecord(
                 rawRecord.recordId ??
                 rawRecord.id ??
                 rawRecord.ID ??
+                businessQuestionKey ??
                 "",
         ),
         seenRecordIds,
@@ -348,6 +401,7 @@ export async function parseImportedProjectData(
         }, new Set<string>()),
     );
     const fieldMapping = buildFieldMapping(rawFieldOrder);
+    validateImportFieldSchema(sourceRows, fieldMapping);
     const seenRecordIds = new Set<string>();
     const rows = sourceRows
         .map((row, rowIndex) =>

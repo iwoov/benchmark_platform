@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { canAccessAdminScope } from "@/lib/auth/admin-scope";
 import type { PlatformRoleValue } from "@/lib/auth/roles";
-import { SHARED_ADMIN_REVIEW_STRATEGY_CODE } from "@/lib/ai/default-review-strategy";
+import { SHARED_REVIEW_STRATEGY_CODES } from "@/lib/ai/default-review-strategy";
 
 type ReviewStrategyAccessRecord = {
     code: string;
@@ -13,7 +13,9 @@ type ReviewStrategyAccessRecord = {
 
 export function getSharedDefaultReviewStrategyWhere(): Prisma.AiReviewStrategyWhereInput {
     return {
-        code: SHARED_ADMIN_REVIEW_STRATEGY_CODE,
+        code: {
+            in: [...SHARED_REVIEW_STRATEGY_CODES],
+        },
         scopeAdmin: {
             platformRole: "SUPER_ADMIN",
         },
@@ -42,7 +44,9 @@ export function isSharedDefaultReviewStrategy(
     strategy: ReviewStrategyAccessRecord,
 ) {
     return (
-        strategy.code === SHARED_ADMIN_REVIEW_STRATEGY_CODE &&
+        SHARED_REVIEW_STRATEGY_CODES.includes(
+            strategy.code as (typeof SHARED_REVIEW_STRATEGY_CODES)[number],
+        ) &&
         strategy.scopeAdmin.platformRole === "SUPER_ADMIN"
     );
 }

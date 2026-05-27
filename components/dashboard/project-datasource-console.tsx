@@ -279,7 +279,9 @@ export function ProjectDatasourceConsole({
                 <Tag color="blue">说明</Tag>
                 <span>
                     支持对象数组 JSON 和首个工作表为题目数据的
-                    Excel。系统会自动识别常见列名，如标题、内容、答案、解析、题型和难度。
+                    Excel。导入文件必须包含 question_id、question、answer
+                    或 ground_truth、solution、primary、options、image_id
+                    字段；options 和 image_id 可以留空。
                 </span>
             </div>
 
@@ -540,6 +542,16 @@ export function ProjectDatasourceConsole({
                     style={{ marginTop: 8 }}
                 >
                     <div className="import-form-grid">
+                        <div className="workspace-tip import-form-full">
+                            <Tag color="blue">字段要求</Tag>
+                            <span>
+                                必填且不能为空：question_id（题目唯一标识）、question（题干）、answer
+                                或 ground_truth（标准答案）、solution（解析）、primary（一级学科）。
+                                必须保留字段但可为空：options（选项列表）、image_id（图片引用）。
+                                其他项目扩展字段会原样保留。
+                            </span>
+                        </div>
+
                         <div>
                             <label
                                 className="field-label"
