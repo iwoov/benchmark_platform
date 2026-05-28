@@ -25,6 +25,7 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  FlaskConical,
   KeyRound,
   PencilLine,
   Plus,
@@ -33,9 +34,11 @@ import {
   X,
 } from "lucide-react";
 import {
+  testAiModelRouteAction,
   deleteAiModelAction,
   saveAiModelAction,
   updateAiProviderConfigAction,
+  type AiModelRouteTestActionState,
 } from "@/app/actions/ai-settings";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -221,6 +224,13 @@ export function AiSettingsConsole({
   const [isSavingProvider, startSavingProvider] = useTransition();
   const [isSavingModel, startSavingModel] = useTransition();
   const [isDeletingModel, startDeletingModel] = useTransition();
+  const [isTestingRoute, startTestingRoute] = useTransition();
+  const [testingRouteIndex, setTestingRouteIndex] = useState<number | null>(
+    null,
+  );
+  const [routeTestResults, setRouteTestResults] = useState<
+    Record<number, AiModelRouteTestActionState>
+  >({});
 
   const endpointMap = useMemo(
     () =>
@@ -340,17 +350,23 @@ export function AiSettingsConsole({
 
   function openCreateModelModal() {
     setModelForm(createModelFormState());
+    setRouteTestResults({});
+    setTestingRouteIndex(null);
     setModelModalOpen(true);
   }
 
   function openEditModelModal(model: AiSettingsModel) {
     setModelForm(createModelFormState(model));
+    setRouteTestResults({});
+    setTestingRouteIndex(null);
     setModelModalOpen(true);
   }
 
   function closeModelModal() {
     setModelModalOpen(false);
     setModelForm(createModelFormState());
+    setRouteTestResults({});
+    setTestingRouteIndex(null);
   }
 
   function addRoute(endpointId: string) {
@@ -370,6 +386,7 @@ export function AiSettingsConsole({
         },
       ],
     }));
+    setRouteTestResults({});
   }
 
   function moveRoute(index: number, direction: -1 | 1) {
@@ -389,6 +406,7 @@ export function AiSettingsConsole({
         routes,
       };
     });
+    setRouteTestResults({});
   }
 
   function removeRoute(index: number) {
@@ -396,6 +414,7 @@ export function AiSettingsConsole({
       ...current,
       routes: current.routes.filter((_, routeIndex) => routeIndex !== index),
     }));
+    setRouteTestResults({});
   }
 
   function updateRoute(index: number, patch: Partial<ModelRouteFormState>) {
@@ -405,6 +424,11 @@ export function AiSettingsConsole({
         routeIndex === index ? { ...route, ...patch } : route,
       ),
     }));
+    setRouteTestResults((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
   }
 
   function updateProviderEndpoint(
@@ -513,39 +537,43 @@ export function AiSettingsConsole({
     });
   }
 
+  function buildModelActionInput() {
+    return {
+      modelId: modelForm.modelId,
+      code: modelForm.code,
+      protocol: modelForm.protocol,
+      streamDefault: modelForm.streamDefault,
+      reasoningLevel: modelForm.reasoningLevel,
+      maxTokensDefault: modelForm.maxTokensDefault,
+      temperatureDefault: modelForm.temperatureDefault,
+      builtInTools:
+        modelForm.protocol === "OPENAI_RESPONSES"
+          ? modelForm.builtInTools
+          : [],
+      toolChoice:
+        modelForm.protocol === "OPENAI_RESPONSES" &&
+        modelForm.builtInTools.length
+          ? modelForm.toolChoice
+          : null,
+      maxToolCalls:
+        modelForm.protocol === "OPENAI_RESPONSES" &&
+        modelForm.builtInTools.length
+          ? modelForm.maxToolCalls
+          : null,
+      maxRetries: modelForm.maxRetries,
+      allowFallback: modelForm.allowFallback,
+      label: modelForm.label,
+      note: modelForm.note,
+      routes: modelForm.routes,
+    };
+  }
+
   function handleModelSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setSavingModelId(modelForm.modelId ?? "new");
     startSavingModel(async () => {
-      const result = await saveAiModelAction({
-        modelId: modelForm.modelId,
-        code: modelForm.code,
-        protocol: modelForm.protocol,
-        streamDefault: modelForm.streamDefault,
-        reasoningLevel: modelForm.reasoningLevel,
-        maxTokensDefault: modelForm.maxTokensDefault,
-        temperatureDefault: modelForm.temperatureDefault,
-        builtInTools:
-          modelForm.protocol === "OPENAI_RESPONSES"
-            ? modelForm.builtInTools
-            : [],
-        toolChoice:
-          modelForm.protocol === "OPENAI_RESPONSES" &&
-          modelForm.builtInTools.length
-            ? modelForm.toolChoice
-            : null,
-        maxToolCalls:
-          modelForm.protocol === "OPENAI_RESPONSES" &&
-          modelForm.builtInTools.length
-            ? modelForm.maxToolCalls
-            : null,
-        maxRetries: modelForm.maxRetries,
-        allowFallback: modelForm.allowFallback,
-        label: modelForm.label,
-        note: modelForm.note,
-        routes: modelForm.routes,
-      });
+      const result = await saveAiModelAction(buildModelActionInput());
 
       const success = notifyResult(result);
 
@@ -554,6 +582,37 @@ export function AiSettingsConsole({
       }
 
       setSavingModelId(null);
+    });
+  }
+
+  function handleTestRoute(index: number) {
+    setTestingRouteIndex(index);
+    startTestingRoute(async () => {
+      const result = await testAiModelRouteAction({
+        ...buildModelActionInput(),
+        routeIndex: index,
+      });
+
+      setRouteTestResults((current) => ({
+        ...current,
+        [index]: result,
+      }));
+
+      if (result.error) {
+        toast.error({
+          title: "测试失败",
+          description: result.error,
+        });
+      } else {
+        toast.success({
+          title: "测试成功",
+          description: result.text
+            ? `返回：${result.text}`
+            : result.success ?? "模型路由可用。",
+        });
+      }
+
+      setTestingRouteIndex(null);
     });
   }
 
@@ -1411,6 +1470,7 @@ export function AiSettingsConsole({
               <div className="ai-route-stack ai-route-stack-compact">
                 {modelForm.routes.map((route, index) => {
                   const endpoint = endpointMap[route.endpointId];
+                  const testResult = routeTestResults[index];
 
                   if (!endpoint) {
                     return null;
@@ -1498,10 +1558,51 @@ export function AiSettingsConsole({
                               />
                             </div>
                           </div>
+
+                          {testResult ? (
+                            <div
+                              className="workspace-tip"
+                              style={{
+                                marginTop: 12,
+                                ...(testResult.error
+                                  ? {
+                                      borderColor: "rgb(248 113 113 / 0.35)",
+                                      background: "rgb(254 242 242 / 0.7)",
+                                    }
+                                  : {}),
+                              }}
+                            >
+                              <Tag color={testResult.error ? "red" : "green"}>
+                                {testResult.error ? "失败" : "成功"}
+                              </Tag>
+                              <span>
+                                {testResult.error
+                                  ? testResult.error
+                                  : `返回 ${testResult.textLength ?? 0} 字符`}
+                                {typeof testResult.durationMs === "number"
+                                  ? ` · ${testResult.durationMs}ms`
+                                  : ""}
+                                {testResult.text ? ` · ${testResult.text}` : ""}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
 
                       <div className="ai-route-card-actions ai-route-card-actions-compact">
+                        <Button
+                          icon={<FlaskConical size={16} />}
+                          onClick={() => handleTestRoute(index)}
+                          loading={
+                            isTestingRoute && testingRouteIndex === index
+                          }
+                          disabled={
+                            !route.providerModelName ||
+                            (isTestingRoute && testingRouteIndex !== index)
+                          }
+                        >
+                          测试
+                        </Button>
                         <Button
                           icon={<ArrowUp size={16} />}
                           onClick={() => moveRoute(index, -1)}

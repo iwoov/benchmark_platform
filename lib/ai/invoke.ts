@@ -1020,6 +1020,14 @@ export async function invokeAiModel(
         };
     }
 
+    return invokeAiModelWithConfig(input, config, startedAt);
+}
+
+export async function invokeAiModelWithConfig(
+    input: AiInvocationRequest,
+    config: AiModelRoutingConfig,
+    startedAt = Date.now(),
+): Promise<AiInvocationResult> {
     const routes = config.routes.filter((route) => Boolean(route.apiKey));
     const stream = input.stream ?? config.streamDefault;
     const candidateRoutes = config.allowFallback ? routes : routes.slice(0, 1);

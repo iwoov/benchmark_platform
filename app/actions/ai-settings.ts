@@ -11,6 +11,11 @@ import {
     aiToolChoiceOptions,
     normalizeAiCompanyName,
 } from "@/lib/ai/provider-catalog";
+import {
+    invokeAiModelWithConfig,
+    resolveAiInvocationText,
+} from "@/lib/ai/invoke";
+import type { AiModelRoutingConfig } from "@/lib/ai/routing";
 
 export type AiSettingsActionState = {
     error?: string;
@@ -210,6 +215,15 @@ const saveAiModelSchema = z.object({
 const deleteAiModelSchema = z.object({
     modelId: z.string().min(1, "缺少模型 ID"),
 });
+
+const testAiModelRouteSchema = saveAiModelSchema.and(
+    z.object({
+        routeIndex: z
+            .number()
+            .int("测试路由序号必须是整数")
+            .min(0, "测试路由序号不正确"),
+    }),
+);
 
 async function requireAdminAccess() {
     const session = await auth();
@@ -552,6 +566,175 @@ export async function saveAiModelAction(
     return {
         success: `模型 ${parsed.data.code} 已添加。`,
     };
+}
+
+export type AiModelRouteTestActionState = AiSettingsActionState & {
+    text?: string;
+    textLength?: number;
+    durationMs?: number;
+    route?: {
+        providerName: string;
+        endpointLabel: string;
+        providerModelName: string;
+    };
+};
+
+export async function testAiModelRouteAction(
+    input: z.input<typeof testAiModelRouteSchema>,
+): Promise<AiModelRouteTestActionState> {
+    const accessError = await requireAdminAccess();
+
+    if (accessError) {
+        return accessError;
+    }
+
+    const parsed = testAiModelRouteSchema.safeParse(input);
+
+    if (!parsed.success) {
+        return {
+            error: parsed.error.issues[0]?.message ?? "模型路由测试参数不合法。",
+        };
+    }
+
+    const route = parsed.data.routes[parsed.data.routeIndex];
+
+    if (!route) {
+        return {
+            error: "测试路由不存在，请刷新页面后重试。",
+        };
+    }
+
+    const endpoint = await prisma.aiProviderEndpoint.findUnique({
+        where: {
+            id: route.endpointId,
+        },
+        include: {
+            provider: true,
+        },
+    });
+
+    if (!endpoint) {
+        return {
+            error: "测试路由绑定的接口不存在。",
+        };
+    }
+
+    if (endpoint.protocol !== parsed.data.protocol) {
+        return {
+            error: "测试路由接口协议和模型协议不一致。",
+        };
+    }
+
+    if (!endpoint.provider.apiKey) {
+        return {
+            error: `${endpoint.provider.name} 未配置 API Key，无法测试。`,
+        };
+    }
+
+    const config: AiModelRoutingConfig = {
+        modelId: parsed.data.modelId ?? "route-test",
+        modelCode: parsed.data.code,
+        protocol: parsed.data.protocol,
+        streamDefault: parsed.data.streamDefault,
+        reasoningLevel: parsed.data.reasoningLevel,
+        maxTokensDefault: parsed.data.maxTokensDefault,
+        temperatureDefault: parsed.data.temperatureDefault,
+        builtInTools: parsed.data.builtInTools,
+        toolChoice: parsed.data.toolChoice,
+        maxToolCalls: parsed.data.maxToolCalls,
+        maxRetries: 0,
+        allowFallback: false,
+        routes: [
+            {
+                priority: 1,
+                timeoutMs: route.timeoutMs,
+                providerModelName: route.providerModelName,
+                endpointId: endpoint.id,
+                endpointCode: endpoint.code,
+                endpointLabel: endpoint.label,
+                baseUrl: endpoint.baseUrl,
+                providerId: endpoint.provider.id,
+                providerCode: endpoint.provider.code,
+                providerName: endpoint.provider.name,
+                apiKey: endpoint.provider.apiKey,
+            },
+        ],
+    };
+
+    const startedAt = Date.now();
+    const result = await invokeAiModelWithConfig({
+        modelCode: parsed.data.code,
+        stream: parsed.data.streamDefault,
+        maxTokens: 64,
+        temperature: 0,
+        responseMimeType: "text/plain",
+        messages: [
+            {
+                role: "system",
+                content: "你是模型路由连通性测试助手。",
+            },
+            {
+                role: "user",
+                content: "请只回复 pong，不要输出其他内容。",
+            },
+        ],
+    }, config);
+
+    if (!result.ok) {
+        return {
+            error: result.error,
+            durationMs: Date.now() - startedAt,
+            route: {
+                providerName: endpoint.provider.name,
+                endpointLabel: endpoint.label,
+                providerModelName: route.providerModelName,
+            },
+        };
+    }
+
+    try {
+        const resolved = await resolveAiInvocationText(result);
+        const text = resolved.text?.trim() ?? "";
+
+        if (!text) {
+            return {
+                error: "模型调用成功，但没有返回可见文本。",
+                text: "",
+                textLength: 0,
+                durationMs: Date.now() - startedAt,
+                route: {
+                    providerName: endpoint.provider.name,
+                    endpointLabel: endpoint.label,
+                    providerModelName: route.providerModelName,
+                },
+            };
+        }
+
+        return {
+            success: "模型路由测试成功。",
+            text: text.slice(0, 500),
+            textLength: text.length,
+            durationMs: Date.now() - startedAt,
+            route: {
+                providerName: endpoint.provider.name,
+                endpointLabel: endpoint.label,
+                providerModelName: route.providerModelName,
+            },
+        };
+    } catch (error) {
+        return {
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "模型响应结果解析失败。",
+            durationMs: Date.now() - startedAt,
+            route: {
+                providerName: endpoint.provider.name,
+                endpointLabel: endpoint.label,
+                providerModelName: route.providerModelName,
+            },
+        };
+    }
 }
 
 export async function deleteAiModelAction(

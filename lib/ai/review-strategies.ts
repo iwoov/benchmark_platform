@@ -128,6 +128,8 @@ type StrategyExecutionOptions = {
     evaluationModelFilter?: EvaluationModelFilter;
 };
 
+const AI_TOOL_RESULT_MAX_ATTEMPTS = 2;
+
 function parseStringArray(input: unknown) {
     if (!Array.isArray(input)) {
         return [] as string[];
@@ -1267,112 +1269,173 @@ async function executeAiToolItem(
         ...imageParts,
     ];
 
-    const response = await invokeAiModel({
-        modelCode,
-        stream: true,
-        responseMimeType: "application/json",
-        enableBuiltInTools: options?.enableBuiltInTools,
-        messages: [
-            {
-                role: "system",
-                content: buildSystemPrompt(step),
-            },
-            {
-                role: "user",
-                content: imageParts.length > 0 ? userContent : userPromptText,
-            },
-        ],
-    });
+    const attempts: unknown[] = [];
+    let lastFailure: StepExecutionItem | null = null;
 
-    if (!response.ok) {
-        return {
+    for (
+        let attemptIndex = 1;
+        attemptIndex <= AI_TOOL_RESULT_MAX_ATTEMPTS;
+        attemptIndex += 1
+    ) {
+        const response = await invokeAiModel({
+            modelCode,
+            stream: true,
+            responseMimeType: "application/json",
+            enableBuiltInTools: options?.enableBuiltInTools,
+            messages: [
+                {
+                    role: "system",
+                    content: buildSystemPrompt(step),
+                },
+                {
+                    role: "user",
+                    content:
+                        imageParts.length > 0 ? userContent : userPromptText,
+                },
+            ],
+        });
+
+        if (!response.ok) {
+            attempts.push({
+                attempt: attemptIndex,
+                failure: response,
+            });
+            return {
+                index,
+                status: "FAILED" as const,
+                sourceStepId: step.sourceStepId,
+                promptInput,
+                requestMeta: {
+                    modelCode,
+                    protocol: response.protocol,
+                },
+                rawResponse: {
+                    attempts,
+                    failure: response,
+                },
+                error: response.error,
+            };
+        }
+
+        let responseText: string | null = null;
+        let responseRaw: unknown = null;
+
+        try {
+            const resolvedResponse = await resolveAiInvocationText(response);
+            responseText = resolvedResponse.text;
+            responseRaw = resolvedResponse.raw;
+
+            const parsedRaw = extractJson(responseText);
+            const normalizedPayload =
+                parsedRaw &&
+                typeof parsedRaw === "object" &&
+                !Array.isArray(parsedRaw)
+                    ? coerceAiOutput(
+                          step.toolType,
+                          parsedRaw as Record<string, unknown>,
+                      )
+                    : (() => {
+                          throw new Error("模型返回的 JSON 不是对象");
+                      })();
+            const parsed =
+                aiReviewOutputSchemas[step.toolType].safeParse(
+                    normalizedPayload,
+                );
+
+            if (!parsed.success) {
+                throw new Error(
+                    parsed.error.issues[0]?.message ?? "模型结果结构不合法",
+                );
+            }
+
+            return {
+                index,
+                status: "SUCCESS" as const,
+                sourceStepId: step.sourceStepId,
+                promptInput,
+                requestMeta: {
+                    modelCode: response.modelCode,
+                    protocol: response.protocol,
+                    reasoningLevel: response.reasoningLevel,
+                    providerCode: response.route.providerCode,
+                    providerName: response.route.providerName,
+                    endpointCode: response.route.endpointCode,
+                    endpointLabel: response.route.endpointLabel,
+                    baseUrl: response.route.baseUrl,
+                },
+                output: parsed.data,
+                rawResponse: {
+                    route: response.route,
+                    raw: responseRaw,
+                    attempts:
+                        attempts.length > 0
+                            ? [
+                                  ...attempts,
+                                  {
+                                      attempt: attemptIndex,
+                                      route: response.route,
+                                      raw: responseRaw,
+                                      text: responseText,
+                                      success: true,
+                                  },
+                              ]
+                            : undefined,
+                },
+                derived: deriveMetrics(step.toolType, parsed.data, question),
+            };
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "模型结果解析失败";
+
+            attempts.push({
+                attempt: attemptIndex,
+                route: response.route,
+                raw: responseRaw,
+                text: responseText,
+                error: message,
+            });
+
+            lastFailure = {
+                index,
+                status: "FAILED" as const,
+                sourceStepId: step.sourceStepId,
+                promptInput,
+                requestMeta: {
+                    modelCode: response.modelCode,
+                    protocol: response.protocol,
+                    reasoningLevel: response.reasoningLevel,
+                    providerCode: response.route.providerCode,
+                    providerName: response.route.providerName,
+                    endpointCode: response.route.endpointCode,
+                    endpointLabel: response.route.endpointLabel,
+                    baseUrl: response.route.baseUrl,
+                },
+                rawResponse: {
+                    route: response.route,
+                    raw: responseRaw,
+                    text: responseText,
+                    attempts,
+                },
+                error: message,
+            };
+        }
+    }
+
+    return (
+        lastFailure ?? {
             index,
             status: "FAILED" as const,
             sourceStepId: step.sourceStepId,
             promptInput,
             requestMeta: {
                 modelCode,
-                protocol: response.protocol,
             },
             rawResponse: {
-                failure: response,
+                attempts,
             },
-            error: response.error,
-        };
-    }
-
-    const resolvedResponse = await resolveAiInvocationText(response);
-    const responseText = resolvedResponse.text;
-    const responseRaw = resolvedResponse.raw;
-
-    try {
-        const parsedRaw = extractJson(responseText);
-        const normalizedPayload =
-            parsedRaw &&
-            typeof parsedRaw === "object" &&
-            !Array.isArray(parsedRaw)
-                ? coerceAiOutput(
-                      step.toolType,
-                      parsedRaw as Record<string, unknown>,
-                  )
-                : (() => {
-                      throw new Error("模型返回的 JSON 不是对象");
-                  })();
-        const parsed =
-            aiReviewOutputSchemas[step.toolType].safeParse(normalizedPayload);
-
-        if (!parsed.success) {
-            throw new Error(
-                parsed.error.issues[0]?.message ?? "模型结果结构不合法",
-            );
+            error: "模型结果解析失败",
         }
-
-        return {
-            index,
-            status: "SUCCESS" as const,
-            sourceStepId: step.sourceStepId,
-            promptInput,
-            requestMeta: {
-                modelCode: response.modelCode,
-                protocol: response.protocol,
-                reasoningLevel: response.reasoningLevel,
-                providerCode: response.route.providerCode,
-                providerName: response.route.providerName,
-                endpointCode: response.route.endpointCode,
-                endpointLabel: response.route.endpointLabel,
-                baseUrl: response.route.baseUrl,
-            },
-            output: parsed.data,
-            rawResponse: {
-                route: response.route,
-                raw: responseRaw,
-            },
-            derived: deriveMetrics(step.toolType, parsed.data, question),
-        };
-    } catch (error) {
-        return {
-            index,
-            status: "FAILED" as const,
-            sourceStepId: step.sourceStepId,
-            promptInput,
-            requestMeta: {
-                modelCode: response.modelCode,
-                protocol: response.protocol,
-                reasoningLevel: response.reasoningLevel,
-                providerCode: response.route.providerCode,
-                providerName: response.route.providerName,
-                endpointCode: response.route.endpointCode,
-                endpointLabel: response.route.endpointLabel,
-                baseUrl: response.route.baseUrl,
-            },
-            rawResponse: {
-                route: response.route,
-                raw: responseRaw,
-                text: responseText,
-            },
-            error: error instanceof Error ? error.message : "模型结果解析失败",
-        };
-    }
+    );
 }
 
 function buildRunningAiToolStepResult(
