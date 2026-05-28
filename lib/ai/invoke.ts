@@ -109,6 +109,16 @@ function trimTrailingSlash(value: string) {
     return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
+function shouldOmitTemperature(route: AiResolvedRoute) {
+    const providerModelName = route.providerModelName.toLowerCase();
+
+    return (
+        route.providerCode === "evamux" &&
+        (providerModelName.startsWith("claude-") ||
+            providerModelName.includes("anthropic"))
+    );
+}
+
 function getReasoningEffort(reasoningLevel: AiReasoningLevel) {
     switch (reasoningLevel) {
         case "LOW":
@@ -234,8 +244,9 @@ function buildOpenAiChatPayload(
 ) {
     const reasoningEffort = getReasoningEffort(config.reasoningLevel);
     const maxTokens = input.maxTokens ?? config.maxTokensDefault ?? undefined;
-    const temperature =
-        input.temperature ?? config.temperatureDefault ?? undefined;
+    const temperature = shouldOmitTemperature(route)
+        ? undefined
+        : (input.temperature ?? config.temperatureDefault ?? undefined);
 
     return {
         model: route.providerModelName,
@@ -279,8 +290,9 @@ function buildOpenAiResponsesPayload(
 ) {
     const reasoningEffort = getReasoningEffort(config.reasoningLevel);
     const maxTokens = input.maxTokens ?? config.maxTokensDefault ?? undefined;
-    const temperature =
-        input.temperature ?? config.temperatureDefault ?? undefined;
+    const temperature = shouldOmitTemperature(route)
+        ? undefined
+        : (input.temperature ?? config.temperatureDefault ?? undefined);
 
     const builtInTools = input.enableBuiltInTools
         ? config.builtInTools.map((tool) => ({

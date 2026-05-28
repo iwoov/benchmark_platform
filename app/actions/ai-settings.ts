@@ -666,7 +666,6 @@ export async function testAiModelRouteAction(
         modelCode: parsed.data.code,
         stream: parsed.data.streamDefault,
         maxTokens: 64,
-        temperature: 0,
         responseMimeType: "text/plain",
         messages: [
             {

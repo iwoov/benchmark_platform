@@ -178,10 +178,6 @@ function endpointLabel(providerName: string, label: string) {
   return `${providerName} / ${label}`;
 }
 
-function routeStatusLabel(index: number) {
-  return index === 0 ? "主路由" : `备用 ${index}`;
-}
-
 const providerProtocolColumns: Array<{
   protocol: AiProtocol;
   label: string;
@@ -749,7 +745,15 @@ export function AiSettingsConsole({
           ) : !models.length ? (
             <Empty description="当前还没有模型路由，点击右上角开始添加。" />
           ) : (
-            <div className="model-row-list">
+            <div className="table-surface ai-model-table">
+              <div className="ai-model-table-head">
+                <span>模型路由</span>
+                <span>协议</span>
+                <span>主路由</span>
+                <span>备用路由</span>
+                <span>默认参数</span>
+                <span>操作</span>
+              </div>
               {models.map((model) => {
                 const primaryRoute = model.routes[0];
                 const fallbackCount = Math.max(0, model.routes.length - 1);
@@ -758,84 +762,82 @@ export function AiSettingsConsole({
                   model.builtInTools.length > 0;
 
                 return (
-                  <article key={model.id} className="model-row">
-                    <div className="model-row-main">
-                      <div className="model-row-identity">
-                        <h3 className="model-row-code">{model.code}</h3>
-                        <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
+                  <div key={model.id} className="ai-model-table-row">
+                    <div className="ai-model-table-main">
+                      <div className="ai-model-table-code">{model.code}</div>
+                      <div className="ai-model-table-subline">
                         {model.label ? (
-                          <span className="model-row-label">{model.label}</span>
-                        ) : null}
-                      </div>
-
-                      <div className="model-row-meta">
-                        <span className="model-row-meta-item">
-                          <span className="model-row-meta-key">主路由</span>
-                          <span className="model-row-meta-value">
-                            {primaryRoute
-                              ? endpointLabel(
-                                  primaryRoute.providerName,
-                                  primaryRoute.label,
-                                )
-                              : "未配置"}
-                            {primaryRoute?.providerModelName
-                              ? ` / ${primaryRoute.providerModelName}`
-                              : ""}
-                          </span>
-                        </span>
-                        <span className="model-row-meta-divider" aria-hidden>
-                          ·
-                        </span>
-                        <span className="model-row-meta-item">
-                          <span className="model-row-meta-key">备用</span>
-                          <span className="model-row-meta-value">
-                            {fallbackCount > 0 ? `${fallbackCount} 条` : "无"}
-                          </span>
-                        </span>
-                        {hasTools ? (
-                          <>
-                            <span
-                              className="model-row-meta-divider"
-                              aria-hidden
-                            >
-                              ·
-                            </span>
-                            <span className="model-row-meta-item">
-                              <span className="model-row-meta-key">工具</span>
-                              <span className="model-row-meta-value">
-                                {model.builtInTools
-                                  .map((tool) => aiBuiltInToolLabels[tool])
-                                  .join("、")}
-                                {model.toolChoice
-                                  ? ` · ${aiToolChoiceLabels[model.toolChoice]}`
-                                  : ""}
-                                {model.maxToolCalls
-                                  ? ` · 最多 ${model.maxToolCalls} 次`
-                                  : ""}
-                              </span>
-                            </span>
-                          </>
+                          <span>{model.label}</span>
                         ) : null}
                         {model.note ? (
-                          <>
-                            <span
-                              className="model-row-meta-divider"
-                              aria-hidden
-                            >
-                              ·
-                            </span>
-                            <span className="model-row-meta-item">
-                              <span className="model-row-meta-key">备注</span>
-                              <span className="model-row-meta-value">
-                                {model.note}
-                              </span>
-                            </span>
-                          </>
+                          <span>{model.note}</span>
                         ) : null}
                       </div>
                     </div>
 
-                    <div className="model-row-actions">
+                    <div>
+                      <Tag color="blue">{aiProtocolLabels[model.protocol]}</Tag>
+                    </div>
+
+                    <div className="ai-model-table-meta">
+                      <strong>
+                        {primaryRoute
+                          ? endpointLabel(
+                              primaryRoute.providerName,
+                              primaryRoute.label,
+                            )
+                          : "未配置"}
+                      </strong>
+                      {primaryRoute?.providerModelName ? (
+                        <span>{primaryRoute.providerModelName}</span>
+                      ) : null}
+                    </div>
+
+                    <div className="ai-model-table-meta">
+                      {fallbackCount > 0 ? (
+                        <>
+                          <strong>{fallbackCount} 条</strong>
+                          <span>按配置顺序回退</span>
+                        </>
+                      ) : (
+                        <span>无</span>
+                      )}
+                    </div>
+
+                    <div className="ai-model-table-defaults">
+                      <Tag>{model.streamDefault ? "流式" : "非流式"}</Tag>
+                      <Tag>{aiReasoningLabels[model.reasoningLevel]}</Tag>
+                      <Tag>重试 {model.maxRetries}</Tag>
+                      {typeof model.maxTokensDefault === "number" ? (
+                        <Tag>{model.maxTokensDefault} tokens</Tag>
+                      ) : null}
+                      {typeof model.temperatureDefault === "number" ? (
+                        <Tag>temp {model.temperatureDefault}</Tag>
+                      ) : null}
+                      {hasTools ? (
+                        <Tooltip
+                          title={[
+                            model.builtInTools
+                              .map((tool) => aiBuiltInToolLabels[tool])
+                              .join("、"),
+                            model.toolChoice
+                              ? aiToolChoiceLabels[model.toolChoice]
+                              : null,
+                            model.maxToolCalls
+                              ? `最多 ${model.maxToolCalls} 次`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        >
+                          <Tag color="purple">
+                            工具 {model.builtInTools.length}
+                          </Tag>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+
+                    <div className="ai-model-table-actions">
                       <Button
                         icon={<PencilLine size={16} />}
                         onClick={() => openEditModelModal(model)}
@@ -860,7 +862,7 @@ export function AiSettingsConsole({
                         </Button>
                       </Popconfirm>
                     </div>
-                  </article>
+                  </div>
                 );
               })}
             </div>
@@ -1103,81 +1105,102 @@ export function AiSettingsConsole({
         footer={null}
         destroyOnHidden
         title={modelForm.modelId ? "编辑模型路由" : "新建模型路由"}
-        width={760}
+        width="min(1180px, calc(100vw - 32px))"
+        wrapClassName="ai-model-route-modal"
       >
         <form className="ai-model-form ai-model-form-compact" onSubmit={handleModelSubmit}>
-          <div className="ai-modal-header-inline">
+          <div className="ai-model-modal-summary">
             <div>
-              <div style={{ fontWeight: 700 }}>
-                {modelForm.modelId ? "编辑模型路由" : "新建模型路由"}
+              <div className="ai-model-modal-summary-title">
+                {modelForm.code || "未命名模型路由"}
               </div>
-              <div className="muted" style={{ marginTop: 4 }}>
-                基础信息和路由链集中在一个弹窗内完成。
+              <div className="muted ai-model-modal-summary-copy">
+                配置模型协议、默认参数和按顺序执行的主备路由。
               </div>
             </div>
-            <Tag color="blue">{aiProtocolLabels[modelForm.protocol]}</Tag>
+            <div className="ai-model-modal-summary-tags">
+              <Tag color="blue">{aiProtocolLabels[modelForm.protocol]}</Tag>
+              <Tag>{modelForm.allowFallback ? "允许回退" : "仅主路由"}</Tag>
+              <Tag>{modelForm.streamDefault ? "默认流式" : "默认非流式"}</Tag>
+            </div>
           </div>
 
-          <div className="ai-model-form-grid ai-model-form-grid-compact">
-            <div>
-              <label className="field-label" htmlFor="ai-model-code">
-                模型路由名
-              </label>
-              <Input
-                id="ai-model-code"
-                size="large"
-                value={modelForm.code}
-                onChange={(event) =>
-                  setModelForm((current) => ({
-                    ...current,
-                    code: event.target.value,
-                  }))
-                }
-                placeholder="例如 gpt-5.3-main"
-              />
+          <div className="ai-modal-panel ai-modal-panel-compact">
+            <div className="ai-modal-panel-head">
+              <div>
+                <div style={{ fontWeight: 700 }}>基础配置</div>
+                <div className="muted ai-modal-panel-copy">
+                  这些参数会作为当前模型路由的默认调用配置。
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="field-label" htmlFor="ai-model-protocol">
-                协议
-              </label>
-              <Select
-                id="ai-model-protocol"
-                size="large"
-                value={modelForm.protocol}
-                options={[
-                  {
-                    value: "OPENAI_COMPATIBLE",
-                    label: aiProtocolLabels.OPENAI_COMPATIBLE,
-                  },
-                  {
-                    value: "OPENAI_RESPONSES",
-                    label: aiProtocolLabels.OPENAI_RESPONSES,
-                  },
-                  {
-                    value: "GEMINI_COMPATIBLE",
-                    label: aiProtocolLabels.GEMINI_COMPATIBLE,
-                  },
-                  {
-                    value: "ANTHROPIC_COMPATIBLE",
-                    label: aiProtocolLabels.ANTHROPIC_COMPATIBLE,
-                  },
-                ]}
-                onChange={(value) =>
-                  setModelForm((current) => ({
-                    ...current,
-                    protocol: value as AiProtocol,
-                    builtInTools:
-                      value === "OPENAI_RESPONSES" ? current.builtInTools : [],
-                    toolChoice:
-                      value === "OPENAI_RESPONSES" ? current.toolChoice : "auto",
-                    maxToolCalls:
-                      value === "OPENAI_RESPONSES" ? current.maxToolCalls : null,
-                    routes: [],
-                  }))
-                }
-              />
-            </div>
+            <div className="ai-model-form-grid ai-model-form-grid-compact ai-model-form-grid-wide">
+              <div>
+                <label className="field-label" htmlFor="ai-model-code">
+                  模型路由名
+                </label>
+                <Input
+                  id="ai-model-code"
+                  size="large"
+                  value={modelForm.code}
+                  onChange={(event) =>
+                    setModelForm((current) => ({
+                      ...current,
+                      code: event.target.value,
+                    }))
+                  }
+                  placeholder="例如 gpt-5.3-main"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="ai-model-protocol">
+                  协议
+                </label>
+                <Select
+                  id="ai-model-protocol"
+                  size="large"
+                  value={modelForm.protocol}
+                  options={[
+                    {
+                      value: "OPENAI_COMPATIBLE",
+                      label: aiProtocolLabels.OPENAI_COMPATIBLE,
+                    },
+                    {
+                      value: "OPENAI_RESPONSES",
+                      label: aiProtocolLabels.OPENAI_RESPONSES,
+                    },
+                    {
+                      value: "GEMINI_COMPATIBLE",
+                      label: aiProtocolLabels.GEMINI_COMPATIBLE,
+                    },
+                    {
+                      value: "ANTHROPIC_COMPATIBLE",
+                      label: aiProtocolLabels.ANTHROPIC_COMPATIBLE,
+                    },
+                  ]}
+                  onChange={(value) =>
+                    setModelForm((current) => ({
+                      ...current,
+                      protocol: value as AiProtocol,
+                      builtInTools:
+                        value === "OPENAI_RESPONSES"
+                          ? current.builtInTools
+                          : [],
+                      toolChoice:
+                        value === "OPENAI_RESPONSES"
+                          ? current.toolChoice
+                          : "auto",
+                      maxToolCalls:
+                        value === "OPENAI_RESPONSES"
+                          ? current.maxToolCalls
+                          : null,
+                      routes: [],
+                    }))
+                  }
+                />
+              </div>
 
             <div>
               <label className="field-label" htmlFor="ai-model-stream-default">
@@ -1344,6 +1367,7 @@ export function AiSettingsConsole({
               />
             </div>
           </div>
+          </div>
 
           {modelForm.protocol === "OPENAI_RESPONSES" ? (
             <div className="ai-modal-panel ai-modal-panel-compact">
@@ -1467,7 +1491,17 @@ export function AiSettingsConsole({
                 <span>当前还没有配置路由，请先添加至少一个接口。</span>
               </div>
             ) : (
-              <div className="ai-route-stack ai-route-stack-compact">
+              <div className="ai-route-edit-table">
+                <div className="ai-route-edit-head">
+                  <span>顺序</span>
+                  <span>接口</span>
+                  <span>供应商模型</span>
+                  <span>超时</span>
+                  <span>启用</span>
+                  <span>测试</span>
+                  <span>测试结果</span>
+                  <span>操作</span>
+                </div>
                 {modelForm.routes.map((route, index) => {
                   const endpoint = endpointMap[route.endpointId];
                   const testResult = routeTestResults[index];
@@ -1482,127 +1516,99 @@ export function AiSettingsConsole({
                   return (
                     <div
                       key={`${route.endpointId}-${index}`}
-                      className="ai-route-card ai-route-card-compact"
+                      className="ai-route-edit-row"
                     >
-                      <div className="ai-route-card-main">
-                        <div className="ai-route-card-index">{index + 1}</div>
-                        <div className="ai-route-card-content">
-                          <div className="ai-route-card-top">
-                            <div>
-                              <div style={{ fontWeight: 700 }}>
-                                {endpointLabel(
-                                  endpoint.providerName,
-                                  endpoint.label,
-                                )}
-                              </div>
-                              <div className="muted" style={{ marginTop: 4 }}>
-                                {routeStatusLabel(index)} ·{" "}
-                                {route.providerModelName || "未选择模型"} ·{" "}
-                                {endpoint.baseUrl}
-                              </div>
-                            </div>
-                            <Space size={8} wrap>
-                              <Tag color="blue">
-                                {aiProtocolLabels[endpoint.protocol]}
-                              </Tag>
-                              <Tag>{endpoint.providerCode}</Tag>
-                            </Space>
-                          </div>
+                      <div className="ai-route-edit-order">
+                        <span>{index + 1}</span>
+                        <Tag color={index === 0 ? "blue" : undefined}>
+                          {index === 0 ? "主" : "备"}
+                        </Tag>
+                      </div>
 
-                          <div className="ai-route-card-controls ai-route-card-controls-compact">
-                            <div>
-                              <div className="review-toolbar-label">
-                                供应商模型
-                              </div>
-                              <Select
-                                value={route.providerModelName}
-                                options={supportedProviderModels.map((modelName) => ({
-                                  value: modelName,
-                                  label: modelName,
-                                }))}
-                                onChange={(value) =>
-                                  updateRoute(index, {
-                                    providerModelName: value,
-                                  })
-                                }
-                                disabled={!supportedProviderModels.length}
-                              />
-                            </div>
-
-                            <div>
-                              <div className="review-toolbar-label">超时</div>
-                              <InputNumber
-                                min={1000}
-                                max={600000}
-                                step={1000}
-                                value={route.timeoutMs}
-                                addonAfter="ms"
-                                onChange={(value) =>
-                                  updateRoute(index, {
-                                    timeoutMs:
-                                      typeof value === "number"
-                                        ? value
-                                        : 15000,
-                                  })
-                                }
-                              />
-                            </div>
-
-                            <div>
-                              <div className="review-toolbar-label">启用</div>
-                              <Switch
-                                checked={route.enabled}
-                                onChange={(checked) =>
-                                  updateRoute(index, { enabled: checked })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          {testResult ? (
-                            <div
-                              className="workspace-tip"
-                              style={{
-                                marginTop: 12,
-                                ...(testResult.error
-                                  ? {
-                                      borderColor: "rgb(248 113 113 / 0.35)",
-                                      background: "rgb(254 242 242 / 0.7)",
-                                    }
-                                  : {}),
-                              }}
-                            >
-                              <Tag color={testResult.error ? "red" : "green"}>
-                                {testResult.error ? "失败" : "成功"}
-                              </Tag>
-                              <span>
-                                {testResult.error
-                                  ? testResult.error
-                                  : `返回 ${testResult.textLength ?? 0} 字符`}
-                                {typeof testResult.durationMs === "number"
-                                  ? ` · ${testResult.durationMs}ms`
-                                  : ""}
-                                {testResult.text ? ` · ${testResult.text}` : ""}
-                              </span>
-                            </div>
-                          ) : null}
+                      <div className="ai-route-edit-endpoint">
+                        <strong>
+                          {endpointLabel(endpoint.providerName, endpoint.label)}
+                        </strong>
+                        <span>{endpoint.baseUrl}</span>
+                        <div className="ai-route-edit-tags">
+                          <Tag color="blue">
+                            {aiProtocolLabels[endpoint.protocol]}
+                          </Tag>
+                          <Tag>{endpoint.providerCode}</Tag>
                         </div>
                       </div>
 
-                      <div className="ai-route-card-actions ai-route-card-actions-compact">
-                        <Button
-                          icon={<FlaskConical size={16} />}
-                          onClick={() => handleTestRoute(index)}
-                          loading={
-                            isTestingRoute && testingRouteIndex === index
-                          }
-                          disabled={
-                            !route.providerModelName ||
-                            (isTestingRoute && testingRouteIndex !== index)
-                          }
-                        >
-                          测试
-                        </Button>
+                      <Select
+                        value={route.providerModelName}
+                        options={supportedProviderModels.map((modelName) => ({
+                          value: modelName,
+                          label: modelName,
+                        }))}
+                        onChange={(value) =>
+                          updateRoute(index, {
+                            providerModelName: value,
+                          })
+                        }
+                        disabled={!supportedProviderModels.length}
+                      />
+
+                      <InputNumber
+                        min={1000}
+                        max={600000}
+                        step={1000}
+                        value={route.timeoutMs}
+                        addonAfter="ms"
+                        onChange={(value) =>
+                          updateRoute(index, {
+                            timeoutMs:
+                              typeof value === "number" ? value : 15000,
+                          })
+                        }
+                      />
+
+                      <Switch
+                        checked={route.enabled}
+                        onChange={(checked) =>
+                          updateRoute(index, { enabled: checked })
+                        }
+                      />
+
+                      <Button
+                        icon={<FlaskConical size={16} />}
+                        onClick={() => handleTestRoute(index)}
+                        loading={
+                          isTestingRoute && testingRouteIndex === index
+                        }
+                        disabled={
+                          !route.providerModelName ||
+                          (isTestingRoute && testingRouteIndex !== index)
+                        }
+                      >
+                        测试
+                      </Button>
+
+                      <div className="ai-route-test-result">
+                        {testResult ? (
+                          <>
+                            <Tag color={testResult.error ? "red" : "green"}>
+                              {testResult.error ? "失败" : "成功"}
+                            </Tag>
+                            <span>
+                              {testResult.error
+                                ? testResult.error
+                                : `返回 ${testResult.textLength ?? 0} 字符`}
+                              {typeof testResult.durationMs === "number"
+                                ? ` · ${testResult.durationMs}ms`
+                                : ""}
+                              {testResult.text ? ` · ${testResult.text}` : ""}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="muted">未测试</span>
+                        )}
+                      </div>
+
+                      <div className="ai-route-edit-actions">
                         <Button
                           icon={<ArrowUp size={16} />}
                           onClick={() => moveRoute(index, -1)}

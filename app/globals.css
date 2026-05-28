@@ -2462,6 +2462,47 @@
     gap: 14px;
 }
 
+.ai-model-route-modal {
+    width: min(1180px, calc(100vw - 32px));
+}
+
+.ai-model-route-modal .ai-model-form-actions {
+    position: sticky;
+    bottom: -16px;
+    padding: 14px 0 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), #ffffff 32%);
+    border-top: 1px solid var(--line-soft);
+}
+
+.ai-model-modal-summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 2px 0 12px;
+    border-bottom: 1px solid var(--line);
+}
+
+.ai-model-modal-summary-title {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--color-foreground);
+}
+
+.ai-model-modal-summary-copy {
+    margin-top: 4px;
+    line-height: 1.6;
+}
+
+.ai-model-modal-summary-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .ai-modal-header-inline {
     display: flex;
     align-items: flex-start;
@@ -2530,6 +2571,10 @@
     gap: 14px;
 }
 
+.ai-model-form-grid-wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .ai-provider-form-full,
 .ai-model-form-full {
     grid-column: 1 / -1;
@@ -2552,26 +2597,88 @@
 .ai-model-table-row {
     display: grid;
     grid-template-columns:
-        minmax(180px, 1fr) minmax(140px, 0.7fr) minmax(180px, 0.9fr)
-        minmax(320px, 1.5fr) minmax(180px, 0.9fr) auto;
+        minmax(210px, 1fr) minmax(120px, 0.45fr) minmax(240px, 1.1fr)
+        minmax(120px, 0.45fr) minmax(300px, 1.35fr) auto;
     gap: 16px;
     align-items: center;
-    min-width: 1140px;
+    min-width: 1180px;
 }
 
 .ai-model-table {
     overflow-x: auto;
+    border-top: 1px solid var(--line);
 }
 
 .ai-model-table-head {
     padding: 14px 16px;
-    border-bottom: 1px solid var(--line);
     font-weight: 700;
+    color: var(--color-muted-foreground);
+    background: var(--color-muted);
 }
 
 .ai-model-table-row {
     padding: 16px;
     border-top: 1px solid var(--line);
+}
+
+.ai-model-table-main,
+.ai-model-table-meta {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.ai-model-table-code {
+    overflow: hidden;
+    color: var(--color-foreground);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-model-table-subline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--color-muted-foreground);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.ai-model-table-meta strong,
+.ai-route-edit-endpoint strong {
+    overflow: hidden;
+    color: var(--color-foreground);
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-model-table-meta span,
+.ai-route-edit-endpoint span {
+    overflow: hidden;
+    color: var(--color-muted-foreground);
+    font-size: 12px;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-model-table-defaults {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.ai-model-table-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .ai-model-endpoints {
@@ -2636,6 +2743,90 @@
 .ai-route-stack {
     display: grid;
     gap: 12px;
+}
+
+.ai-route-edit-table {
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+}
+
+.ai-route-edit-head,
+.ai-route-edit-row {
+    display: grid;
+    grid-template-columns:
+        68px minmax(240px, 1.15fr) minmax(190px, 0.9fr) 140px 70px 96px
+        minmax(190px, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    min-width: 1080px;
+}
+
+.ai-route-edit-head {
+    padding: 12px 14px;
+    color: var(--color-muted-foreground);
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--color-muted);
+}
+
+.ai-route-edit-row {
+    padding: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.ai-route-edit-order {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-route-edit-order > span {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    color: var(--color-foreground);
+    font-weight: 700;
+}
+
+.ai-route-edit-endpoint {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.ai-route-edit-tags,
+.ai-route-test-result,
+.ai-route-edit-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-route-edit-tags,
+.ai-route-test-result {
+    flex-wrap: wrap;
+}
+
+.ai-route-test-result span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-muted-foreground);
+    font-size: 12px;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-route-edit-actions {
+    justify-content: flex-end;
+}
+
+.ai-route-edit-actions .ant-btn {
+    min-width: 40px;
 }
 
 .ai-route-card {
