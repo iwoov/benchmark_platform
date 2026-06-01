@@ -98,6 +98,8 @@ export function ProjectDatasourceConsole({
     const formRef = useRef<HTMLFormElement>(null);
     const imagePackFormRef = useRef<HTMLFormElement>(null);
     const [open, setOpen] = useState(false);
+    const [importTargetDatasource, setImportTargetDatasource] =
+        useState<DataSourceItem | null>(null);
     const [imagePackOpen, setImagePackOpen] = useState(false);
     const [imagePackDatasourceId, setImagePackDatasourceId] = useState("");
     const [imageFieldOpen, setImageFieldOpen] = useState(false);
@@ -156,6 +158,7 @@ export function ProjectDatasourceConsole({
             const frame = requestAnimationFrame(() => {
                 formRef.current?.reset();
                 setOpen(false);
+                setImportTargetDatasource(null);
                 router.refresh();
             });
 
@@ -184,6 +187,21 @@ export function ProjectDatasourceConsole({
         setImageFieldDatasource(datasource);
         setSelectedImageFields(datasource.imageFields ?? []);
         setImageFieldOpen(true);
+    }
+
+    function openNewDatasourceImport() {
+        setImportTargetDatasource(null);
+        setOpen(true);
+    }
+
+    function openAppendDatasourceImport(datasource: DataSourceItem) {
+        setImportTargetDatasource(datasource);
+        setOpen(true);
+    }
+
+    function closeImportModal() {
+        setOpen(false);
+        setImportTargetDatasource(null);
     }
 
     function saveImageFields() {
@@ -268,7 +286,7 @@ export function ProjectDatasourceConsole({
                 <Button
                     type="primary"
                     icon={<Plus size={16} />}
-                    onClick={() => setOpen(true)}
+                    onClick={openNewDatasourceImport}
                     disabled={!manageableProjects.length}
                 >
                     导入数据
@@ -355,7 +373,7 @@ export function ProjectDatasourceConsole({
                                 <Button
                                     type="primary"
                                     icon={<Plus size={16} />}
-                                    onClick={() => setOpen(true)}
+                                    onClick={openNewDatasourceImport}
                                     disabled={!selectedProject?.canManage}
                                     title={
                                         selectedProject?.canManage
@@ -433,6 +451,25 @@ export function ProjectDatasourceConsole({
                                         </div>
                                         <div>
                                             <Space size={4} wrap>
+                                                <Button
+                                                    size="small"
+                                                    icon={<FileUp size={14} />}
+                                                    disabled={
+                                                        !datasource.canManage
+                                                    }
+                                                    title={
+                                                        datasource.canManage
+                                                            ? undefined
+                                                            : "只能向自己创建项目下的数据源继续导入"
+                                                    }
+                                                    onClick={() =>
+                                                        openAppendDatasourceImport(
+                                                            datasource,
+                                                        )
+                                                    }
+                                                >
+                                                    继续导入
+                                                </Button>
                                                 <Button
                                                     size="small"
                                                     icon={
@@ -518,20 +555,24 @@ export function ProjectDatasourceConsole({
 
             <Modal
                 open={open}
-                onCancel={() => setOpen(false)}
+                onCancel={closeImportModal}
                 footer={null}
                 width={680}
                 destroyOnHidden
                 title={
                     <div>
                         <div style={{ fontSize: 20, fontWeight: 700 }}>
-                            导入数据源
+                            {importTargetDatasource
+                                ? "继续导入数据源"
+                                : "导入数据源"}
                         </div>
                         <div
                             className="muted"
                             style={{ marginTop: 4, fontSize: 13 }}
                         >
-                            导入后会自动创建项目数据源并写入题目主表。
+                            {importTargetDatasource
+                                ? `新题目会写入「${importTargetDatasource.name}」，修订题目会继续挂在同一数据源下。`
+                                : "导入后会自动创建项目数据源并写入题目主表。"}
                         </div>
                     </div>
                 }
@@ -541,6 +582,18 @@ export function ProjectDatasourceConsole({
                     action={formAction}
                     style={{ marginTop: 8 }}
                 >
+                    {importTargetDatasource ? (
+                        <input
+                            type="hidden"
+                            name="projectId"
+                            value={importTargetDatasource.project.id}
+                        />
+                    ) : null}
+                    <input
+                        type="hidden"
+                        name="datasourceId"
+                        value={importTargetDatasource?.id ?? ""}
+                    />
                     <div className="import-form-grid">
                         <div className="workspace-tip import-form-full">
                             <Tag color="blue">字段要求</Tag>
@@ -552,46 +605,69 @@ export function ProjectDatasourceConsole({
                             </span>
                         </div>
 
-                        <div>
-                            <label
-                                className="field-label"
-                                htmlFor="import-projectId"
-                            >
-                                导入到项目
-                            </label>
-                            <select
-                                id="import-projectId"
-                                name="projectId"
-                                defaultValue={importProjectId}
-                                className="field-select"
-                            >
-                                {manageableProjects.length ? null : (
-                                    <option value="" disabled>
-                                        暂无可导入项目
-                                    </option>
-                                )}
-                                {manageableProjects.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                        {project.name} ({project.code})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        {importTargetDatasource ? (
+                            <div className="import-form-full">
+                                <div className="field-label">导入目标</div>
+                                <div className="workspace-tip">
+                                    <Tag color="blue">
+                                        {
+                                            importTargetDatasource.project
+                                                .code
+                                        }
+                                    </Tag>
+                                    <span>
+                                        {importTargetDatasource.project.name} /{" "}
+                                        {importTargetDatasource.name}
+                                    </span>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div>
+                                    <label
+                                        className="field-label"
+                                        htmlFor="import-projectId"
+                                    >
+                                        导入到项目
+                                    </label>
+                                    <select
+                                        id="import-projectId"
+                                        name="projectId"
+                                        defaultValue={importProjectId}
+                                        className="field-select"
+                                    >
+                                        {manageableProjects.length ? null : (
+                                            <option value="" disabled>
+                                                暂无可导入项目
+                                            </option>
+                                        )}
+                                        {manageableProjects.map((project) => (
+                                            <option
+                                                key={project.id}
+                                                value={project.id}
+                                            >
+                                                {project.name} ({project.code})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                        <div>
-                            <label
-                                className="field-label"
-                                htmlFor="import-name"
-                            >
-                                数据源名称
-                            </label>
-                            <Input
-                                id="import-name"
-                                name="name"
-                                size="large"
-                                placeholder="留空则默认使用文件名"
-                            />
-                        </div>
+                                <div>
+                                    <label
+                                        className="field-label"
+                                        htmlFor="import-name"
+                                    >
+                                        数据源名称
+                                    </label>
+                                    <Input
+                                        id="import-name"
+                                        name="name"
+                                        size="large"
+                                        placeholder="留空则默认使用文件名"
+                                    />
+                                </div>
+                            </>
+                        )}
 
                         <div className="import-form-full">
                             <Checkbox
@@ -604,7 +680,9 @@ export function ProjectDatasourceConsole({
                                 className="muted"
                                 style={{ marginTop: 6, fontSize: 12 }}
                             >
-                                勾选后，新导入的数据源会自动加入已配置“适用数据源”的审核策略；如策略同时限定了项目范围，也会自动补上当前项目。
+                                {importTargetDatasource
+                                    ? "勾选后，会确保当前数据源加入已配置“适用数据源”的审核策略；如策略同时限定了项目范围，也会自动补上当前项目。"
+                                    : "勾选后，新导入的数据源会自动加入已配置“适用数据源”的审核策略；如策略同时限定了项目范围，也会自动补上当前项目。"}
                             </div>
                         </div>
 
@@ -625,7 +703,7 @@ export function ProjectDatasourceConsole({
                         </div>
 
                         <div className="import-form-submit">
-                            <Button onClick={() => setOpen(false)}>取消</Button>
+                            <Button onClick={closeImportModal}>取消</Button>
                             <Button
                                 type="primary"
                                 htmlType="submit"

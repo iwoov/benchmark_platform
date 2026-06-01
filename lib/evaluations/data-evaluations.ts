@@ -16,7 +16,7 @@ import {
 import {
     extractQuestionPrimaryValue,
     getAccessiblePrimaryValueSet,
-    questionMatchesPrimaryValueScope,
+    questionMatchesPrimaryValueScopeForProject,
 } from "@/lib/subjects/access";
 import { getReviewQuestionDetail } from "@/lib/reviews/question-list-data";
 
@@ -1073,7 +1073,15 @@ export async function getDataEvaluationQuestionList(input: {
     });
 
     const visibleQuestions = questions.filter((question) =>
-        questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues),
+        questionMatchesPrimaryValueScopeForProject(
+            question.metadata,
+            allowedPrimaryValues,
+            {
+                userId: input.viewer.userId,
+                platformRole: input.viewer.platformRole,
+                projectCreatedById: project?.createdById ?? null,
+            },
+        ),
     );
     const total = visibleQuestions.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -1186,6 +1194,14 @@ export async function getDataEvaluationQuestionNavigation(input: {
     }
 
     const scopedProjectId = input.projectId || currentQuestion.projectId;
+    const project = await prisma.project.findUnique({
+        where: {
+            id: scopedProjectId,
+        },
+        select: {
+            createdById: true,
+        },
+    });
     const allowedPrimaryValues = await getAccessiblePrimaryValueSet(
         input.viewer.userId,
         input.viewer.platformRole,
@@ -1203,7 +1219,15 @@ export async function getDataEvaluationQuestionNavigation(input: {
         },
     });
     const visibleQuestions = questions.filter((question) =>
-        questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues),
+        questionMatchesPrimaryValueScopeForProject(
+            question.metadata,
+            allowedPrimaryValues,
+            {
+                userId: input.viewer.userId,
+                platformRole: input.viewer.platformRole,
+                projectCreatedById: project?.createdById ?? null,
+            },
+        ),
     );
     const currentIndex = visibleQuestions.findIndex(
         (question) => question.id === input.questionId,

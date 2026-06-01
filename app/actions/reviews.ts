@@ -99,6 +99,9 @@ export async function submitReviewAction(
         session.user.id,
         session.user.platformRole,
         question.metadata,
+        {
+            projectId: question.projectId,
+        },
     );
 
     if (!canAccessQuestion) {

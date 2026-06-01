@@ -14,7 +14,7 @@ import {
 } from "@/lib/reviews/review-summary";
 import {
     getAccessiblePrimaryValueSet,
-    questionMatchesPrimaryValueScope,
+    questionMatchesPrimaryValueScopeForProject,
 } from "@/lib/subjects/access";
 
 const revisionBaseFieldLabelMap = {
@@ -1017,7 +1017,16 @@ export async function getReviewQuestionListPageData({
         },
     });
     const visibleRows = candidateRows.filter((question) =>
-        questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues),
+        questionMatchesPrimaryValueScopeForProject(
+            question.metadata,
+            allowedPrimaryValues,
+            viewer
+                ? {
+                      ...viewer,
+                      projectCreatedById: question.project.createdById,
+                  }
+                : null,
+        ),
     );
     const reviewSummaryMap = await getLatestReviewSummaryMap(
         visibleRows.map((question) => ({
@@ -1229,6 +1238,7 @@ export async function getReviewQuestionDetail(
                     id: true,
                     name: true,
                     code: true,
+                    createdById: true,
                 },
             },
             datasource: {
@@ -1280,16 +1290,31 @@ export async function getReviewQuestionDetail(
         : null;
 
     if (
-        !questionMatchesPrimaryValueScope(question.metadata, allowedPrimaryValues)
+        !questionMatchesPrimaryValueScopeForProject(
+            question.metadata,
+            allowedPrimaryValues,
+            viewer
+                ? {
+                      ...viewer,
+                      projectCreatedById: question.project.createdById,
+                  }
+                : null,
+        )
     ) {
         return null;
     }
 
     const previousRevision =
         question.previousRevision &&
-        questionMatchesPrimaryValueScope(
+        questionMatchesPrimaryValueScopeForProject(
             question.previousRevision.metadata,
             allowedPrimaryValues,
+            viewer
+                ? {
+                      ...viewer,
+                      projectCreatedById: question.project.createdById,
+                  }
+                : null,
         )
             ? question.previousRevision
             : null;
@@ -1491,6 +1516,14 @@ export async function getReviewQuestionNavigation({
     }
 
     const scopedProjectId = projectId || currentQuestion.projectId;
+    const project = await prisma.project.findUnique({
+        where: {
+            id: scopedProjectId,
+        },
+        select: {
+            createdById: true,
+        },
+    });
     const statusCondition = conditions.find(
         (condition) => condition.fieldKey === "status",
     );
@@ -1561,9 +1594,15 @@ export async function getReviewQuestionNavigation({
     );
     const orderedAccessibleQuestions = orderedQuestions
         .filter((question) =>
-            questionMatchesPrimaryValueScope(
+            questionMatchesPrimaryValueScopeForProject(
                 question.metadata,
                 allowedPrimaryValues,
+                viewer
+                    ? {
+                          ...viewer,
+                          projectCreatedById: project?.createdById ?? null,
+                      }
+                    : null,
             ),
         )
         .sort((left, right) => {

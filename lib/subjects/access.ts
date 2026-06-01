@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/db/prisma";
 import { isSuperAdminRole, type PlatformRoleValue } from "@/lib/auth/roles";
 
+export type QuestionProjectScope = {
+    userId: string;
+    platformRole: PlatformRoleValue;
+    projectCreatedById?: string | null;
+};
+
 export function extractQuestionPrimaryValue(metadata: unknown) {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
         return null;
@@ -70,4 +76,33 @@ export function questionMatchesPrimaryValueScope(
     }
 
     return allowedPrimaryValues.has(primaryValue);
+}
+
+export function canBypassQuestionPrimaryValueScope(
+    scope?: QuestionProjectScope | null,
+) {
+    if (!scope) {
+        return false;
+    }
+
+    if (isSuperAdminRole(scope.platformRole)) {
+        return true;
+    }
+
+    return (
+        scope.platformRole === "PLATFORM_ADMIN" &&
+        scope.projectCreatedById === scope.userId
+    );
+}
+
+export function questionMatchesPrimaryValueScopeForProject(
+    metadata: unknown,
+    allowedPrimaryValues: Set<string> | null,
+    scope?: QuestionProjectScope | null,
+) {
+    if (canBypassQuestionPrimaryValueScope(scope)) {
+        return true;
+    }
+
+    return questionMatchesPrimaryValueScope(metadata, allowedPrimaryValues);
 }

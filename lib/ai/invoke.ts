@@ -730,6 +730,46 @@ function parseJsonSafely(input: string) {
     }
 }
 
+const STREAM_RAW_PREVIEW_LIMIT = 4096;
+
+function appendPreview(current: string, value: string, limit: number) {
+    if (current.length >= limit) {
+        return current;
+    }
+
+    return current + value.slice(0, limit - current.length);
+}
+
+function buildStreamRawSummary(input: {
+    contentType: string;
+    chunkCount: number;
+    parsedChunkCount: number;
+    invalidChunkCount: number;
+    bytes: number;
+    textLength: number;
+    textPreview: string;
+    rawPreview: string;
+    rawPreviewTruncated: boolean;
+    doneMarkerSeen?: boolean;
+    parsedDirectType?: string | null;
+}) {
+    return {
+        stream: true,
+        contentType: input.contentType || null,
+        chunkCount: input.chunkCount,
+        parsedChunkCount: input.parsedChunkCount,
+        invalidChunkCount: input.invalidChunkCount,
+        bytes: input.bytes,
+        textLength: input.textLength,
+        textPreview: input.textPreview || undefined,
+        textPreviewTruncated: input.textLength > input.textPreview.length,
+        rawPreview: input.rawPreview || undefined,
+        rawPreviewTruncated: input.rawPreviewTruncated,
+        doneMarkerSeen: input.doneMarkerSeen,
+        parsedDirectType: input.parsedDirectType,
+    };
+}
+
 function readOpenAiStreamDelta(raw: any) {
     const delta = raw?.choices?.[0]?.delta?.content;
     if (typeof delta === "string") {
@@ -851,13 +891,105 @@ export async function resolveAiInvocationText(
     const contentType = result.response.headers.get("content-type") ?? "";
     const startedAt = result.attemptStartedAt;
     const streamDeadlineAt = startedAt + result.timeoutMs;
+    let text = "";
     let rawText = "";
+    let rawPreview = "";
+    let rawPreviewTruncated = false;
+    let firstChunkAt: number | null = null;
+    let chunkCount = 0;
+    let bytes = 0;
+    let parsedChunkCount = 0;
+    let invalidChunkCount = 0;
+    let doneMarkerSeen = false;
+
+    const appendRawPreview = (value: string) => {
+        const nextLength = rawPreview.length + value.length;
+        rawPreview = appendPreview(rawPreview, value, STREAM_RAW_PREVIEW_LIMIT);
+        rawPreviewTruncated ||= nextLength > STREAM_RAW_PREVIEW_LIMIT;
+    };
+
+    const processStreamData = (dataPart: string) => {
+        if (!dataPart) {
+            return;
+        }
+
+        if (dataPart === "[DONE]") {
+            doneMarkerSeen = true;
+            return;
+        }
+
+        const chunk = parseJsonSafely(dataPart);
+        if (chunk === null) {
+            invalidChunkCount += 1;
+            return;
+        }
+
+        parsedChunkCount += 1;
+        text += extractStreamDeltaText(result.protocol, chunk) ?? "";
+    };
+
+    const logStreamCompleted = () => {
+        logInfo("ai.invoke.stream_completed", {
+            modelCode: result.modelCode,
+            protocol: result.protocol,
+            stream: true,
+            providerCode: result.route.providerCode,
+            endpointCode: result.route.endpointCode,
+            durationMs: Date.now() - startedAt,
+            ttftMs: firstChunkAt === null ? null : firstChunkAt - startedAt,
+            chunkCount,
+            parsedChunkCount,
+            bytes,
+        });
+    };
 
     if (result.response.body) {
         const reader = result.response.body.getReader();
         const decoder = new TextDecoder();
-        let firstChunkAt: number | null = null;
-        let chunkCount = 0;
+        let lineBuffer = "";
+        const parseAsEventStream =
+            contentType.includes("event-stream") ||
+            !contentType.includes("json");
+
+        const processStreamLine = (line: string) => {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                return;
+            }
+
+            if (trimmed.startsWith("data:")) {
+                processStreamData(trimmed.slice(5).trim());
+                return;
+            }
+
+            if (!contentType.includes("event-stream")) {
+                processStreamData(trimmed);
+            }
+        };
+
+        const consumeDecodedText = (decoded: string) => {
+            appendRawPreview(decoded);
+
+            if (!parseAsEventStream) {
+                rawText += decoded;
+                return;
+            }
+
+            lineBuffer += decoded;
+
+            while (true) {
+                const newlineIndex = lineBuffer.indexOf("\n");
+                if (newlineIndex < 0) {
+                    break;
+                }
+
+                const line = lineBuffer
+                    .slice(0, newlineIndex)
+                    .replace(/\r$/, "");
+                lineBuffer = lineBuffer.slice(newlineIndex + 1);
+                processStreamLine(line);
+            }
+        };
 
         while (true) {
             const remainingMs = streamDeadlineAt - Date.now();
@@ -892,89 +1024,102 @@ export async function resolveAiInvocationText(
                 });
             }
 
-            rawText += decoder.decode(value, { stream: true });
             chunkCount += 1;
+            bytes += value.byteLength;
+            consumeDecodedText(decoder.decode(value, { stream: true }));
         }
 
-        rawText += decoder.decode();
+        consumeDecodedText(decoder.decode());
 
-        logInfo("ai.invoke.stream_completed", {
-            modelCode: result.modelCode,
-            protocol: result.protocol,
-            stream: true,
-            providerCode: result.route.providerCode,
-            endpointCode: result.route.endpointCode,
-            durationMs: Date.now() - startedAt,
-            ttftMs: firstChunkAt === null ? null : firstChunkAt - startedAt,
-            chunkCount,
-            bytes: rawText.length,
-        });
+        if (parseAsEventStream && lineBuffer.trim()) {
+            processStreamLine(lineBuffer);
+        }
+
+        logStreamCompleted();
     } else {
         rawText = await result.response.text();
+        bytes = rawText.length;
+        rawPreview = appendPreview("", rawText, STREAM_RAW_PREVIEW_LIMIT);
+        rawPreviewTruncated = rawText.length > STREAM_RAW_PREVIEW_LIMIT;
     }
 
-    if (!rawText.trim()) {
-        return {
-            text: null,
-            raw: { stream: true, chunks: [] },
-        };
-    }
+    if (rawText.trim()) {
+        const parsedDirect = parseJsonSafely(rawText);
+        if (parsedDirect !== null) {
+            let parsedDirectType = Array.isArray(parsedDirect)
+                ? "array"
+                : typeof parsedDirect;
 
-    const parsedDirect = parseJsonSafely(rawText);
-    if (parsedDirect !== null) {
-        if (Array.isArray(parsedDirect)) {
-            const text = parsedDirect
-                .map(
-                    (chunk) =>
-                        extractStreamDeltaText(result.protocol, chunk) ?? "",
-                )
-                .join("");
+            if (Array.isArray(parsedDirect)) {
+                text = parsedDirect
+                    .map(
+                        (chunk) =>
+                            extractStreamDeltaText(result.protocol, chunk) ??
+                            "",
+                    )
+                    .join("");
+                parsedChunkCount = parsedDirect.length;
+            } else {
+                text = extractText(result.protocol, parsedDirect) ?? "";
+            }
 
             return {
                 text: text || null,
-                raw: parsedDirect,
+                raw: buildStreamRawSummary({
+                    contentType,
+                    chunkCount,
+                    parsedChunkCount,
+                    invalidChunkCount,
+                    bytes,
+                    textLength: text.length,
+                    textPreview: text.slice(0, STREAM_RAW_PREVIEW_LIMIT),
+                    rawPreview,
+                    rawPreviewTruncated,
+                    doneMarkerSeen,
+                    parsedDirectType,
+                }),
             };
         }
 
-        return {
-            text: extractText(result.protocol, parsedDirect),
-            raw: parsedDirect,
-        };
+        if (!contentType.includes("event-stream")) {
+            text = rawText.trim();
+        }
     }
 
-    const lines = rawText
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-    const chunks: unknown[] = [];
-    let text = "";
-
-    for (const line of lines) {
-        const dataPart = line.startsWith("data:") ? line.slice(5).trim() : line;
-
-        if (!dataPart || dataPart === "[DONE]") {
-            continue;
-        }
-
-        const chunk = parseJsonSafely(dataPart);
-        if (chunk === null) {
-            continue;
-        }
-
-        chunks.push(chunk);
-        text += extractStreamDeltaText(result.protocol, chunk) ?? "";
-    }
-
-    if (!chunks.length && !contentType.includes("event-stream")) {
+    if (!text.trim() && !parsedChunkCount && !rawText.trim()) {
         return {
-            text: rawText.trim() || null,
-            raw: { stream: true, rawText },
+            text: null,
+            raw: buildStreamRawSummary({
+                contentType,
+                chunkCount,
+                parsedChunkCount,
+                invalidChunkCount,
+                bytes,
+                textLength: 0,
+                textPreview: "",
+                rawPreview,
+                rawPreviewTruncated,
+                doneMarkerSeen,
+                parsedDirectType: null,
+            }),
         };
     }
 
     return {
         text: text || null,
-        raw: { stream: true, chunks },
+        raw: buildStreamRawSummary({
+            contentType,
+            chunkCount,
+            parsedChunkCount,
+            invalidChunkCount,
+            bytes,
+            textLength: text.length,
+            textPreview: text.slice(0, STREAM_RAW_PREVIEW_LIMIT),
+            rawPreview,
+            rawPreviewTruncated,
+            doneMarkerSeen,
+            parsedDirectType: null,
+        }),
     };
 }
 

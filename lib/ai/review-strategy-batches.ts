@@ -18,7 +18,7 @@ import { aiReviewStrategyDefinitionSchema } from "@/lib/ai/review-strategy-schem
 import { logError, logInfo, logWarn } from "@/lib/logging/app-logger";
 import {
     getAccessiblePrimaryValueSet,
-    questionMatchesPrimaryValueScope,
+    questionMatchesPrimaryValueScopeForProject,
 } from "@/lib/subjects/access";
 
 const TERMINAL_BATCH_STATUSES = new Set<BatchRunStatus>([
@@ -498,6 +498,14 @@ export async function getAiReviewStrategyBatchRunsForProject(
     const allowedPrimaryValues = viewer
         ? await getAccessiblePrimaryValueSet(viewer.userId, viewer.platformRole)
         : null;
+    const project = await prisma.project.findUnique({
+        where: {
+            id: projectId,
+        },
+        select: {
+            createdById: true,
+        },
+    });
 
     const baseWhere = {
         projectId,
@@ -612,9 +620,15 @@ export async function getAiReviewStrategyBatchRunsForProject(
         .map((run) => ({
             ...run,
             items: run.items.filter((item) =>
-                questionMatchesPrimaryValueScope(
+                questionMatchesPrimaryValueScopeForProject(
                     item.question.metadata,
                     allowedPrimaryValues,
+                    viewer
+                        ? {
+                              ...viewer,
+                              projectCreatedById: project?.createdById ?? null,
+                          }
+                        : null,
                 ),
             ),
         }))

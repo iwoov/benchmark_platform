@@ -129,6 +129,186 @@ type StrategyExecutionOptions = {
 };
 
 const AI_TOOL_RESULT_MAX_ATTEMPTS = 2;
+const RAW_RESPONSE_STRING_PREVIEW_LIMIT = 4096;
+const RAW_RESPONSE_ARRAY_PREVIEW_LIMIT = 20;
+const RAW_RESPONSE_OBJECT_DEPTH_LIMIT = 5;
+const AI_REVIEW_STEP_CONCURRENCY_DEFAULT = 1;
+const AI_REVIEW_STEP_CONCURRENCY_MAX = 2;
+
+function truncateRawString(value: string) {
+    if (value.length <= RAW_RESPONSE_STRING_PREVIEW_LIMIT) {
+        return value;
+    }
+
+    return {
+        preview: value.slice(0, RAW_RESPONSE_STRING_PREVIEW_LIMIT),
+        length: value.length,
+        truncated: true,
+    };
+}
+
+function compactRawValue(value: unknown, depth = 0): unknown {
+    if (value === null || value === undefined) {
+        return value;
+    }
+
+    if (typeof value === "string") {
+        return truncateRawString(value);
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+        return value;
+    }
+
+    if (typeof value === "bigint") {
+        return value.toString();
+    }
+
+    if (Array.isArray(value)) {
+        const items = value
+            .slice(0, RAW_RESPONSE_ARRAY_PREVIEW_LIMIT)
+            .map((item) => compactRawValue(item, depth + 1));
+
+        return value.length > RAW_RESPONSE_ARRAY_PREVIEW_LIMIT
+            ? {
+                  items,
+                  length: value.length,
+                  truncated: true,
+              }
+            : items;
+    }
+
+    if (typeof value !== "object") {
+        return String(value);
+    }
+
+    const record = value as Record<string, unknown>;
+
+    if (record.stream === true && Array.isArray(record.chunks)) {
+        const { chunks, ...rest } = record;
+        const compactedRest = compactRawValue(rest, depth + 1);
+
+        return {
+            ...(compactedRest &&
+            typeof compactedRest === "object" &&
+            !Array.isArray(compactedRest)
+                ? compactedRest
+                : {}),
+            chunks: {
+                length: chunks.length,
+                dropped: true,
+            },
+        };
+    }
+
+    if (depth >= RAW_RESPONSE_OBJECT_DEPTH_LIMIT) {
+        return {
+            type: "object",
+            keys: Object.keys(record).slice(0, RAW_RESPONSE_ARRAY_PREVIEW_LIMIT),
+            truncated: true,
+        };
+    }
+
+    const compacted: Record<string, unknown> = {};
+
+    for (const [key, nestedValue] of Object.entries(record)) {
+        if (
+            (key === "text" || key === "rawText") &&
+            typeof nestedValue === "string"
+        ) {
+            compacted[`${key}Preview`] = nestedValue.slice(
+                0,
+                RAW_RESPONSE_STRING_PREVIEW_LIMIT,
+            );
+            compacted[`${key}Length`] = nestedValue.length;
+            compacted[`${key}Truncated`] =
+                nestedValue.length > RAW_RESPONSE_STRING_PREVIEW_LIMIT;
+            continue;
+        }
+
+        compacted[key] = compactRawValue(nestedValue, depth + 1);
+    }
+
+    return compacted;
+}
+
+function compactRoute(route: unknown) {
+    if (!route || typeof route !== "object") {
+        return route;
+    }
+
+    const record = route as Record<string, unknown>;
+
+    return {
+        providerCode: record.providerCode,
+        providerName: record.providerName,
+        endpointCode: record.endpointCode,
+        endpointLabel: record.endpointLabel,
+        modelCode: record.modelCode,
+        providerModelName: record.providerModelName,
+        protocol: record.protocol,
+    };
+}
+
+function compactRawResponse(rawResponse: unknown) {
+    if (!rawResponse || typeof rawResponse !== "object") {
+        return compactRawValue(rawResponse);
+    }
+
+    const record = rawResponse as Record<string, unknown>;
+
+    return compactRawValue({
+        ...record,
+        route: compactRoute(record.route),
+    });
+}
+
+function compactStepExecutionItem(item: StepExecutionItem): StepExecutionItem {
+    return {
+        ...item,
+        rawResponse:
+            item.rawResponse === undefined
+                ? undefined
+                : compactRawResponse(item.rawResponse),
+        error:
+            typeof item.error === "string"
+                ? item.error.slice(0, 2000)
+                : item.error,
+    };
+}
+
+function compactStepExecutionResult(
+    step: StepExecutionResult,
+): StepExecutionResult {
+    return {
+        ...step,
+        items: step.items.map(compactStepExecutionItem),
+        error:
+            typeof step.error === "string" ? step.error.slice(0, 2000) : step.error,
+    };
+}
+
+function compactStrategyExecutionResult(
+    parsedResult: StrategyExecutionResult,
+): StrategyExecutionResult {
+    return {
+        ...parsedResult,
+        stepResults: parsedResult.stepResults.map(compactStepExecutionResult),
+    };
+}
+
+function resolveAiReviewStepConcurrency() {
+    const parsed = Number.parseInt(
+        process.env.AI_REVIEW_STEP_CONCURRENCY ?? "",
+        10,
+    );
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return AI_REVIEW_STEP_CONCURRENCY_DEFAULT;
+    }
+
+    return Math.min(parsed, AI_REVIEW_STEP_CONCURRENCY_MAX);
+}
 
 function parseStringArray(input: unknown) {
     if (!Array.isArray(input)) {
@@ -174,6 +354,10 @@ function normalizeAnswer(value: string | null | undefined) {
 
 function serializeJson(value: unknown) {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function serializeExecutionResult(parsedResult: StrategyExecutionResult) {
+    return serializeJson(compactStrategyExecutionResult(parsedResult));
 }
 
 function cloneJson<T>(value: T): T {
@@ -246,7 +430,33 @@ function buildRunResponsePayload(stepResults: StepExecutionResult[]) {
             stepId: step.stepId,
             stepName: step.stepName,
             status: step.status,
-            rawResponses: step.items.map((item) => item.rawResponse ?? null),
+            itemCount: step.items.length,
+            rawResponseSummaries: step.items.map((item) => {
+                const rawResponse =
+                    item.rawResponse && typeof item.rawResponse === "object"
+                        ? (item.rawResponse as Record<string, unknown>)
+                        : null;
+                const raw =
+                    rawResponse?.raw && typeof rawResponse.raw === "object"
+                        ? (rawResponse.raw as Record<string, unknown>)
+                        : null;
+
+                return {
+                    index: item.index,
+                    status: item.status,
+                    providerCode: item.requestMeta?.providerCode ?? null,
+                    endpointCode: item.requestMeta?.endpointCode ?? null,
+                    modelCode: item.requestMeta?.modelCode ?? null,
+                    stream: raw?.stream === true,
+                    bytes:
+                        typeof raw?.bytes === "number" ? raw.bytes : undefined,
+                    textLength:
+                        typeof raw?.textLength === "number"
+                            ? raw.textLength
+                            : undefined,
+                    error: item.error,
+                };
+            }),
         })),
     };
 }
@@ -291,7 +501,7 @@ async function persistRunProgress(
         data: {
             status: parsedResult.status,
             errorMessage,
-            parsedResult: serializeJson(parsedResult),
+            parsedResult: serializeExecutionResult(parsedResult),
             responsePayload: serializeJson(
                 buildRunResponsePayload(parsedResult.stepResults),
             ),
@@ -1298,9 +1508,9 @@ async function executeAiToolItem(
         if (!response.ok) {
             attempts.push({
                 attempt: attemptIndex,
-                failure: response,
+                failure: compactRawValue(response),
             });
-            return {
+            return compactStepExecutionItem({
                 index,
                 status: "FAILED" as const,
                 sourceStepId: step.sourceStepId,
@@ -1314,7 +1524,7 @@ async function executeAiToolItem(
                     failure: response,
                 },
                 error: response.error,
-            };
+            });
         }
 
         let responseText: string | null = null;
@@ -1348,7 +1558,7 @@ async function executeAiToolItem(
                 );
             }
 
-            return {
+            return compactStepExecutionItem({
                 index,
                 status: "SUCCESS" as const,
                 sourceStepId: step.sourceStepId,
@@ -1382,7 +1592,7 @@ async function executeAiToolItem(
                             : undefined,
                 },
                 derived: deriveMetrics(step.toolType, parsed.data, question),
-            };
+            });
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "模型结果解析失败";
@@ -1395,7 +1605,7 @@ async function executeAiToolItem(
                 error: message,
             });
 
-            lastFailure = {
+            lastFailure = compactStepExecutionItem({
                 index,
                 status: "FAILED" as const,
                 sourceStepId: step.sourceStepId,
@@ -1417,12 +1627,13 @@ async function executeAiToolItem(
                     attempts,
                 },
                 error: message,
-            };
+            });
         }
     }
 
     return (
-        lastFailure ?? {
+        lastFailure ??
+        compactStepExecutionItem({
             index,
             status: "FAILED" as const,
             sourceStepId: step.sourceStepId,
@@ -1434,7 +1645,7 @@ async function executeAiToolItem(
                 attempts,
             },
             error: "模型结果解析失败",
-        }
+        })
     );
 }
 
@@ -1622,39 +1833,53 @@ async function runAiToolStep(
     const items: Array<StepExecutionItem | undefined> = new Array(tasks.length);
     let progressChain = Promise.resolve();
 
+    const concurrency = Math.min(resolveAiReviewStepConcurrency(), tasks.length);
+    let nextPosition = 0;
+
     await Promise.all(
-        tasks.map(async (task, position) => {
-            const item = await executeAiToolItem(
-                step,
-                question,
-                previousResults,
-                task.sourceItem,
-                task.modelCode,
-                task.index,
-                task.runIndex,
-                executionOptions,
-            );
+        Array.from({ length: concurrency }, async () => {
+            while (true) {
+                const position = nextPosition;
+                nextPosition += 1;
 
-            items[position] = item;
+                if (position >= tasks.length) {
+                    return;
+                }
 
-            if (!onProgress) {
-                return;
-            }
+                const task = tasks[position]!;
+                const item = await executeAiToolItem(
+                    step,
+                    question,
+                    previousResults,
+                    task.sourceItem,
+                    task.modelCode,
+                    task.index,
+                    task.runIndex,
+                    executionOptions,
+                );
 
-            const completedItems = items.filter(
-                (current): current is StepExecutionItem => Boolean(current),
-            );
+                items[position] = item;
 
-            progressChain = progressChain.then(() =>
-                onProgress(
-                    buildRunningAiToolStepResult(
-                        step,
-                        completedItems,
-                        tasks.length,
+                if (!onProgress) {
+                    continue;
+                }
+
+                const completedItems = items.filter(
+                    (current): current is StepExecutionItem =>
+                        Boolean(current),
+                );
+
+                progressChain = progressChain.then(() =>
+                    onProgress(
+                        buildRunningAiToolStepResult(
+                            step,
+                            completedItems,
+                            tasks.length,
+                        ),
                     ),
-                ),
-            );
-            await progressChain;
+                );
+                await progressChain;
+            }
         }),
     );
 
@@ -2677,7 +2902,7 @@ export async function retryAiReviewStrategyRunItem(
             status: parsedResult.status,
             errorMessage:
                 parsedResult.status === "SUCCESS" ? null : run.errorMessage,
-            parsedResult: serializeJson(parsedResult),
+            parsedResult: serializeExecutionResult(parsedResult),
             responsePayload: serializeJson(
                 buildRunResponsePayload(parsedResult.stepResults),
             ),
@@ -2839,7 +3064,7 @@ export async function runSkippedAiSolveQuestionStep(
             status: parsedResult.status,
             errorMessage:
                 parsedResult.status === "SUCCESS" ? null : run.errorMessage,
-            parsedResult: serializeJson(parsedResult),
+            parsedResult: serializeExecutionResult(parsedResult),
             responsePayload: serializeJson(
                 buildRunResponsePayload(parsedResult.stepResults),
             ),
@@ -3156,7 +3381,7 @@ export async function executeAiReviewStrategy(
             },
             data: {
                 status: parsedResult.status,
-                parsedResult: serializeJson(parsedResult),
+                parsedResult: serializeExecutionResult(parsedResult),
                 responsePayload: serializeJson(
                     buildRunResponsePayload(stepResults),
                 ),
@@ -3177,7 +3402,7 @@ export async function executeAiReviewStrategy(
                 status: "FAILED",
                 errorMessage:
                     error instanceof Error ? error.message : "策略执行失败",
-                parsedResult: serializeJson({
+                parsedResult: serializeExecutionResult({
                     ...parsedResult,
                     status: "FAILED",
                     finalRecommendation: null,

@@ -568,6 +568,9 @@ export async function runAiReviewStrategyAction(
         session.user.id,
         session.user.platformRole,
         question.metadata,
+        {
+            projectId: question.projectId,
+        },
     );
 
     if (!canAccessQuestion) {
@@ -731,6 +734,9 @@ export async function retryAiReviewStrategyRunItemAction(
         session.user.id,
         session.user.platformRole,
         run.question.metadata,
+        {
+            projectId: run.question.projectId,
+        },
     );
 
     if (!canAccessQuestion) {
@@ -824,6 +830,9 @@ export async function runSkippedAiSolveQuestionStepAction(
         session.user.id,
         session.user.platformRole,
         run.question.metadata,
+        {
+            projectId: run.question.projectId,
+        },
     );
 
     if (!canAccessQuestion) {
@@ -939,6 +948,9 @@ export async function createAiReviewStrategyBatchRunAction(
                     session.user.id,
                     session.user.platformRole,
                     question.metadata,
+                    {
+                        projectId: actualProjectId,
+                    },
                 ))
                     ? null
                     : question.id,

@@ -269,6 +269,7 @@ export async function exportReviewQuestionsAction(
                 select: {
                     name: true,
                     code: true,
+                    createdById: true,
                 },
             },
             datasource: {
@@ -286,6 +287,9 @@ export async function exportReviewQuestionsAction(
                     session.user.id,
                     session.user.platformRole,
                     question.metadata,
+                    {
+                        projectCreatedById: question.project.createdById,
+                    },
                 ))
                     ? question
                     : null,
@@ -1389,7 +1393,7 @@ export async function exportReviewReportAction(
             updatedAt: true,
             externalRecordId: true,
             metadata: true,
-            project: { select: { name: true, code: true } },
+            project: { select: { name: true, code: true, createdById: true } },
             datasource: { select: { id: true, name: true } },
         },
     });
@@ -1400,6 +1404,9 @@ export async function exportReviewReportAction(
                     session.user.id,
                     session.user.platformRole,
                     question.metadata,
+                    {
+                        projectCreatedById: question.project.createdById,
+                    },
                 ))
                     ? question
                     : null,

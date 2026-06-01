@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { isAdminRole, type PlatformRoleValue } from "@/lib/auth/roles";
 import {
   getAccessiblePrimaryValueSet,
-  questionMatchesPrimaryValueScope,
+  questionMatchesPrimaryValueScopeForProject,
 } from "@/lib/subjects/access";
 
 export async function canUserReviewProject(
@@ -37,11 +37,42 @@ export async function canUserAccessQuestionByMetadata(
   userId: string,
   platformRole: PlatformRoleValue,
   metadata: unknown,
+  options?: {
+    projectId?: string;
+    projectCreatedById?: string | null;
+  },
 ) {
+  let projectCreatedById = options?.projectCreatedById;
+
+  if (
+    projectCreatedById === undefined &&
+    options?.projectId &&
+    process.env.DATABASE_URL
+  ) {
+    const project = await prisma.project.findUnique({
+      where: {
+        id: options.projectId,
+      },
+      select: {
+        createdById: true,
+      },
+    });
+
+    projectCreatedById = project?.createdById ?? null;
+  }
+
   const allowedPrimaryValues = await getAccessiblePrimaryValueSet(
     userId,
     platformRole,
   );
 
-  return questionMatchesPrimaryValueScope(metadata, allowedPrimaryValues);
+  return questionMatchesPrimaryValueScopeForProject(
+    metadata,
+    allowedPrimaryValues,
+    {
+      userId,
+      platformRole,
+      projectCreatedById,
+    },
+  );
 }

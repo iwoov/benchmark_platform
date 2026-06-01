@@ -77,6 +77,9 @@ export async function GET(request: Request) {
         session.user.id,
         session.user.platformRole,
         question.metadata,
+        {
+            projectId: question.projectId,
+        },
     );
 
     if (!canAccessQuestion) {

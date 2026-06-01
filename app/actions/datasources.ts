@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { QuestionStatus } from "@prisma/client";
+import { QuestionStatus, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { parseImportedProjectData } from "@/lib/import/project-data";
 import { deleteDatasourceUploads } from "@/lib/import/file-storage";
@@ -11,6 +11,11 @@ import { attachDatasourceToScopedStrategies } from "@/lib/ai/strategy-scope";
 
 const importProjectDataSchema = z.object({
     projectId: z.string().min(1, "请选择项目。"),
+    datasourceId: z
+        .string()
+        .trim()
+        .optional()
+        .transform((value) => value || undefined),
     name: z
         .string()
         .trim()
@@ -128,6 +133,45 @@ function normalizeRevisionImportStatus(status: QuestionStatus): QuestionStatus {
     return status === "DRAFT" ? "DRAFT" : "SUBMITTED";
 }
 
+function asPlainRecord(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {} as Record<string, unknown>;
+    }
+
+    return value as Record<string, unknown>;
+}
+
+function readStringArray(value: unknown) {
+    if (!Array.isArray(value)) {
+        return [] as string[];
+    }
+
+    return value.filter(
+        (item): item is string =>
+            typeof item === "string" && Boolean(item.trim()),
+    );
+}
+
+function mergeStringArrays(left: unknown, right: string[]) {
+    return Array.from(new Set([...readStringArray(left), ...right]));
+}
+
+function getAvailableExternalRecordId(
+    baseId: string,
+    usedRecordIds: Set<string>,
+) {
+    let candidate = baseId;
+    let suffix = 2;
+
+    while (usedRecordIds.has(candidate)) {
+        candidate = `${baseId}-import-${suffix}`;
+        suffix += 1;
+    }
+
+    usedRecordIds.add(candidate);
+    return candidate;
+}
+
 function revalidateImportPaths() {
     revalidatePath("/dashboard/datasources");
     revalidatePath("/admin/datasources");
@@ -151,6 +195,7 @@ export async function importProjectDataAction(
 
     const parsed = importProjectDataSchema.safeParse({
         projectId: formData.get("projectId"),
+        datasourceId: formData.get("datasourceId") || undefined,
         name: formData.get("name") || undefined,
     });
 
@@ -203,10 +248,50 @@ export async function importProjectDataAction(
 
     try {
         const importedPayload = await parseImportedProjectData(file);
-        const datasourceName = parsed.data.name ?? importedPayload.defaultName;
         const importedAt = new Date();
 
         const result = await prisma.$transaction(async (tx) => {
+            const existingDatasource = parsed.data.datasourceId
+                ? await tx.projectDataSource.findUnique({
+                      where: {
+                          id: parsed.data.datasourceId,
+                      },
+                      select: {
+                          id: true,
+                          projectId: true,
+                          name: true,
+                          status: true,
+                          syncConfig: true,
+                      },
+                  })
+                : null;
+
+            if (parsed.data.datasourceId && !existingDatasource) {
+                throw new Error("要继续导入的数据源不存在。");
+            }
+
+            if (
+                existingDatasource &&
+                existingDatasource.projectId !== project.id
+            ) {
+                throw new Error("要继续导入的数据源不属于当前项目。");
+            }
+
+            if (
+                existingDatasource?.status !== undefined &&
+                existingDatasource.status !== "ACTIVE"
+            ) {
+                throw new Error("只能向启用中的数据源继续导入。");
+            }
+
+            const isAppendingToDatasource = Boolean(existingDatasource);
+            const existingSyncConfig = asPlainRecord(
+                existingDatasource?.syncConfig,
+            );
+            const datasourceName =
+                existingDatasource?.name ??
+                parsed.data.name ??
+                importedPayload.defaultName;
             const revisionKeys = [
                 ...new Set(
                     importedPayload.rows
@@ -293,23 +378,72 @@ export async function importProjectDataAction(
                 });
             }
 
-            const datasource = await tx.projectDataSource.create({
-                data: {
-                    projectId: project.id,
-                    name: datasourceName,
-                    type: importedPayload.datasourceType,
-                    fieldMapping: importedPayload.fieldMapping,
-                    syncConfig: {
-                        importMode: "MANUAL_UPLOAD",
-                        importedByScope: managerScope,
-                        originalFileName: importedPayload.originalFileName,
-                        rawFieldOrder: importedPayload.rawFieldOrder,
-                        importedAt: importedAt.toISOString(),
-                        totalRowCount: importedPayload.totalRowCount,
-                        skippedRowCount: importedPayload.skippedRowCount,
-                    },
-                },
-            });
+            const datasource = existingDatasource
+                ? await tx.projectDataSource.update({
+                      where: {
+                          id: existingDatasource.id,
+                      },
+                      data: {
+                          fieldMapping: importedPayload.fieldMapping,
+                          syncConfig: {
+                              ...existingSyncConfig,
+                              importMode: "MANUAL_UPLOAD",
+                              importedByScope: managerScope,
+                              originalFileName:
+                                  importedPayload.originalFileName,
+                              lastImportedFileName:
+                                  importedPayload.originalFileName,
+                              rawFieldOrder: mergeStringArrays(
+                                  existingSyncConfig.rawFieldOrder,
+                                  importedPayload.rawFieldOrder,
+                              ),
+                              importedAt: importedAt.toISOString(),
+                              lastImportedAt: importedAt.toISOString(),
+                              totalRowCount: importedPayload.totalRowCount,
+                              skippedRowCount:
+                                  importedPayload.skippedRowCount,
+                          } satisfies Prisma.InputJsonObject,
+                      },
+                      select: {
+                          id: true,
+                          name: true,
+                      },
+                  })
+                : await tx.projectDataSource.create({
+                      data: {
+                          projectId: project.id,
+                          name: datasourceName,
+                          type: importedPayload.datasourceType,
+                          fieldMapping: importedPayload.fieldMapping,
+                          syncConfig: {
+                              importMode: "MANUAL_UPLOAD",
+                              importedByScope: managerScope,
+                              originalFileName:
+                                  importedPayload.originalFileName,
+                              rawFieldOrder: importedPayload.rawFieldOrder,
+                              importedAt: importedAt.toISOString(),
+                              totalRowCount: importedPayload.totalRowCount,
+                              skippedRowCount:
+                                  importedPayload.skippedRowCount,
+                          },
+                      },
+                      select: {
+                          id: true,
+                          name: true,
+                      },
+                  });
+            const usedExternalRecordIds = new Set(
+                (
+                    await tx.question.findMany({
+                        where: {
+                            datasourceId: datasource.id,
+                        },
+                        select: {
+                            externalRecordId: true,
+                        },
+                    })
+                ).map((question) => question.externalRecordId),
+            );
 
             let createdQuestionCount = 0;
             let newQuestionCount = 0;
@@ -335,11 +469,15 @@ export async function importProjectDataAction(
                 const normalizedStatus = previousRevision
                     ? normalizeRevisionImportStatus(row.status)
                     : row.status;
+                const externalRecordId = getAvailableExternalRecordId(
+                    row.externalRecordId,
+                    usedExternalRecordIds,
+                );
                 const createdQuestion = await tx.question.create({
                     data: {
                         projectId: project.id,
                         datasourceId: datasource.id,
-                        externalRecordId: row.externalRecordId,
+                        externalRecordId,
                         businessQuestionKey: row.businessQuestionKey,
                         title: row.title,
                         content: row.content,
@@ -397,7 +535,9 @@ export async function importProjectDataAction(
 
             if (!createdQuestionCount) {
                 throw new Error(
-                    "导入内容与当前项目中的最新题目相比没有变化，未创建新数据源。",
+                    isAppendingToDatasource
+                        ? "导入内容与当前项目中的最新题目相比没有变化，未写入新题目。"
+                        : "导入内容与当前项目中的最新题目相比没有变化，未创建新数据源。",
                 );
             }
 
@@ -414,6 +554,8 @@ export async function importProjectDataAction(
                         projectId: project.id,
                         fileName: importedPayload.originalFileName,
                         datasourceName,
+                        datasourceId: datasource.id,
+                        appendToExistingDatasource: isAppendingToDatasource,
                     },
                     responsePayload: {
                         importedCount: createdQuestionCount,
@@ -435,6 +577,7 @@ export async function importProjectDataAction(
 
             return {
                 datasource,
+                isAppendingToDatasource,
                 createdQuestionCount,
                 newQuestionCount,
                 revisedQuestionCount,
@@ -445,8 +588,12 @@ export async function importProjectDataAction(
 
         revalidateImportPaths();
 
+        const actionText = result.isAppendingToDatasource
+            ? `继续导入到数据源 ${result.datasource.name}`
+            : `导入 ${result.createdQuestionCount} 条题目，并创建数据源 ${result.datasource.name}`;
+
         return {
-            success: `已为项目 ${project.name} 导入 ${result.createdQuestionCount} 条题目，并创建数据源 ${result.datasource.name}。新增 ${result.newQuestionCount} 条，修订 ${result.revisedQuestionCount} 条，跳过未变化修订 ${result.skippedUnchangedRevisionCount} 条。${
+            success: `已为项目 ${project.name} ${actionText}。新增 ${result.newQuestionCount} 条，修订 ${result.revisedQuestionCount} 条，跳过未变化修订 ${result.skippedUnchangedRevisionCount} 条。${
                 autoApplyAiStrategies
                     ? result.updatedStrategyCount
                         ? ` 已自动加入 ${result.updatedStrategyCount} 条审核策略范围。`
