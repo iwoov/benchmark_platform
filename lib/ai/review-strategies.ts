@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import {
     getPlatformAdminScopeOptions,
     resolveUserAdminScopeId,
@@ -33,6 +34,7 @@ import {
     UPLOAD_URL_PREFIX,
 } from "@/lib/import/file-storage";
 import {
+    getReviewQuestionExecutionDetail,
     getReviewQuestionDetail,
     type ReviewQuestionDetail,
 } from "@/lib/reviews/question-list-data";
@@ -126,6 +128,7 @@ type StrategyExecutionOptions = {
     enableBuiltInTools?: boolean;
     disableReviewPersistence?: boolean;
     evaluationModelFilter?: EvaluationModelFilter;
+    skipProgressPersistence?: boolean;
 };
 
 const AI_TOOL_RESULT_MAX_ATTEMPTS = 2;
@@ -134,6 +137,105 @@ const RAW_RESPONSE_ARRAY_PREVIEW_LIMIT = 20;
 const RAW_RESPONSE_OBJECT_DEPTH_LIMIT = 5;
 const AI_REVIEW_STEP_CONCURRENCY_DEFAULT = 1;
 const AI_REVIEW_STEP_CONCURRENCY_MAX = 2;
+const REVIEW_QUESTION_BASE_FIELD_KEYS = new Set([
+    "title",
+    "content",
+    "answer",
+    "analysis",
+    "questionType",
+    "difficulty",
+]);
+const JSON_SCHEMA_OUTPUT_OMITTED_KEYS = new Set([
+    "$schema",
+    "default",
+    "description",
+    "examples",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+]);
+const aiToolResponseFormatCache = new Map<
+    AiReviewAiToolType,
+    { name: string; schema: Record<string, unknown> }
+>();
+
+function collectStrategyRawRecordFieldKeys(
+    definition: AiReviewStrategyDefinition,
+) {
+    const fieldKeys = new Set<string>();
+
+    for (const step of definition.steps) {
+        if (step.kind !== "AI_TOOL") {
+            continue;
+        }
+
+        for (const fieldKey of step.fieldKeys) {
+            if (fieldKey === "rawRecord") {
+                return undefined;
+            }
+
+            if (!REVIEW_QUESTION_BASE_FIELD_KEYS.has(fieldKey)) {
+                fieldKeys.add(fieldKey);
+            }
+        }
+    }
+
+    return Array.from(fieldKeys);
+}
+
+function sanitizeResponseJsonSchema(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map((item) => sanitizeResponseJsonSchema(item));
+    }
+
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    const input = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+
+    for (const [key, rawValue] of Object.entries(input)) {
+        if (JSON_SCHEMA_OUTPUT_OMITTED_KEYS.has(key)) {
+            continue;
+        }
+
+        output[key] = sanitizeResponseJsonSchema(rawValue);
+    }
+
+    if (
+        output.type === "object" &&
+        output.properties &&
+        typeof output.properties === "object" &&
+        !Array.isArray(output.properties)
+    ) {
+        output.required = Object.keys(output.properties);
+    }
+
+    return output;
+}
+
+function buildAiToolResponseFormat(toolType: AiReviewAiToolType) {
+    const cached = aiToolResponseFormatCache.get(toolType);
+
+    if (cached) {
+        return cached;
+    }
+
+    const responseFormat = {
+        name: `ai_review_${toolType.toLowerCase()}`,
+        schema: sanitizeResponseJsonSchema(
+            z.toJSONSchema(aiReviewOutputSchemas[toolType]),
+        ) as Record<string, unknown>,
+    };
+
+    aiToolResponseFormatCache.set(toolType, responseFormat);
+
+    return responseFormat;
+}
 
 function truncateRawString(value: string) {
     if (value.length <= RAW_RESPONSE_STRING_PREVIEW_LIMIT) {
@@ -507,6 +609,19 @@ async function persistRunProgress(
             ),
         },
     });
+}
+
+async function persistRunProgressIfNeeded(
+    runId: string,
+    parsedResult: StrategyExecutionResult,
+    options?: StrategyExecutionOptions,
+    errorMessage?: string,
+) {
+    if (options?.skipProgressPersistence) {
+        return;
+    }
+
+    await persistRunProgress(runId, parsedResult, errorMessage);
 }
 
 function extractJson(text: string | null) {
@@ -1461,8 +1576,8 @@ async function executeAiToolItem(
         modelCode,
         sourceOutput: sourceItem?.output ?? null,
         sourceMeta: sourceItem?.requestMeta ?? null,
-        selectedFields: fieldsWithPlaceholders,
-        originalSelectedFields: selectedFields,
+        selectedFieldKeys: Object.keys(fieldsWithPlaceholders),
+        hasImageParts: imageParts.length > 0,
     };
 
     const userPromptText = buildUserPrompt(
@@ -1481,6 +1596,7 @@ async function executeAiToolItem(
 
     const attempts: unknown[] = [];
     let lastFailure: StepExecutionItem | null = null;
+    const responseFormat = buildAiToolResponseFormat(step.toolType);
 
     for (
         let attemptIndex = 1;
@@ -1489,8 +1605,9 @@ async function executeAiToolItem(
     ) {
         const response = await invokeAiModel({
             modelCode,
-            stream: true,
             responseMimeType: "application/json",
+            responseFormatName: responseFormat.name,
+            responseJsonSchema: responseFormat.schema,
             enableBuiltInTools: options?.enableBuiltInTools,
             messages: [
                 {
@@ -3095,10 +3212,11 @@ export async function executeAiReviewStrategy(
     triggeredById: string,
     executionOptions?: StrategyExecutionOptions,
 ) {
-    const [strategy, question] = await Promise.all([
-        loadStrategyForExecution(strategyId),
-        getReviewQuestionDetail(questionId),
-    ]);
+    const strategy = await loadStrategyForExecution(strategyId);
+    const question = await getReviewQuestionExecutionDetail(
+        questionId,
+        collectStrategyRawRecordFieldKeys(strategy.definition),
+    );
 
     if (!question) {
         throw new Error("题目不存在或已被删除。");
@@ -3175,7 +3293,7 @@ export async function executeAiReviewStrategy(
     const parsedResult = createExecutionResultShell(strategy, question);
     const stepResults = parsedResult.stepResults;
 
-    await persistRunProgress(run.id, parsedResult);
+    await persistRunProgressIfNeeded(run.id, parsedResult, executionOptions);
 
     try {
         for (const step of strategy.definition.steps) {
@@ -3190,7 +3308,11 @@ export async function executeAiReviewStrategy(
                     summary: "步骤已停用。",
                     items: [],
                 });
-                await persistRunProgress(run.id, parsedResult);
+                await persistRunProgressIfNeeded(
+                    run.id,
+                    parsedResult,
+                    executionOptions,
+                );
                 continue;
             }
 
@@ -3210,7 +3332,11 @@ export async function executeAiReviewStrategy(
                     summary: "当前单模型评测运行不包含此步骤。",
                     items: [],
                 });
-                await persistRunProgress(run.id, parsedResult);
+                await persistRunProgressIfNeeded(
+                    run.id,
+                    parsedResult,
+                    executionOptions,
+                );
                 continue;
             }
 
@@ -3229,7 +3355,11 @@ export async function executeAiReviewStrategy(
                         "全面检查未通过，已跳过 AI 独立解题并直接进入后续总结。",
                     items: [],
                 });
-                await persistRunProgress(run.id, parsedResult);
+                await persistRunProgressIfNeeded(
+                    run.id,
+                    parsedResult,
+                    executionOptions,
+                );
                 continue;
             }
 
@@ -3243,7 +3373,11 @@ export async function executeAiReviewStrategy(
                     summary: `正在执行 ${step.name}...`,
                     items: [],
                 });
-                await persistRunProgress(run.id, parsedResult);
+                await persistRunProgressIfNeeded(
+                    run.id,
+                    parsedResult,
+                    executionOptions,
+                );
 
                 stepResults[stepIndex - 1] = await runAiToolStep(
                     step,
@@ -3252,7 +3386,11 @@ export async function executeAiReviewStrategy(
                     executionOptions,
                     async (partial) => {
                         stepResults[stepIndex - 1] = partial;
-                        await persistRunProgress(run.id, parsedResult);
+                        await persistRunProgressIfNeeded(
+                            run.id,
+                            parsedResult,
+                            executionOptions,
+                        );
                     },
                 );
             } else {
@@ -3265,14 +3403,22 @@ export async function executeAiReviewStrategy(
                     summary: `正在执行 ${step.name}...`,
                     items: [],
                 });
-                await persistRunProgress(run.id, parsedResult);
+                await persistRunProgressIfNeeded(
+                    run.id,
+                    parsedResult,
+                    executionOptions,
+                );
                 stepResults[stepIndex - 1] = runRuleStep(
                     step,
                     stepResults.slice(0, -1),
                 );
             }
 
-            await persistRunProgress(run.id, parsedResult);
+            await persistRunProgressIfNeeded(
+                run.id,
+                parsedResult,
+                executionOptions,
+            );
         }
 
         parsedResult.status = stepResults.some(

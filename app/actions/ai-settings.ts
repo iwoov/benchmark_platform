@@ -105,7 +105,7 @@ const saveAiModelSchema = z.object({
         .number()
         .int("默认输出长度必须是整数")
         .min(1, "默认输出长度至少 1")
-        .max(32768, "默认输出长度不能超过 32768")
+        .max(128000, "默认输出长度不能超过 128000")
         .nullable(),
     temperatureDefault: z
         .number()

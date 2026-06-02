@@ -1260,7 +1260,7 @@ export function AiSettingsConsole({
               <InputNumber
                 id="ai-model-max-tokens"
                 min={1}
-                max={32768}
+                max={128000}
                 style={{ width: "100%" }}
                 value={modelForm.maxTokensDefault}
                 placeholder="留空表示不设默认值"

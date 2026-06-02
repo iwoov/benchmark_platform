@@ -1740,6 +1740,7 @@ async function executeBatchRunItem(
                       disableReviewPersistence: true,
                       evaluationModelFilter:
                           dataEvaluationPayload.evaluationModelFilter,
+                      skipProgressPersistence: true,
                   },
               )
             : retryPayload
@@ -1752,6 +1753,9 @@ async function executeBatchRunItem(
                   batchRun.strategyId,
                   item.questionId,
                   batchRun.createdById,
+                  {
+                      skipProgressPersistence: true,
+                  },
               );
         const executionRunId = "runId" in execution ? execution.runId : execution.id;
         const executionParsedResult = execution.parsedResult;

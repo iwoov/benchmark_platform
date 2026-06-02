@@ -76,6 +76,15 @@ function extractRawRecord(metadata: unknown) {
     );
 }
 
+function extractRawRecordFields(metadata: unknown, fieldKeys: readonly string[]) {
+    const rawRecord = extractRawRecordValues(metadata);
+    const entries = fieldKeys
+        .filter((fieldKey) => Object.hasOwn(rawRecord, fieldKey))
+        .map((fieldKey) => [fieldKey, normalizeRawValue(rawRecord[fieldKey])]);
+
+    return Object.fromEntries(entries);
+}
+
 export type ReviewResponse = {
     source: string;
     reviewDate: string;
@@ -1476,6 +1485,90 @@ export async function getReviewQuestionDetail(
                 },
             ]),
         ),
+    } satisfies ReviewQuestionDetail;
+}
+
+export async function getReviewQuestionExecutionDetail(
+    questionId: string,
+    fieldKeys?: readonly string[],
+) {
+    if (!process.env.DATABASE_URL) {
+        return null;
+    }
+
+    const question = await prisma.question.findUnique({
+        where: {
+            id: questionId,
+        },
+        select: {
+            id: true,
+            title: true,
+            content: true,
+            answer: true,
+            analysis: true,
+            questionType: true,
+            difficulty: true,
+            externalRecordId: true,
+            businessQuestionKey: true,
+            revisionNo: true,
+            isLatestRevision: true,
+            status: true,
+            updatedAt: true,
+            metadata: true,
+            project: {
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                },
+            },
+            datasource: {
+                select: {
+                    id: true,
+                    name: true,
+                    syncConfig: true,
+                },
+            },
+        },
+    });
+
+    if (!question) {
+        return null;
+    }
+
+    return {
+        id: question.id,
+        title: question.title,
+        content: question.content,
+        answer: question.answer,
+        analysis: question.analysis,
+        questionType: question.questionType,
+        difficulty: question.difficulty,
+        externalRecordId: question.externalRecordId,
+        status: question.status,
+        updatedAt: question.updatedAt.toISOString(),
+        project: question.project,
+        datasource: {
+            id: question.datasource.id,
+            name: question.datasource.name,
+        },
+        sourceRowNumber: extractSourceRowNumber(question.metadata),
+        rawRecord: fieldKeys
+            ? extractRawRecordFields(question.metadata, fieldKeys)
+            : extractRawRecord(question.metadata),
+        rawFieldOrder: extractRawFieldOrder(question.datasource.syncConfig),
+        reviewResponses: extractReviewResponses(question.metadata),
+        businessQuestionKey: question.businessQuestionKey,
+        revisionNo: question.revisionNo,
+        isLatestRevision: question.isLatestRevision,
+        aiReview: null,
+        manualReview: null,
+        imageFields: readImageFields(question.datasource.syncConfig),
+        imageMap: readImageMap(question.datasource.syncConfig),
+        previousRevision: null,
+        latestRevision: null,
+        diffFromPrevious: [],
+        savedTranslations: {},
     } satisfies ReviewQuestionDetail;
 }
 

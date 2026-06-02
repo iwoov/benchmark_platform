@@ -24,7 +24,7 @@ const invokeAiSchema = z.object({
       }),
     )
     .min(1, "至少传入一条消息"),
-  maxTokens: z.number().int().positive().max(32768).optional(),
+  maxTokens: z.number().int().positive().max(128000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   stream: z.boolean().optional(),
   enableBuiltInTools: z.boolean().optional(),

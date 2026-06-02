@@ -36,6 +36,8 @@ export type AiInvocationRequest = {
     temperature?: number;
     stream?: boolean;
     responseMimeType?: "application/json" | "text/plain";
+    responseFormatName?: string;
+    responseJsonSchema?: Record<string, unknown>;
     enableBuiltInTools?: boolean;
 };
 
@@ -151,6 +153,14 @@ function usesAnthropicAdaptiveThinking(route: AiResolvedRoute) {
     return modelName.includes("claude-opus-4-7");
 }
 
+function getAnthropicDefaultMaxTokens(route: AiResolvedRoute) {
+    if (usesAnthropicAdaptiveThinking(route)) {
+        return 128000;
+    }
+
+    return 8192;
+}
+
 function getAnthropicThinkingConfig(
     reasoningLevel: AiReasoningLevel,
     route: AiResolvedRoute,
@@ -199,6 +209,38 @@ function getGeminiThinkingLevel(reasoningLevel: AiReasoningLevel) {
         default:
             return null;
     }
+}
+
+function toGeminiResponseSchema(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map((item) => toGeminiResponseSchema(item));
+    }
+
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    const input = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+
+    for (const [key, rawValue] of Object.entries(input)) {
+        if (
+            key === "$schema" ||
+            key === "additionalProperties" ||
+            key === "default"
+        ) {
+            continue;
+        }
+
+        if (key === "type" && typeof rawValue === "string") {
+            output.type = rawValue.toUpperCase();
+            continue;
+        }
+
+        output[key] = toGeminiResponseSchema(rawValue);
+    }
+
+    return output;
 }
 
 function normalizeParts(content: AiMessage["content"]): AiMessagePart[] {
@@ -278,6 +320,24 @@ function buildOpenAiChatPayload(
         ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
         ...(typeof temperature === "number" ? { temperature } : {}),
         ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+        ...(input.responseJsonSchema
+            ? {
+                  response_format: {
+                      type: "json_schema",
+                      json_schema: {
+                          name: input.responseFormatName ?? "json_response",
+                          strict: true,
+                          schema: input.responseJsonSchema,
+                      },
+                  },
+              }
+            : input.responseMimeType === "application/json"
+              ? {
+                    response_format: {
+                        type: "json_object",
+                    },
+                }
+              : {}),
         stream,
     };
 }
@@ -354,10 +414,22 @@ function buildOpenAiResponsesPayload(
             ? {
                   text: {
                       format: {
-                          type:
-                              input.responseMimeType === "application/json"
-                                  ? "json_object"
-                                  : "text",
+                          ...(input.responseJsonSchema
+                              ? {
+                                    type: "json_schema",
+                                    name:
+                                        input.responseFormatName ??
+                                        "json_response",
+                                    strict: true,
+                                    schema: input.responseJsonSchema,
+                                }
+                              : {
+                                    type:
+                                        input.responseMimeType ===
+                                        "application/json"
+                                            ? "json_object"
+                                            : "text",
+                                }),
                       },
                   },
               }
@@ -378,11 +450,30 @@ function buildAnthropicPayload(
         route,
     );
     const resolvedMaxTokens =
-        input.maxTokens ?? config.maxTokensDefault ?? 2048;
+        input.maxTokens ??
+        config.maxTokensDefault ??
+        getAnthropicDefaultMaxTokens(route);
     const maxTokens = Math.max(
         resolvedMaxTokens,
         (thinkingConfig.budgetTokens ?? 0) + 256,
     );
+    const outputConfig =
+        thinkingConfig.outputConfig || input.responseJsonSchema
+            ? {
+                  ...(thinkingConfig.outputConfig ?? {}),
+                  ...(input.responseJsonSchema
+                      ? {
+                            format: {
+                                type: "json_schema",
+                                name:
+                                    input.responseFormatName ??
+                                    "json_response",
+                                schema: input.responseJsonSchema,
+                            },
+                        }
+                      : {}),
+              }
+            : null;
 
     return {
         model: route.providerModelName,
@@ -420,9 +511,7 @@ function buildAnthropicPayload(
                   thinking: thinkingConfig.thinking,
               }
             : {}),
-        ...(thinkingConfig.outputConfig
-            ? { output_config: thinkingConfig.outputConfig }
-            : {}),
+        ...(outputConfig ? { output_config: outputConfig } : {}),
         stream,
     };
 }
@@ -473,6 +562,13 @@ function buildGeminiPayload(
             responseModalities: ["TEXT"],
             ...(input.responseMimeType
                 ? { responseMimeType: input.responseMimeType }
+                : {}),
+            ...(input.responseJsonSchema
+                ? {
+                      responseSchema: toGeminiResponseSchema(
+                          input.responseJsonSchema,
+                      ),
+                  }
                 : {}),
             ...(typeof temperature === "number" ? { temperature } : {}),
             ...(typeof maxTokens === "number"
